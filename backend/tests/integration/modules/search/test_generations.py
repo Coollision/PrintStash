@@ -42,6 +42,99 @@ def retired_vector_batch(
 
 
 class TestPrepare:
+    def test_preserves_native_floats_when_switching_to_reviewed_mrl(
+        self,
+        db_session,
+        generation_setup,
+        healthy_embeddings,
+        advance_generation,
+        make_inference_endpoint,
+        monkeypatch,
+    ):
+        from printstash_core.inference.model_capabilities import MXBAI_LARGE_V1
+        from sqlalchemy import text
+
+        from app.core.config import _overlay
+        from app.modules.inference.endpoint import EndpointConfig
+        from app.modules.search import vector_index
+
+        actor, _ = generation_setup
+        monkeypatch.setitem(_overlay, "search_native_vectors_enabled", True)
+        endpoint = make_inference_endpoint(
+            native_dimension=1024,
+            config=EndpointConfig(
+                base_url="http://inference.test/v1",
+                model="test-mxbai",
+                model_repo=MXBAI_LARGE_V1.repository,
+                revision=MXBAI_LARGE_V1.revision,
+            ),
+        )
+        healthy_embeddings.dimension = 1024
+        first = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+        advance_generation(first.id)
+        healthy_embeddings.requests.clear()
+
+        replacement = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(
+                endpoint_id=endpoint.id, index_backend="sqlite_vec", index_dimension=128
+            ),
+        )
+        advance_generation(replacement.id)
+        db_session.expire_all()
+
+        assert healthy_embeddings.requests == []
+        assert (replacement.native_dimension, replacement.index_dimension) == (
+            1024,
+            128,
+        )
+        vector = db_session.exec(
+            select(PassageVector).where(PassageVector.generation_id == replacement.id)
+        ).one()
+        assert len(vector.vector_blob) == 4096
+        assert vector.native_dimension == 1024
+        assert (
+            db_session.execute(
+                text(
+                    f"SELECT vec_length(embedding) FROM {vector_index.table_name(replacement.id, 'sqlite')}"
+                )
+            ).scalar_one()
+            == 128
+        )
+
+    def test_rejects_unreviewed_truncation(
+        self, db_session, generation_setup, healthy_embeddings, advance_generation
+    ):
+        from printstash_core.inference import EmbeddingError
+
+        actor, endpoint = generation_setup
+        first = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+        advance_generation(first.id)
+
+        with pytest.raises(EmbeddingError, match="embedding_mrl_unavailable"):
+            generations.prepare(
+                db_session,
+                actor,
+                GenerationProposal(endpoint_id=endpoint.id, index_dimension=2),
+            )
+
+        assert db_session.get(IndexGeneration, first.id).state == "active"
+        assert (
+            db_session.exec(
+                select(IndexGeneration.id).where(IndexGeneration.state == "building")
+            ).all()
+            == []
+        )
+
     def test_rejects_capacity_overcommit(
         self, db_session, generation_setup, healthy_embeddings, advance_generation
     ):

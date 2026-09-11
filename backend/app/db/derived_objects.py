@@ -34,10 +34,19 @@ def managed_names(connection: Connection | None) -> frozenset[str]:
                 "SELECT id, vector_table_name FROM index_generations WHERE vector_table_name IS NOT NULL"
             )
         ):
-            if name == f"gen_vectors_{id}" and type(id) is int and id > 0:
+            if name == f"code_gen_{id}" and type(id) is int and id > 0:
+                columns = connection.execute(
+                    text(
+                        "SELECT column_name, udt_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=:name ORDER BY ordinal_position"
+                    ),
+                    {"name": name},
+                ).all()
+                if columns == [("id", "int4"), ("embedding", "bytea")]:
+                    names.add(name)
+            elif name == f"gen_vectors_{id}" and type(id) is int and id > 0:
                 vector_column = connection.execute(
                     text(
-                        "SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=:name AND column_name='embedding' AND udt_name='vector'"
+                        "SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=:name AND column_name='embedding' AND udt_name IN ('vector', 'bit')"
                     ),
                     {"name": name},
                 ).first()
@@ -64,6 +73,14 @@ def managed_names(connection: Connection | None) -> frozenset[str]:
                 "SELECT id, vector_table_name FROM index_generations WHERE vector_table_name IS NOT NULL"
             )
         ):
+            if name == f"code_gen_{id}" and type(id) is int and id > 0:
+                columns = connection.execute(text(f"PRAGMA table_info({name})")).all()
+                if [(column[1], column[2].upper()) for column in columns] == [
+                    ("id", "INTEGER"),
+                    ("embedding", "BLOB"),
+                ]:
+                    names.add(name)
+                continue
             if name != f"vec_gen_{id}" or type(id) is not int or id < 1:
                 continue
             ddl = connection.execute(

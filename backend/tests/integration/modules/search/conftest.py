@@ -4,11 +4,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from sqlmodel import select
 
 from app.db.models import IndexGeneration
 from app.db.session import get_session_factory
 from app.modules.inference.transport import EndpointError
-from app.modules.search import configuration
+from app.modules.search import configuration, vector_index
 from app.modules.search.indexing import IndexProcessor
 from app.schemas.inference import SearchSettings
 
@@ -19,12 +20,19 @@ def generation_setup(db_session, make_user, make_inference_endpoint, make_docume
     endpoint = make_inference_endpoint()
     make_document("Assembly guide", body="Fit the lid")
     configuration.update(db_session, SearchSettings(enabled=True))
-    return actor, endpoint
+    try:
+        yield actor, endpoint
+    finally:
+        db_session.rollback()
+        for generation in db_session.exec(select(IndexGeneration)).all():
+            generation.state = "retired"
+            vector_index.drop(db_session, generation)
+        db_session.commit()
 
 
 @pytest.fixture
 def healthy_embeddings():
-    state = SimpleNamespace(requests=[], poison=None, before_reply=None)
+    state = SimpleNamespace(requests=[], poison=None, before_reply=None, dimension=4)
 
     def reply(_endpoint, _path, payload, **kwargs):
         state.requests.append(payload)
@@ -35,7 +43,7 @@ def healthy_embeddings():
             raise EndpointError("inference_request_rejected")
         return {
             "data": [
-                {"index": index, "embedding": [1, 0, 0, 0]}
+                {"index": index, "embedding": [1] + [0] * (state.dimension - 1)}
                 for index, _ in enumerate(payload["input"])
             ]
         }

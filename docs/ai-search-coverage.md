@@ -17,7 +17,7 @@ The branch implements W1–W5: durable text indexing, remote provider contracts 
 | A009 | ranks an exact title match above a body mention | Happy | two models, FTS5 | ordering asserted | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_ranks_exact_title_above_body` |
 | A010 | ranks the controlled BM25 fixture consistently on PostgreSQL | Happy | Mismo tokenizer, corpus y pesos; postgres marker | Orden de referencia BM25, no ts_rank etiquetado como BM25 | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_ranks_postgres_with_real_bm25` |
 | A011 | falls back to ranked LIKE when FTS is unavailable | Error | probe forced to fail | results still returned; capability reports the fallback | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_falls_back_when_fts_is_unavailable` |
-| A012 | prepares a generation at its index dimension | Happy | Space nativa 1024; MRL index 128 | Tabla derivada de 128; floats durables de 1024 | Integration | ❌ missing |
+| A012 | prepares a generation at its index dimension | Happy | Space nativa 1024; MRL index 128 | Tabla derivada de 128; floats durables de 1024 | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_preserves_native_floats_when_switching_to_reviewed_mrl` |
 | A013 | drops the typed table when a generation is retired | Happy | retired generation | table gone; durable vectors deleted in batches | Integration | ❌ missing |
 | A014 | keeps autogenerate empty while a generation is live | Edge | live generation, `alembic revision --autogenerate` | empty diff | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_excludes_registered_vector_objects` |
 | A015 | preserves vectors across SQLite→PostgreSQL migration | Happy | seeded generation | same vectors, index rebuilt, no re-embed | Integration | ✅ `integration/modules/administration/test_database_transfer.py::TestDatabaseTransfer::test_copies_sqlite_to_postgres_without_inference` |
@@ -88,11 +88,11 @@ The branch implements W1–W5: durable text indexing, remote provider contracts 
 | A080 | rejects_nonfinite_provider_vectors | Error | NaN/inf/cero no permitido/mala longitud | Código estable, no vector activo corrupto | Contract | ❌ missing |
 | A081 | distinguishes_artifact_component_units | Edge | Dos Artifacts del Model con component 0 | Dos unidades durables distintas | Integration | ❌ missing |
 | A082 | rejects_cross_space_vector_comparison | Error | Misma dimension pero CLIP/BGE distintos | Comparación denegada, sin ranking inventado | Unit | ❌ missing |
-| A083 | truncates_only_registry_approved_mrl_points | Error | Dimensión no soportada o modelo no MRL | Propuesta inválida; active intacta | Integration | ❌ missing |
-| A084 | normalizes_mrl_prefix | Happy | Prefix válido de vector nativo | Norma unitaria y dimensión elegida | Unit | ❌ missing |
-| A085 | roundtrips_int8_transform_metadata | Happy | Calibración/version fijas | Transformada reproducible al reconstruir índice | Unit | ❌ missing |
-| A086 | rescales_quantized_shortlist_with_float_vectors | Happy | Index int8/binary; float source | Top-k dentro de tolerancia medida del baseline | Integration | ❌ missing |
-| A087 | retains_native_vectors_after_truncation | Edge | Generación 128 de Space 1024 | Floats de 1024 siguen disponibles para rebuild | Integration | ❌ missing |
+| A083 | truncates_only_registry_approved_mrl_points | Error | Dimensión no soportada o modelo no MRL | Propuesta inválida; active intacta | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_rejects_unreviewed_truncation` |
+| A084 | normalizes_mrl_prefix | Happy | Prefix válido de vector nativo | Norma unitaria y dimensión elegida | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_normalizes_an_approved_prefix` |
+| A085 | roundtrips_int8_transform_metadata | Happy | Calibración/version fijas | Transformada reproducible al reconstruir índice | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_roundtrips_a_versioned_int8_recipe` |
+| A086 | rescales_quantized_shortlist_with_float_vectors | Happy | Index int8/binary; float source | Top-k dentro de tolerancia medida del baseline | Integration | ✅ `integration/modules/search/test_code_index.py::TestRankingRecall::test_measures_compressed_ranking_recall` |
+| A087 | retains_native_vectors_after_truncation | Edge | Generación 128 de Space 1024 | Floats de 1024 siguen disponibles para rebuild | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_preserves_native_floats_when_switching_to_reviewed_mrl` |
 | A088 | switches_index_backend_without_embedding | Happy | NumPy↔sqlite-vec o pgvector↔NumPy | Flip continuo; ningún nuevo input recibido por fake provider | E2E | ❌ missing |
 | A089 | serves_queries_during_startup_rebuild | Edge | Restart con derivados ausentes | Búsqueda sirve antes de completar rebuild | E2E | ❌ missing |
 | A090 | preserves_inflight_generation_readers | Edge | Activate durante query antigua | Query completa con su Space; cleanup espera drain | Integration | ❌ missing |
@@ -422,17 +422,25 @@ internal persistence subcontracts below now pass. `core/` paths refer to
 
 | G046 | indexes_content_added_during_backfill | Edge | new Document after first batch | new passage vector present before activation | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_indexes_content_added_during_backfill` |
 
-## Compressed index transforms — planned
+## Compressed index transforms
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
-| Q001 | rejects_unapproved_truncation | Error | unknown MRL prefix size | proposal rejected before index creation | Unit | ❌ missing |
-| Q002 | normalizes_an_approved_prefix | Happy | approved prefix of a full native vector | unit-length prefix; original bytes intact | Unit | ❌ missing |
-| Q003 | roundtrips_a_versioned_int8_recipe | Happy | fixed symmetric unit scale | identical codes after metadata reload | Unit | ❌ missing |
-| Q004 | packs_binary_signs_in_declared_order | Happy | mixed signs including zero | exact packed bits and Hamming distance | Unit | ❌ missing |
-| Q005 | rejects_corrupt_native_vectors | Error | wrong length, NaN, zero prefix | stable error before derived publication | Unit | ❌ missing |
-| Q006 | bounds_compressed_shortlists | Edge | iterable exceeds scan budget | bounded candidates with truncation disclosed | Unit | ❌ missing |
-| Q007 | rejects_incompatible_transform_metadata | Error | dimensions, quantization or version changed | stable error instead of cross-generation scoring | Unit | ❌ missing |
-| Q008 | stores_compact_derivatives_on_both_databases | Happy | quantized generation on SQLite/PostgreSQL | compact codes; full native bytes retained | Integration | ❌ missing |
-| Q009 | uses_native_quantized_shortlists | Happy | installed sqlite-vec or pgvector | authorized compressed shortlist then native-float scores | Integration | ❌ missing |
-| Q010 | rebuilds_compressed_derivatives_without_inference | Edge | derived table removed after restart | fallback serves; bounded rebuild reuses saved floats | Integration | ❌ missing |
+| Q001 | rejects_unapproved_truncation | Error | unknown MRL prefix size | proposal rejected before index creation | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_rejects_unapproved_truncation` |
+| Q002 | normalizes_an_approved_prefix | Happy | approved prefix of a full native vector | unit-length prefix; original bytes intact | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_normalizes_an_approved_prefix` |
+| Q003 | roundtrips_a_versioned_int8_recipe | Happy | fixed symmetric unit scale | identical codes after metadata reload | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_roundtrips_a_versioned_int8_recipe` |
+| Q004 | packs_binary_signs_in_declared_order | Happy | mixed signs including zero | exact packed bits and Hamming distance | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_packs_binary_signs_in_declared_order` |
+| Q005 | rejects_corrupt_native_vectors | Error | wrong length, NaN, zero prefix | stable error before derived publication | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_rejects_corrupt_native_vectors` |
+| Q006 | bounds_compressed_shortlists | Edge | iterable exceeds scan budget | bounded candidates with truncation disclosed | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestShortlistCodes::test_bounds_compressed_shortlists` |
+| Q007 | rejects_incompatible_transform_metadata | Error | dimensions, quantization or version changed | stable error instead of cross-generation scoring | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_rejects_incompatible_transform_metadata` |
+| Q008 | stores_compact_derivatives_on_both_databases | Happy | quantized generation on SQLite/PostgreSQL | compact codes; full native bytes retained | Integration | ✅ `integration/modules/search/test_code_index.py::TestPrepare::test_stores_compact_derivatives` |
+| Q009 | uses_native_quantized_shortlists | Happy | installed sqlite-vec or pgvector | authorized compressed shortlist then native-float scores | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_rescores_compressed_native_candidates` |
+| Q010 | rebuilds_compressed_derivatives_without_inference | Edge | derived table removed after restart | fallback serves; bounded rebuild reuses saved floats | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_rebuilds_compressed_derivatives_without_inference` |
+| Q011 | bounds_transform_metadata | Error | oversized or deeply nested recipe | stable transform error | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_bounds_transform_metadata` |
+| Q012 | rejects_overflowing_code_norms | Error | corrupt float codes overflow norm | stable code error | Unit | ✅ `packages/printstash-core/tests/inference/test_transforms.py::TestIndexTransform::test_rejects_overflowing_code_norms` |
+| Q013 | restores_compressed_generations_without_extension | Edge | SQLite snapshot opened without extension | native floats serve equivalent results | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_restores_compressed_generations_without_extension` |
+| Q014 | copies_compressed_generations_between_databases | Happy | compressed SQLite source transferred to PostgreSQL | byte-exact native vectors and reconstructible codes | Integration | ✅ `integration/modules/administration/test_database_transfer.py::TestDatabaseTransfer::test_copies_compressed_generations_between_databases` |
+| Q015 | preserves_legacy_endpoint_identity | Edge | endpoint created before model repository field | saved hash still resolves | Unit | ✅ `unit/modules/inference/test_endpoint.py::TestEndpointConfig::test_preserves_legacy_endpoint_identity` |
+| Q016 | discloses_only_pinned_model_capabilities | Edge | exact reviewed identity or alias/moving revision | MRL choices only for exact identity | Integration | ✅ `integration/modules/inference/test_configuration.py::TestLoad::test_discloses_only_pinned_model_capabilities` |
+| Q017 | measures_compressed_ranking_recall | Happy | reproducible vectors and held-out vector queries | measured int8/binary recall tolerance against full-float baseline | Integration | ✅ `integration/modules/search/test_code_index.py::TestRankingRecall::test_measures_compressed_ranking_recall` |
+| Q018 | identifies_only_registered_compressed_tables | Error | registered codes and unrelated lookalike | schema audit excludes only owned derivative | Integration | ✅ `integration/modules/search/test_code_index.py::TestPrepare::test_identifies_only_registered_compressed_tables` |

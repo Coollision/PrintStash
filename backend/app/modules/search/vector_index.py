@@ -5,14 +5,71 @@ from __future__ import annotations
 import struct
 
 from printstash_core.inference import EmbeddingError
-from sqlalchemy import Integer, Select, column, literal, table, text
+from printstash_core.inference.transforms import IndexTransform
+from sqlalchemy import Integer, Select, and_, column, func, literal, or_, table, text
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.db.models import IndexGeneration, PassageVector, SearchReconciliationState
+from app.db.models import (
+    EmbeddingSpace,
+    IndexGeneration,
+    PassageVector,
+    SearchReconciliationState,
+)
 from app.db.transactions import begin_write
 from app.db.vector_extensions import load_sqlite_vector_extension
+from app.modules.search import code_index
+
+
+def transform_for(session: Session, generation: IndexGeneration) -> IndexTransform:
+    space = session.get(EmbeddingSpace, generation.space_id)
+    if space is None:
+        raise EmbeddingError("embedding_space_unavailable")
+    return IndexTransform.restore(
+        generation.transform_json,
+        native_dimension=space.native_dimension,
+        index_dimension=generation.index_dimension,
+        quantization=generation.quantization,
+    )
+
+
+def portable(generation: IndexGeneration, transform: IndexTransform) -> bool:
+    return (
+        generation.index_backend == "numpy"
+        and (
+            transform.quantization != "float32"
+            or transform.index_dimension != transform.native_dimension
+        )
+    ) or (generation.index_backend == "pgvector" and transform.quantization == "int8")
+
+
+def serving_backend(generation: IndexGeneration) -> str:
+    if (
+        generation.index_state != "ready"
+        or not settings.search_native_vectors_enabled
+        or generation.index_backend == "numpy"
+        or (
+            generation.index_backend == "pgvector" and generation.quantization == "int8"
+        )
+    ):
+        return "numpy"
+    return generation.index_backend
+
+
+def _sqlite_value(quantization: str, placeholder: str = ":v") -> str:
+    return {
+        "float32": placeholder,
+        "int8": f"vec_int8({placeholder})",
+        "binary": f"vec_bit({placeholder})",
+    }[quantization]
+
+
+def _postgres_value(transform: IndexTransform, code: bytes) -> str:
+    if transform.quantization == "binary":
+        return "".join(f"{byte:08b}"[::-1] for byte in code)
+    values = struct.unpack(f"<{transform.index_dimension}f", code)
+    return "[" + ",".join(str(value) for value in values) + "]"
 
 
 def table_name(generation_id: int, dialect: str) -> str:
@@ -32,9 +89,6 @@ def _native_supported(session: Session, generation: IndexGeneration) -> bool:
     if not settings.search_native_vectors_enabled:
         _fallback(session, generation, "embedding_native_disabled")
         return False
-    if generation.quantization != "float32":
-        _fallback(session, generation, "embedding_native_transform_unsupported")
-        return False
     if session.get_bind().dialect.name == "sqlite":
         # Also covers a connection opened before an operator enables the flag.
         if not load_sqlite_vector_extension(
@@ -42,7 +96,7 @@ def _native_supported(session: Session, generation: IndexGeneration) -> bool:
         ):
             _fallback(session, generation, "embedding_sqlite_vec_unavailable")
             return False
-    elif generation.index_dimension > 2000:
+    elif generation.index_dimension > 2000 and generation.quantization != "binary":
         _fallback(session, generation, "embedding_pgvector_dimension_unsupported")
         return False
     return True
@@ -51,6 +105,16 @@ def _native_supported(session: Session, generation: IndexGeneration) -> bool:
 def prepare(session: Session, generation: IndexGeneration) -> bool:
     """Probe actual native DDL/types in a savepoint; never fail content startup."""
     begin_write(session)
+    transform = transform_for(session, generation)
+    if portable(generation, transform):
+        try:
+            with session.begin_nested():
+                code_index.prepare(session, generation, transform)
+                generation.index_error = None
+            return True
+        except DBAPIError:
+            _fallback(session, generation, "embedding_portable_index_unavailable")
+            return False
     if generation.index_backend == "numpy":
         generation.index_state = "ready"
         generation.index_error = None
@@ -60,21 +124,37 @@ def prepare(session: Session, generation: IndexGeneration) -> bool:
     if not _native_supported(session, generation):
         return False
     name = table_name(generation.id, session.get_bind().dialect.name)
-    dimension = generation.index_dimension
+    dimension = transform.storage_dimension
     if type(dimension) is not int or not 1 <= dimension <= 4096:
         raise EmbeddingError("embedding_dimension_invalid")
     try:
         with session.begin_nested():
             session.execute(text(f"DROP TABLE IF EXISTS {name}"))
             if session.get_bind().dialect.name == "sqlite":
+                kind = {"float32": "float", "int8": "int8", "binary": "bit"}[
+                    transform.quantization
+                ]
+                metric = (
+                    ""
+                    if transform.quantization == "binary"
+                    else " distance_metric=cosine"
+                )
                 session.execute(
                     text(
-                        f"CREATE VIRTUAL TABLE {name} USING vec0(embedding float[{dimension}] distance_metric=cosine)"
+                        f"CREATE VIRTUAL TABLE {name} USING vec0(embedding {kind}[{dimension}]{metric})"
                     )
                 )
-                probe = struct.pack(f"<{dimension}f", 1, *([0] * (dimension - 1)))
+                probe = transform.encode(
+                    struct.pack(
+                        f"<{transform.native_dimension}f",
+                        1,
+                        *([0] * (transform.native_dimension - 1)),
+                    )
+                )
                 session.execute(
-                    text(f"INSERT INTO {name}(rowid,embedding) VALUES (0,:v)"),
+                    text(
+                        f"INSERT INTO {name}(rowid,embedding) VALUES (0,{_sqlite_value(transform.quantization)})"
+                    ),
                     {"v": probe},
                 )
                 assert (
@@ -88,19 +168,26 @@ def prepare(session: Session, generation: IndexGeneration) -> bool:
                 # Availability alone is insufficient: permission or extension
                 # installation can fail. Only this explicit prepare attempts it.
                 session.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                kind = "bit" if transform.quantization == "binary" else "vector"
+                opclass = "bit_hamming_ops" if kind == "bit" else "vector_cosine_ops"
                 session.execute(
                     text(
-                        f"CREATE TABLE {name} (id INTEGER PRIMARY KEY, embedding vector({dimension}) NOT NULL)"
+                        f"CREATE TABLE {name} (id INTEGER PRIMARY KEY, embedding {kind}({dimension}) NOT NULL)"
                     )
                 )
                 session.execute(
                     text(
-                        f"CREATE INDEX {name}_hnsw ON {name} USING hnsw (embedding vector_cosine_ops)"
+                        f"CREATE INDEX {name}_hnsw ON {name} USING hnsw (embedding {opclass})"
                     )
                 )
-                probe = "[1" + ",0" * (dimension - 1) + "]"
+                probe = (
+                    "1" + "0" * (dimension - 1)
+                    if kind == "bit"
+                    else "[1" + ",0" * (dimension - 1) + "]"
+                )
+                length = "bit_length" if kind == "bit" else "vector_dims"
                 actual = session.execute(
-                    text(f"SELECT vector_dims(CAST(:v AS vector({dimension})))"),
+                    text(f"SELECT {length}(CAST(:v AS {kind}({dimension})))"),
                     {"v": probe},
                 ).scalar_one()
                 if actual != dimension:
@@ -119,10 +206,17 @@ def prepare(session: Session, generation: IndexGeneration) -> bool:
 
 def replace(session: Session, generation: IndexGeneration, row: PassageVector) -> None:
     """Update one derived unit transactionally; adapter errors preserve floats."""
-    if (
-        generation.index_state not in {"building", "ready"}
-        or generation.index_backend == "numpy"
-    ):
+    if generation.index_state not in {"building", "ready"}:
+        return
+    transform = transform_for(session, generation)
+    if portable(generation, transform):
+        try:
+            with session.begin_nested():
+                code_index.replace(session, generation, transform, row)
+        except (DBAPIError, EmbeddingError):
+            _fallback(session, generation, "embedding_portable_index_unavailable")
+        return
+    if generation.index_backend == "numpy":
         return
     name = table_name(generation.id, session.get_bind().dialect.name)
     if generation.vector_table_name != name:
@@ -130,40 +224,51 @@ def replace(session: Session, generation: IndexGeneration, row: PassageVector) -
         return
     try:
         with session.begin_nested():
+            code = transform.encode(row.vector_blob)
             if session.get_bind().dialect.name == "sqlite":
                 session.execute(
                     text(f"DELETE FROM {name} WHERE rowid=:id"), {"id": row.id}
                 )
                 session.execute(
-                    text(f"INSERT INTO {name}(rowid,embedding) VALUES (:id,:v)"),
-                    {"id": row.id, "v": row.vector_blob},
+                    text(
+                        f"INSERT INTO {name}(rowid,embedding) VALUES (:id,{_sqlite_value(transform.quantization)})"
+                    ),
+                    {"id": row.id, "v": code},
                 )
             else:
-                values = struct.unpack(f"<{row.native_dimension}f", row.vector_blob)
-                encoded = "[" + ",".join(str(value) for value in values) + "]"
+                encoded = _postgres_value(transform, code)
+                kind = "bit" if transform.quantization == "binary" else "vector"
                 session.execute(
                     text(
-                        f"INSERT INTO {name}(id,embedding) VALUES (:id,CAST(:v AS vector)) ON CONFLICT (id) DO UPDATE SET embedding=EXCLUDED.embedding"
+                        f"INSERT INTO {name}(id,embedding) VALUES (:id,CAST(:v AS {kind}({transform.storage_dimension}))) ON CONFLICT (id) DO UPDATE SET embedding=EXCLUDED.embedding"
                     ),
                     {"id": row.id, "v": encoded},
                 )
-    except (DBAPIError, struct.error):
+    except (DBAPIError, struct.error, EmbeddingError):
         _fallback(session, generation, "embedding_native_unavailable")
 
 
 def remove(session: Session, generation: IndexGeneration, vector_id: int) -> None:
-    if generation.index_backend == "numpy" or generation.index_state not in {
+    if generation.index_state not in {
         "building",
         "ready",
     }:
         return
-    name = table_name(generation.id, session.get_bind().dialect.name)
-    if generation.vector_table_name != name:
+    name = generation.vector_table_name
+    if name not in {
+        table_name(generation.id, session.get_bind().dialect.name),
+        code_index.table_name(generation.id),
+    }:
         # Content writers must not acquire generation row locks after passage
         # locks: cutover/publish acquire those in the opposite order. The repair
         # worker probes and reports native availability independently.
         return
-    column = "rowid" if session.get_bind().dialect.name == "sqlite" else "id"
+    column = (
+        "rowid"
+        if session.get_bind().dialect.name == "sqlite"
+        and name != code_index.table_name(generation.id)
+        else "id"
+    )
     try:
         with session.begin_nested():
             session.execute(
@@ -215,6 +320,7 @@ def shortlist(
     allowed_ids: Select,
     *,
     limit: int,
+    max_scan: int = 100_000,
 ) -> tuple[int, ...] | None:
     """Authorized native candidates, or None to request bounded NumPy fallback.
 
@@ -222,6 +328,23 @@ def shortlist(
     the authorized relation before distance ordering; this deliberately trades
     HNSW's unfiltered speed for permission isolation under restrictive access.
     """
+    transform = transform_for(session, generation)
+    if portable(generation, transform):
+        if generation.index_state != "ready":
+            return None
+        try:
+            with session.begin_nested():
+                return code_index.shortlist(
+                    session,
+                    generation,
+                    transform,
+                    query,
+                    allowed_ids,
+                    limit=limit,
+                    max_scan=max_scan,
+                )
+        except (DBAPIError, EmbeddingError):
+            return None
     if (
         not settings.search_native_vectors_enabled
         or generation.index_backend == "numpy"
@@ -236,6 +359,7 @@ def shortlist(
         return None
     try:
         with session.begin_nested():
+            code = transform.encode(query)
             if dialect == "sqlite":
                 native = table(
                     name,
@@ -244,7 +368,16 @@ def shortlist(
                     column("k", Integer),
                 )
                 statement = select(native.c.rowid).where(
-                    native.c.embedding.op("MATCH")(query),
+                    native.c.embedding.op("MATCH")(
+                        code
+                        if transform.quantization == "float32"
+                        else getattr(
+                            func,
+                            "vec_int8"
+                            if transform.quantization == "int8"
+                            else "vec_bit",
+                        )(code)
+                    ),
                     native.c.k == limit,
                     native.c.rowid.in_(allowed_ids),
                 )
@@ -256,10 +389,17 @@ def shortlist(
                     .cte()
                     .prefix_with("MATERIALIZED")
                 )
-                values = struct.unpack(f"<{len(query) // 4}f", query)
-                encoded = "[" + ",".join(str(value) for value in values) + "]"
-                distance = authorized.c.embedding.op("<=>")(
-                    literal(encoded).cast(_vector_type())
+                encoded = _postgres_value(transform, code)
+                distance = authorized.c.embedding.op(
+                    "<~>" if transform.quantization == "binary" else "<=>"
+                )(
+                    literal(encoded).cast(
+                        _vector_type(
+                            f"bit({transform.storage_dimension})"
+                            if transform.quantization == "binary"
+                            else "vector"
+                        )
+                    )
                 )
                 statement = (
                     select(authorized.c.id)
@@ -267,18 +407,18 @@ def shortlist(
                     .limit(limit)
                 )
             return tuple(session.execute(statement).scalars())
-    except (DBAPIError, struct.error):
+    except (DBAPIError, struct.error, EmbeddingError):
         return None
 
 
-def _vector_type():
+def _vector_type(kind: str = "vector"):
     from sqlalchemy.types import UserDefinedType
 
     class VectorType(UserDefinedType):
         cache_ok = True
 
         def get_col_spec(self, **kw):
-            return "vector"
+            return kind
 
     return VectorType()
 
@@ -287,8 +427,11 @@ def drop(session: Session, generation: IndexGeneration) -> None:
     """Only a drained retired generation can discard its reconstructible DDL."""
     if generation.state not in {"retired", "cancelled", "failed"}:
         raise EmbeddingError("embedding_generation_not_retired")
-    name = table_name(generation.id, session.get_bind().dialect.name)
-    if generation.vector_table_name == name:
+    name = generation.vector_table_name
+    if name in {
+        table_name(generation.id, session.get_bind().dialect.name),
+        code_index.table_name(generation.id),
+    }:
         session.execute(text(f"DROP TABLE IF EXISTS {name}"))
     generation.vector_table_name = None
     generation.index_state = "absent"
@@ -298,8 +441,6 @@ def drop(session: Session, generation: IndexGeneration) -> None:
 
 def repair_partition(session: Session) -> int:
     """Round-robin one live Generation; startup never waits for a full rebuild."""
-    if not settings.search_native_vectors_enabled:
-        return 0
     checkpoint = session.exec(
         select(SearchReconciliationState).where(
             SearchReconciliationState.subject_type == "vector_index"
@@ -309,9 +450,33 @@ def repair_partition(session: Session) -> int:
         checkpoint = SearchReconciliationState(subject_type="vector_index")
         session.add(checkpoint)
         session.flush()
-    eligible = select(IndexGeneration).where(
-        IndexGeneration.state.in_(("active", "building", "ready")),
-        IndexGeneration.index_backend != "numpy",
+    compressed = or_(
+        IndexGeneration.quantization != "float32",
+        IndexGeneration.index_dimension != EmbeddingSpace.native_dimension,
+    )
+    portable_index = and_(
+        or_(
+            IndexGeneration.index_backend == "numpy",
+            and_(
+                IndexGeneration.index_backend == "pgvector",
+                IndexGeneration.quantization == "int8",
+            ),
+        ),
+        compressed,
+    )
+    eligible = (
+        select(IndexGeneration)
+        .join(EmbeddingSpace, EmbeddingSpace.id == IndexGeneration.space_id)
+        .where(
+            IndexGeneration.state.in_(("active", "building", "ready")),
+            or_(
+                portable_index,
+                and_(
+                    settings.search_native_vectors_enabled,
+                    IndexGeneration.index_backend != "numpy",
+                ),
+            ),
+        )
     )
     generation = session.exec(
         eligible.where(IndexGeneration.id > checkpoint.partition_after_id)
@@ -326,7 +491,12 @@ def repair_partition(session: Session) -> int:
     checkpoint.partition_after_id = generation.id
     session.add(checkpoint)
     if generation.index_state == "ready":
-        name = table_name(generation.id, session.get_bind().dialect.name)
+        transform = transform_for(session, generation)
+        name = (
+            code_index.table_name(generation.id)
+            if portable(generation, transform)
+            else table_name(generation.id, session.get_bind().dialect.name)
+        )
         try:
             with session.begin_nested():
                 session.execute(text(f"SELECT embedding FROM {name} LIMIT 0"))

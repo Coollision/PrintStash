@@ -4034,6 +4034,18 @@
             "title": "Model",
             "type": "string"
           },
+          "model_repo": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Repo"
+          },
           "native_dimension": {
             "anyOf": [
               {
@@ -4127,6 +4139,24 @@
             "title": "Model",
             "type": "string"
           },
+          "model_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Repo"
+          },
+          "mrl_dimensions": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Mrl Dimensions",
+            "type": "array"
+          },
           "native_dimension": {
             "anyOf": [
               {
@@ -4153,6 +4183,8 @@
           "host",
           "model",
           "revision",
+          "model_repo",
+          "mrl_dimensions",
           "config_hash",
           "native_dimension",
           "supports_images",
@@ -6119,10 +6151,16 @@
             "type": "boolean"
           },
           "document_prefix": {
-            "default": "",
-            "maxLength": 256,
-            "title": "Document Prefix",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Prefix"
           },
           "endpoint_id": {
             "minimum": 1.0,
@@ -6176,10 +6214,16 @@
             "type": "string"
           },
           "query_prefix": {
-            "default": "",
-            "maxLength": 256,
-            "title": "Query Prefix",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Prefix"
           }
         },
         "required": [
@@ -6197,6 +6241,10 @@
           "copied": {
             "title": "Copied",
             "type": "integer"
+          },
+          "effective_backend": {
+            "title": "Effective Backend",
+            "type": "string"
           },
           "eligible": {
             "title": "Eligible",
@@ -6348,6 +6396,7 @@
           "index_dimension",
           "quantization",
           "index_backend",
+          "effective_backend",
           "index_state",
           "index_error",
           "error_code",

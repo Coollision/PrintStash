@@ -7,6 +7,7 @@ import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from printstash_core.inference import EmbeddingSpace as SpaceContract
+from printstash_core.inference.transforms import IndexTransform
 from sqlalchemy import create_engine, make_url, text
 from sqlmodel import Session, SQLModel, select
 
@@ -59,14 +60,51 @@ def native_database(monkeypatch):
 
 
 class TestPostgresVectorIndex:
+    @pytest.mark.parametrize(
+        ("quantization", "expected_backend"),
+        [("int8", "numpy"), ("binary", "pgvector")],
+        ids=["portable-int8", "native-binary"],
+    )
+    def test_queries_compressed_generations(
+        self, native_database, quantization, expected_backend
+    ):
+        session, generation, contract, first, second, _ = native_database
+        generation.quantization = quantization
+        generation.transform_json = IndexTransform.approved(
+            3, 3, quantization
+        ).metadata()
+        session.add(generation)
+        assert vector_index.prepare(session, generation)
+        assert vector_index.rebuild_partition(session, generation) == 2
+        session.commit()
+
+        result = vector_store.query(
+            session,
+            generation_id=generation.id,
+            space=contract,
+            vector=[1, 0, 0],
+            allowed_ids=select(PassageVector.id).where(PassageVector.id == second.id),
+        )
+
+        assert result.backend == expected_backend
+        assert [(item.unit_id, item.score) for item in result.items] == [(second.id, 1)]
+        assert len(first.vector_blob) == len(second.vector_blob) == 12
+        assert generation.vector_table_name in managed_names(session.connection())
+
     @pytest.mark.parametrize("native_enabled", [False, True])
-    def test_restores_without_pgvector(self, native_database, tmp_path, monkeypatch, native_enabled):
+    @pytest.mark.parametrize("quantization", ["float32", "int8", "binary"])
+    def test_restores_without_pgvector(
+        self, native_database, tmp_path, monkeypatch, native_enabled, quantization
+    ):
         from app.modules.administration.database_transfer import (
             snapshot_postgres,
             transfer,
         )
 
         session, generation, contract, first, second, schema = native_database
+        generation.quantization = quantization
+        generation.transform_json = IndexTransform(3, 3, quantization).metadata()
+        session.add(generation)
         assert vector_index.prepare(session, generation)
         vector_index.rebuild_partition(session, generation)
         session.commit()
@@ -75,35 +113,66 @@ class TestPostgresVectorIndex:
         from alembic import command
         from app.db.migrate import _alembic_config
 
-        command.stamp(_alembic_config(engine.url.render_as_string(hide_password=False)), "head")
+        command.stamp(
+            _alembic_config(engine.url.render_as_string(hide_password=False)), "head"
+        )
         portable = create_engine(f"sqlite:///{tmp_path / 'portable.sqlite'}")
         target_database = "restored_" + uuid4().hex
         # Release ORM reads before taking a repeatable-read snapshot.
         generation_id = generation.id
         expected_ids = {first.id, second.id}
         session.rollback()
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        with engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as connection:
             connection.exec_driver_sql(f'CREATE DATABASE "{target_database}"')
-        target = create_engine(engine.url.difference_update_query(["options"]).set(database=target_database))
+        target = create_engine(
+            engine.url.difference_update_query(["options"]).set(
+                database=target_database
+            )
+        )
         try:
             snapshot_postgres(engine, portable)
-            monkeypatch.setitem(_overlay, "search_native_vectors_enabled", native_enabled)
+            monkeypatch.setitem(
+                _overlay, "search_native_vectors_enabled", native_enabled
+            )
             report = transfer(portable, target, dry_run=False)
-            assert report.derived_indexes == int(native_enabled)
+            assert report.derived_indexes == int(
+                native_enabled or quantization == "int8"
+            )
             with Session(target) as restored:
-                result = vector_store.query(restored, generation_id=generation_id, space=contract,
-                    vector=[1, 0, 0], allowed_ids=select(PassageVector.id))
-                assert result.backend == ("pgvector" if native_enabled else "numpy")
+                result = vector_store.query(
+                    restored,
+                    generation_id=generation_id,
+                    space=contract,
+                    vector=[1, 0, 0],
+                    allowed_ids=select(PassageVector.id),
+                )
+                assert result.backend == (
+                    "pgvector" if native_enabled and quantization != "int8" else "numpy"
+                )
                 assert {row.unit_id for row in result.items} == expected_ids
                 monkeypatch.setitem(_overlay, "search_native_vectors_enabled", False)
-                fallback = vector_store.query(restored, generation_id=generation_id, space=contract, vector=[1, 0, 0], allowed_ids=select(PassageVector.id))
+                fallback = vector_store.query(
+                    restored,
+                    generation_id=generation_id,
+                    space=contract,
+                    vector=[1, 0, 0],
+                    allowed_ids=select(PassageVector.id),
+                )
                 assert fallback.backend == "numpy"
-                assert [(row.unit_id, row.score) for row in fallback.items] == [(row.unit_id, row.score) for row in result.items]
+                assert [(row.unit_id, row.score) for row in fallback.items] == [
+                    (row.unit_id, row.score) for row in result.items
+                ]
         finally:
             portable.dispose()
             target.dispose()
-            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-                connection.exec_driver_sql(f'DROP DATABASE "{target_database}" WITH (FORCE)')
+            with engine.connect().execution_options(
+                isolation_level="AUTOCOMMIT"
+            ) as connection:
+                connection.exec_driver_sql(
+                    f'DROP DATABASE "{target_database}" WITH (FORCE)'
+                )
 
     def test_queries_authorized_native_vectors(self, native_database):
         session, generation, contract, first, second, _ = native_database

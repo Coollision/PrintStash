@@ -7,6 +7,29 @@ from app.modules.inference.endpoint import EndpointConfig
 
 
 class TestEndpointConfig:
+    def test_preserves_legacy_endpoint_identity(self):
+        endpoint = EndpointConfig(
+            base_url="http://inference.test/v1",
+            model="fixture",
+            configuration_version="1" * 32,
+        )
+        assert (
+            endpoint.identity
+            == "4809db6aca1e27b2686c2695186986f3ee1a0a837eda16ef22174b33a8ec2f84"
+        )
+
+    @pytest.mark.parametrize(
+        "repository",
+        ["model", "../model", "org/model/extra", "org/model?token=value", "org/モデル"],
+    )
+    def test_rejects_ambiguous_model_repositories(self, repository):
+        with pytest.raises(ValidationError):
+            EndpointConfig(
+                base_url="http://inference.test/v1",
+                model="fixture",
+                model_repo=repository,
+            )
+
     @pytest.mark.parametrize(
         ("url", "host"),
         [

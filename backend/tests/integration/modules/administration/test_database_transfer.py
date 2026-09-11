@@ -95,6 +95,48 @@ def databases(tmp_path):
 
 
 class TestDatabaseTransfer:
+    @pytest.mark.parametrize("quantization", ["int8", "binary"])
+    def test_copies_compressed_generations_between_databases(
+        self, databases, monkeypatch, quantization
+    ):
+        from printstash_core.inference.transforms import IndexTransform
+
+        from app.core.config import _overlay
+        from app.db.models import IndexGeneration
+        from app.modules.search import vector_index
+
+        source, target, blob, *_ = databases
+        monkeypatch.setitem(_overlay, "search_native_vectors_enabled", True)
+        with Session(source) as session:
+            generation = session.get(IndexGeneration, 72)
+            generation.index_backend = "sqlite_vec"
+            generation.quantization = quantization
+            generation.transform_json = IndexTransform(3, 3, quantization).metadata()
+            session.add(generation)
+            assert vector_index.prepare(session, generation)
+            vector_index.rebuild_partition(session, generation)
+            session.commit()
+
+        transfer(source, target, dry_run=False)
+
+        with target.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT vector_blob FROM passage_vectors WHERE id=73")
+                ).scalar_one()
+                == blob
+            )
+            assert (
+                connection.execute(
+                    text("SELECT index_backend FROM index_generations WHERE id=72")
+                ).scalar_one()
+                == "pgvector"
+            )
+            if quantization == "int8":
+                assert connection.execute(
+                    text("SELECT embedding FROM code_gen_72 WHERE id=73")
+                ).scalar_one() == IndexTransform(3, 3, "int8").encode(blob)
+
     def test_copies_sqlite_to_postgres_without_inference(self, databases):
         source, target, blob, model_id, file_id = databases
         report = transfer(source, target, dry_run=False, batch_size=1)
@@ -119,9 +161,7 @@ class TestDatabaseTransfer:
             )
             assert (
                 connection.execute(
-                    text(
-                        "SELECT makerworld_token FROM system_config WHERE id=1"
-                    )
+                    text("SELECT makerworld_token FROM system_config WHERE id=1")
                 ).scalar_one()
                 == "enc:v1:opaque-fixture-ciphertext"
             )

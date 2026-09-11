@@ -42,6 +42,8 @@ class TestCreateEndpoint:
             "host": "inference.local",
             "model": "test-embedding",
             "revision": "configured-v1",
+            "model_repo": None,
+            "mrl_dimensions": [],
             "config_hash": response.json()["config_hash"],
             "native_dimension": 4,
             "supports_images": False,

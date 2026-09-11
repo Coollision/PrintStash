@@ -31,6 +31,8 @@ class EndpointRead(BaseModel):
     host: str
     model: str
     revision: str
+    model_repo: str | None
+    mrl_dimensions: list[int]
     config_hash: str
     native_dimension: int | None
     supports_images: bool

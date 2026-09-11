@@ -65,6 +65,33 @@ class TestChatProvider:
 
 
 class TestLoad:
+    @pytest.mark.parametrize(
+        "revision",
+        ["b33106f585b9ce46904ad7443a3b52b7a63e231c", "main"],
+        ids=["pinned", "moving"],
+    )
+    def test_discloses_only_pinned_model_capabilities(
+        self, db_session, make_inference_endpoint, revision
+    ):
+        from app.modules.inference.endpoint import EndpointConfig
+
+        endpoint = make_inference_endpoint(
+            native_dimension=1024,
+            config=EndpointConfig(
+                base_url="http://inference.test/v1",
+                model="admin-alias",
+                model_repo="mixedbread-ai/mxbai-embed-large-v1",
+                revision=revision,
+            ),
+        )
+
+        result = configuration.read(endpoint)
+
+        assert result.model_repo == "mixedbread-ai/mxbai-embed-large-v1"
+        assert result.mrl_dimensions == (
+            [64, 128, 256, 512] if revision != "main" else []
+        )
+
     def test_rejects_corrupt_configuration_identities(
         self, db_session, make_inference_endpoint
     ):

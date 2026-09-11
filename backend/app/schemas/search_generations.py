@@ -10,8 +10,8 @@ class GenerationProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     endpoint_id: int = Field(ge=1)
     profile: Literal["semantic_text"] = "semantic_text"
-    query_prefix: str = Field(default="", max_length=256)
-    document_prefix: str = Field(default="", max_length=256)
+    query_prefix: str | None = Field(default=None, max_length=256)
+    document_prefix: str | None = Field(default=None, max_length=256)
     passage_recipe_version: int = Field(default=1, ge=1)
     index_backend: Literal["auto", "numpy", "sqlite_vec", "pgvector"] = "auto"
     index_dimension: int | None = Field(default=None, ge=1, le=4096)
@@ -37,6 +37,7 @@ class GenerationRead(BaseModel):
     index_dimension: int
     quantization: str
     index_backend: str
+    effective_backend: str
     index_state: str
     index_error: str | None
     error_code: str | None

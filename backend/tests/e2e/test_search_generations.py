@@ -219,8 +219,9 @@ class TestSearchGenerationLifecycle:
             server.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("quantization", ["float32", "int8", "binary"])
     async def test_switches_to_native_index_without_reembedding(
-        self, api, superuser_headers, indexing_server, wait_for_active
+        self, api, superuser_headers, indexing_server, wait_for_active, quantization
     ):
         fake, endpoint = indexing_server
         first = await api.post(
@@ -236,7 +237,11 @@ class TestSearchGenerationLifecycle:
         replacement = await api.post(
             "/api/v1/config/ai-search/generations",
             headers=superuser_headers,
-            json={"endpoint_id": endpoint["id"], "index_backend": "sqlite_vec"},
+            json={
+                "endpoint_id": endpoint["id"],
+                "index_backend": "sqlite_vec",
+                "quantization": quantization,
+            },
         )
         assert replacement.status_code == 202, replacement.text
         active = await wait_for_active(replacement.json()["id"])

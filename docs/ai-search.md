@@ -200,6 +200,32 @@ the maximum inference deadline. Capacity admission includes existing vectors
 and the replacement; `max_index_bytes` defaults to 2 GiB. Native acceleration
 still requires the deployment opt-in described above.
 
+## Compressed generations
+
+Generations retain native float32 vectors and store an independently versioned
+index transform. Int8 uses a fixed symmetric unit-vector scale; binary uses
+positive-sign bits in little-bit order. SQLite has native float/int8/binary
+shortlists. PostgreSQL uses vector/bit indexes, with a portable code scan for
+int8. Every compressed shortlist is rescored with the native float vectors.
+The API reports the effective backend, including capability fallbacks.
+
+Prefix truncation requires an exact reviewed repository, revision, native
+size and supported MRL dimension. The initial capability entry is
+[mixedbread mxbai-embed-large-v1](https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1/tree/b33106f585b9ce46904ad7443a3b52b7a63e231c),
+with the [publisher's MRL dimensions](https://www.mixedbread.com/blog/binary-mrl).
+An administrator declares this identity for a remote endpoint; a canary cannot
+prove which weights a remote server runs. Model aliases alone never enable MRL.
+Omitted prefixes use reviewed model defaults; explicit empty prefixes remain
+possible. This entry describes capabilities; local acquisition is a later stage.
+
+A deterministic numeric benchmark (seed 166, 256 vectors of 64 dimensions,
+16 independent queries, top 10 with 8× candidate overfetch) measured recall
+against a full-float baseline: int8 1.0000, binary 0.90625. Derived vector
+payload was 16,384 and 2,048 bytes respectively, compared with 65,536 bytes for
+a float derivative. The authoritative floats remain: combined vector payload
+was 81,920 and 67,584 bytes, before database/index overhead. These numeric
+checks do not measure natural-language relevance or ARM performance.
+
 ## Remaining implementation
 
 The W1/W2 stage gate passed 3,264 repository, integration and end-to-end tests.
@@ -221,11 +247,16 @@ The W5 regression gate passed 395 tests; the repository hygiene gate passed
 3,351. Separate checks cover PostgreSQL concurrency and schema parity, a real
 NumPy-to-sqlite-vec switch, and recovery after killing the worker mid-batch.
 
+W14 passed 219 search/provider/end-to-end regressions, 25 core transform and
+capability checks, 14 PostgreSQL/transfer regressions and two compressed
+SQLite-to-PostgreSQL transfer checks. Repository hygiene passed 3,175 tests;
+OpenAPI and type checking passed.
+
 W5 connects transactional content invalidation to durable embedding work and
 maintains distinct active/building text-prefix recipes. Coexistence of different
 passage-template versions remains tracked with the caption recipe work.
 Local model acquisition, hybrid retrieval, UI, visual profiles, captions, sparse
-expansion, quantization and natural-language filters remain in progress.
+expansion and natural-language filters remain in progress.
 
 The [coverage matrix](ai-search-coverage.md) retains all 142 original planned
 behaviors and the independently verified passage/lexical subcontracts. Full

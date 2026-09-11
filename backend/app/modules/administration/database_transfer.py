@@ -233,7 +233,9 @@ def _transfer(
                 dst.execute(text("SET LOCAL lock_timeout='5s'"))
                 dst.execute(text(f"LOCK TABLE {locked} IN ACCESS EXCLUSIVE MODE"))
                 for name in sorted(known_derived):
-                    if name.startswith("gen_vectors_") and not name.endswith("_hnsw"):
+                    if (
+                        name.startswith("gen_vectors_") and not name.endswith("_hnsw")
+                    ) or name.startswith("code_gen_"):
                         dst.execute(text(f"DROP TABLE {quote(name)}"))
             originals = _defer_foreign_keys(dst, list(target_meta.tables.values()))
             if replace_existing:
@@ -283,6 +285,11 @@ def _transfer(
             with Session(bind=dst) as session:
                 lexical_index.rebuild_partition(session)
                 for generation in session.scalars(select(IndexGeneration)).all():
+                    # Native adapters are database-specific derivatives. Preserve
+                    # the immutable Space/transform while selecting the target's
+                    # corresponding native adapter (including portable int8).
+                    if generation.index_backend == "sqlite_vec":
+                        generation.index_backend = "pgvector"
                     generation.vector_table_name = None
                     generation.index_state = "absent"
                     generation.indexed_after_id = 0

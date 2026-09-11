@@ -13,7 +13,9 @@
   endpoints add bounded embedding and structured-chat protocols for compatible
   services, with independent opt-ins and administrator disclosures. Durable
   generation rebuilds resume after interruption, reject stale results, retain the
-  serving index during replacement, and reuse floats for backend changes. The
+  serving index during replacement, and reuse floats for backend changes.
+  Versioned int8/binary indexes and approved MRL prefixes keep native floats for
+  rescoring and rebuilds, including database migration and restore. The
   remaining AI Search stages are in development under #166.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,

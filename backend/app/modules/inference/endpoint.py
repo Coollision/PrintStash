@@ -23,6 +23,10 @@ class EndpointParameters(BaseModel):
     base_url: str = Field(min_length=1, max_length=2048)
     model: str = Field(min_length=1, max_length=128)
     revision: str = Field(default="configured-v1", min_length=1, max_length=128)
+    model_repo: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+    )
     api_key: SecretStr = Field(default=SecretStr(""), max_length=8192)
     headers: dict[str, SecretStr] = Field(default_factory=dict, max_length=16)
     timeout_seconds: float = Field(default=15, gt=0, le=120)
@@ -105,7 +109,7 @@ class EndpointConfig(EndpointParameters):
     def identity(self) -> str:
         # Server-owned immutable version includes credential changes without
         # exposing credential hashes or depending on the installation JWT key.
-        public = self.model_dump(exclude={"api_key", "headers"})
+        public = self.model_dump(exclude={"api_key", "headers"}, exclude_none=True)
         return hashlib.sha256(
             json.dumps(public, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()

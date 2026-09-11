@@ -9,6 +9,11 @@ from pathlib import Path
 
 from printstash_core.inference import EmbeddingError
 from printstash_core.inference import EmbeddingSpace as Space
+from printstash_core.inference.model_capabilities import (
+    capabilities_for,
+    capabilities_for_identity,
+)
+from printstash_core.inference.transforms import IndexTransform
 from sqlalchemy import delete, func, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
@@ -124,6 +129,7 @@ def read(session: Session, generation: IndexGeneration) -> GenerationRead:
         index_dimension=generation.index_dimension,
         quantization=generation.quantization,
         index_backend=generation.index_backend,
+        effective_backend=vector_index.serving_backend(generation),
         index_state=generation.index_state,
         index_error=generation.index_error,
         error_code=generation.error_code,
@@ -221,6 +227,9 @@ def prepare(
     if endpoint_row is None or endpoint_row.kind != "embedding":
         raise OperationError("inference_endpoint_unavailable", kind=ErrorKind.INVALID)
     endpoint = load_endpoint(endpoint_row)
+    model_capabilities = capabilities_for_identity(
+        endpoint.model_repo, endpoint.revision, endpoint_row.native_dimension
+    )
     recipe = TextRecipe(proposal.passage_recipe_version, endpoint.max_input_characters)
     space = Space(
         model_key=endpoint.model,
@@ -230,15 +239,29 @@ def prepare(
         render_recipe=recipe.encode(),
         provider="openai_compatible",
         profile=proposal.profile,
-        query_prefix=proposal.query_prefix,
-        document_prefix=proposal.document_prefix,
+        query_prefix=proposal.query_prefix
+        if proposal.query_prefix is not None
+        else model_capabilities.query_prefix
+        if model_capabilities
+        else "",
+        document_prefix=proposal.document_prefix
+        if proposal.document_prefix is not None
+        else model_capabilities.document_prefix
+        if model_capabilities
+        else "",
         provider_config_hash=endpoint.identity,
+        model_repo=endpoint.model_repo,
     )
     if len(space.document_prefix) >= recipe.max_input_characters:
         raise OperationError("search_prefix_exceeds_budget", kind=ErrorKind.INVALID)
     dimension = proposal.index_dimension or space.dimension
-    if dimension != space.dimension or proposal.quantization != "float32":
-        raise OperationError("search_transform_unavailable", kind=ErrorKind.INVALID)
+    capabilities = capabilities_for(space)
+    transform = IndexTransform.approved(
+        space.dimension,
+        dimension,
+        proposal.quantization,
+        mrl_dimensions=capabilities.mrl_dimensions if capabilities else (),
+    )
     backend = proposal.index_backend
     dialect = session.get_bind().dialect.name
     if backend == "auto":
@@ -273,6 +296,7 @@ def prepare(
             replaces_generation_id=active.id if active else None,
             index_dimension=dimension,
             quantization=proposal.quantization,
+            transform_json=transform.metadata(),
             index_backend=backend,
             reservation_id=reservation_id,
             estimated_bytes=estimate,

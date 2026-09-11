@@ -8,6 +8,7 @@ from io import BytesIO
 from PIL import Image
 from printstash_core.inference import EmbeddingError, EmbeddingSpace
 from printstash_core.inference.chat import ChatInput
+from printstash_core.inference.model_capabilities import capabilities_for_identity
 from pydantic import SecretStr
 from sqlmodel import Session, select
 
@@ -34,12 +35,17 @@ def load(row: InferenceEndpoint) -> EndpointConfig:
 
 def read(row: InferenceEndpoint) -> EndpointRead:
     config = load(row)
+    capabilities = capabilities_for_identity(
+        config.model_repo, config.revision, row.native_dimension
+    )
     return EndpointRead(
         id=row.id,
         kind=row.kind,
         host=config.host,
         model=config.model,
         revision=config.revision,
+        model_repo=config.model_repo,
+        mrl_dimensions=list(capabilities.mrl_dimensions) if capabilities else [],
         config_hash=row.config_hash,
         native_dimension=row.native_dimension,
         supports_images=row.supports_images,

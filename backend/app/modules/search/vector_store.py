@@ -293,6 +293,7 @@ def query(
         query_blob,
         scoped_ids.limit(max_scan),
         limit=min(2048, limit * 8),
+        max_scan=max_scan,
     )
     if candidates is not None:
         rows = session.exec(
@@ -311,9 +312,7 @@ def query(
         capped = session.exec(scoped_ids.offset(max_scan).limit(1)).first() is not None
         return replace(
             result,
-            backend="sqlite_vec"
-            if session.get_bind().dialect.name == "sqlite"
-            else "pgvector",
+            backend=vector_index.serving_backend(generation),
             truncated=capped or len(candidates) == min(2048, limit * 8),
         )
     rows = session.exec(
