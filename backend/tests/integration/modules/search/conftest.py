@@ -32,7 +32,9 @@ def generation_setup(db_session, make_user, make_inference_endpoint, make_docume
 
 @pytest.fixture
 def healthy_embeddings():
-    state = SimpleNamespace(requests=[], poison=None, before_reply=None, dimension=4)
+    state = SimpleNamespace(
+        requests=[], poison=None, before_reply=None, dimension=4, vector=None
+    )
 
     def reply(_endpoint, _path, payload, **kwargs):
         state.requests.append(payload)
@@ -43,7 +45,12 @@ def healthy_embeddings():
             raise EndpointError("inference_request_rejected")
         return {
             "data": [
-                {"index": index, "embedding": [1] + [0] * (state.dimension - 1)}
+                {
+                    "index": index,
+                    "embedding": state.vector
+                    if state.vector is not None
+                    else [1] + [0] * (state.dimension - 1),
+                }
                 for index, _ in enumerate(payload["input"])
             ]
         }

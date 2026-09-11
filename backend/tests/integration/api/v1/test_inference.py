@@ -171,6 +171,12 @@ class TestReadSettings:
                 "chat_endpoint_id": None,
                 "rollback_retention_hours": 24,
                 "max_index_bytes": 2147483648,
+                "query_timeout_seconds": 3.0,
+                "semantic_floor": 0.35,
+                "lexical_weight": 1.0,
+                "semantic_weight": 1.0,
+                "rrf_k": 60,
+                "semantic_floors": {},
             },
             "endpoints": [],
         }

@@ -1,9 +1,10 @@
 """Admin-only immutable endpoint proposals and secret-free disclosures."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.config import settings as environment
 from app.modules.inference.endpoint import EndpointParameters
 
 
@@ -42,7 +43,7 @@ class EndpointRead(BaseModel):
 
 
 class SearchSettings(BaseModel):
-    model_config = {"extra": "forbid", "frozen": True}
+    model_config = {"extra": "forbid", "frozen": True, "validate_default": True}
     enabled: bool = False
     captions_enabled: bool = False
     nl_filters_enabled: bool = False
@@ -52,6 +53,27 @@ class SearchSettings(BaseModel):
     chat_endpoint_id: int | None = Field(default=None, ge=1)
     rollback_retention_hours: int = Field(default=24, ge=1, le=720)
     max_index_bytes: int = Field(default=2147483648, ge=1048576, le=1099511627776)
+    query_timeout_seconds: float = Field(
+        default_factory=lambda: environment.ai_search_query_timeout_seconds,
+        ge=0.05,
+        le=30,
+    )
+    semantic_floor: float = Field(
+        default_factory=lambda: environment.ai_search_semantic_floor, ge=-1, le=1
+    )
+    lexical_weight: float = Field(
+        default_factory=lambda: environment.ai_search_lexical_weight, gt=0, le=10
+    )
+    semantic_weight: float = Field(
+        default_factory=lambda: environment.ai_search_semantic_weight, gt=0, le=10
+    )
+    rrf_k: int = Field(
+        default_factory=lambda: environment.ai_search_rrf_k, ge=1, le=1000
+    )
+    semantic_floors: dict[
+        Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+        Annotated[float, Field(ge=-1, le=1)],
+    ] = Field(default_factory=dict, max_length=64)
 
 
 class SearchSettingsRead(BaseModel):

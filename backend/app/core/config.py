@@ -248,6 +248,11 @@ class Settings(BaseSettings):
     embedding_model_key: str = ""
     embedding_onnx_threads: int = Field(default=1, ge=1, le=4)
     search_native_vectors_enabled: bool = False
+    ai_search_query_timeout_seconds: float = Field(default=3, ge=0.05, le=30)
+    ai_search_semantic_floor: float = Field(default=0.35, ge=-1, le=1)
+    ai_search_lexical_weight: float = Field(default=1, gt=0, le=10)
+    ai_search_semantic_weight: float = Field(default=1, gt=0, le=10)
+    ai_search_rrf_k: int = Field(default=60, ge=1, le=1000)
 
     # For large 3MF files, prefer the slicer-embedded preview before handing the
     # archive to trimesh, whose XML loader is the dominant memory cost. When on

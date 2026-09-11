@@ -15,6 +15,7 @@ from app.core.config import _overlay
 from app.core.time import utcnow
 from app.db.models import IndexGeneration, PassageVector
 from app.db.session import get_session_factory
+from app.modules.inference.query import close_queries
 from app.modules.inference.transport import close_client
 from app.runtime.jobs import JobRegistry
 from app.runtime.search import run_search
@@ -111,6 +112,7 @@ async def indexing_server(api, superuser_headers):
         worker.cancel()
         with suppress(asyncio.CancelledError):
             await worker
+        close_queries()
         close_client()
         server.stop()
         _overlay["search_native_vectors_enabled"] = previous
@@ -136,6 +138,106 @@ def wait_for_active(api, superuser_headers):
 
 
 class TestSearchGenerationLifecycle:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("quantization", ["int8", "binary"])
+    async def test_serves_continuous_readers_during_a_transform_switch(
+        self, api, superuser_headers, indexing_server, wait_for_active, quantization
+    ):
+        fake, endpoint = indexing_server
+        proposal = await api.post(
+            "/api/v1/config/ai-search/generations",
+            headers=superuser_headers,
+            json={"endpoint_id": endpoint["id"], "index_backend": "numpy"},
+        )
+        assert proposal.status_code == 202, proposal.text
+        first = await wait_for_active(proposal.json()["id"])
+        requests_before = len(fake.calls)
+        completed = asyncio.Event()
+        observations = []
+
+        async def read():
+            while not completed.is_set():
+                response = await api.get(
+                    "/api/v1/search",
+                    headers=superuser_headers,
+                    params={"q": "construction manual"},
+                )
+                observations.append((response.status_code, response.json()))
+                await asyncio.sleep(0.02)
+
+        reader = asyncio.create_task(read())
+        try:
+            replacement = await api.post(
+                "/api/v1/config/ai-search/generations",
+                headers=superuser_headers,
+                json={
+                    "endpoint_id": endpoint["id"],
+                    "index_backend": "sqlite_vec",
+                    "quantization": quantization,
+                },
+            )
+            assert replacement.status_code == 202, replacement.text
+            active = await wait_for_active(replacement.json()["id"])
+            final = await api.get(
+                "/api/v1/search",
+                headers=superuser_headers,
+                params={"q": "construction manual"},
+            )
+            observations.append((final.status_code, final.json()))
+        finally:
+            completed.set()
+            await reader
+
+        assert len(observations) >= 2
+        assert {
+            generation for _, body in observations for generation in body["generations"]
+        } == {first["id"], active["id"]}
+        assert all(
+            status == 200
+            and body["semantic_ready"]
+            and [item["name"] for item in body["items"]] == ["Assembly guide"]
+            for status, body in observations
+        ), observations
+        assert all(
+            call["body"]["input"] == ["construction manual"]
+            for call in fake.calls[requests_before:]
+        )
+
+    @pytest.mark.asyncio
+    async def test_serves_hybrid_queries_through_http(
+        self, api, superuser_headers, indexing_server, wait_for_active
+    ):
+        fake, endpoint = indexing_server
+        proposal = await api.post(
+            "/api/v1/config/ai-search/generations",
+            headers=superuser_headers,
+            json={"endpoint_id": endpoint["id"], "index_backend": "numpy"},
+        )
+        assert proposal.status_code == 202, proposal.text
+        await wait_for_active(proposal.json()["id"])
+        requests_before = len(fake.calls)
+
+        response = await api.get(
+            "/api/v1/search",
+            headers=superuser_headers,
+            params={"q": "how to put the parts together"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["semantic_ready"]
+        assert [item["name"] for item in response.json()["items"]] == ["Assembly guide"]
+        assert "semantic_text" in {
+            evidence["leg"] for evidence in response.json()["items"][0]["evidence"]
+        }
+        assert len(fake.calls) == requests_before + 1
+        cached = await api.get(
+            "/api/v1/search",
+            headers=superuser_headers,
+            params={"q": "how to put the parts together"},
+        )
+        assert cached.json() == response.json()
+        assert len(fake.calls) == requests_before + 1
+
     @pytest.mark.asyncio
     async def test_resumes_committed_work_after_process_loss(
         self, api, superuser_headers, restartable_indexer, wait_for_embedding_call

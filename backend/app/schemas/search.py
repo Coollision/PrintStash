@@ -31,3 +31,15 @@ class SearchResponse(BaseModel):
     lexical_backend: Literal["fts5", "postgres_bm25", "ranked_like"]
     degraded: list[str] = Field(default_factory=list)
     semantic_ready: bool = False
+    generations: list[int] = Field(default_factory=list)
+    truncated: bool = False
+    outcome: Literal["results", "no_results", "no_strong_matches"] = "no_results"
+    leg_errors: dict[str, str] = Field(default_factory=dict)
+
+
+class SearchStatus(BaseModel):
+    enabled: bool
+    semantic_ready: bool
+    legs: list[str]
+    generations: list[int]
+    degraded: list[str] = Field(default_factory=list)

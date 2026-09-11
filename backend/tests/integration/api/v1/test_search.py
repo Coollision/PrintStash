@@ -18,6 +18,21 @@ def projection():
 
 
 class TestSearch:
+    def test_reports_lexical_status_with_ai_disabled(self, client, auth_headers):
+        response = client.get("/api/v1/search/status", headers=auth_headers)
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "enabled": False,
+            "semantic_ready": False,
+            "legs": ["lexical"],
+            "generations": [],
+            "degraded": [],
+        }
+
+    def test_requires_authentication_for_status(self, client):
+        assert client.get("/api/v1/search/status").status_code == 401
+
     def test_rejects_unauthenticated_search(self, client):
         response = client.get("/api/v1/search", params={"q": "private"})
         assert response.status_code == 401

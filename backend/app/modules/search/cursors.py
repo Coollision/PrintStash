@@ -11,10 +11,17 @@ from app.core.errors import OperationError
 
 
 def context_key(
-    user_id: int, query: str, mode: str, generations: tuple[int, ...] = ()
+    user_id: int,
+    query: str,
+    mode: str,
+    generations: tuple[int, ...] = (),
+    *,
+    scope: tuple = (),
 ) -> str:
     return hashlib.sha256(
-        json.dumps([user_id, query, mode, generations], separators=(",", ":")).encode()
+        json.dumps(
+            [user_id, query, mode, generations, scope], separators=(",", ":")
+        ).encode()
     ).hexdigest()
 
 

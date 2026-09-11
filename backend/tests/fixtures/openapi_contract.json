@@ -15227,12 +15227,26 @@
             "title": "Degraded",
             "type": "array"
           },
+          "generations": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Generations",
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/SearchResult"
             },
             "title": "Items",
             "type": "array"
+          },
+          "leg_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Leg Errors",
+            "type": "object"
           },
           "legs": {
             "items": {
@@ -15261,9 +15275,24 @@
             ],
             "title": "Next Cursor"
           },
+          "outcome": {
+            "default": "no_results",
+            "enum": [
+              "results",
+              "no_results",
+              "no_strong_matches"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
           "semantic_ready": {
             "default": false,
             "title": "Semantic Ready",
+            "type": "boolean"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
             "type": "boolean"
           }
         },
@@ -15344,6 +15373,12 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "lexical_weight": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Lexical Weight",
+            "type": "number"
+          },
           "local_models_enabled": {
             "default": false,
             "title": "Local Models Enabled",
@@ -15361,12 +15396,48 @@
             "title": "Nl Filters Enabled",
             "type": "boolean"
           },
+          "query_timeout_seconds": {
+            "maximum": 30.0,
+            "minimum": 0.05,
+            "title": "Query Timeout Seconds",
+            "type": "number"
+          },
           "rollback_retention_hours": {
             "default": 24,
             "maximum": 720.0,
             "minimum": 1.0,
             "title": "Rollback Retention Hours",
             "type": "integer"
+          },
+          "rrf_k": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Rrf K",
+            "type": "integer"
+          },
+          "semantic_floor": {
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Semantic Floor",
+            "type": "number"
+          },
+          "semantic_floors": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[0-9a-f]{64}$": {
+                "maximum": 1.0,
+                "minimum": -1.0,
+                "type": "number"
+              }
+            },
+            "title": "Semantic Floors",
+            "type": "object"
+          },
+          "semantic_weight": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Semantic Weight",
+            "type": "number"
           },
           "send_query_images": {
             "default": false,
@@ -15400,6 +15471,47 @@
           "endpoints"
         ],
         "title": "SearchSettingsRead",
+        "type": "object"
+      },
+      "SearchStatus": {
+        "properties": {
+          "degraded": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Degraded",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "generations": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Generations",
+            "type": "array"
+          },
+          "legs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "semantic_ready": {
+            "title": "Semantic Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "semantic_ready",
+          "legs",
+          "generations"
+        ],
+        "title": "SearchStatus",
         "type": "object"
       },
       "SendToPrinter": {
@@ -36724,6 +36836,60 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "in": "query",
+            "name": "types[]",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/SubjectType"
+                  },
+                  "maxItems": 4,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Types[]"
+            }
+          },
+          {
+            "in": "query",
+            "name": "legs[]",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "lexical",
+                      "semantic_text"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Legs[]"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instant",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Instant",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -36754,6 +36920,32 @@
           }
         ],
         "summary": "Search Library",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/status": {
+      "get": {
+        "operationId": "search_status_api_v1_search_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Search Status",
         "tags": [
           "search"
         ]

@@ -1,6 +1,6 @@
 # AI Search implementation status
 
-AI Search (#166) is in development. This branch implements the passage, lexical and shared-vector foundation of the
+AI Search (#166) is in development. This branch implements the passage, lexical, vector and hybrid-query foundations of the
 [independent implementation plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c),
 including the passage requirements from
 [jorgehermo9's plan](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c).
@@ -200,6 +200,36 @@ the maximum inference deadline. Capacity admission includes existing vectors
 and the replacement; `max_index_bytes` defaults to 2 GiB. Native acceleration
 still requires the deployment opt-in described above.
 
+## Hybrid query retrieval
+
+Authenticated `/api/v1/search` requests combine lexical and active semantic-text
+ranks with weighted RRF (k=60, weights=1 initially). `mode=lexical`,
+`instant=true`, disabled AI, or selecting only the lexical leg avoids query
+inference. `types[]` filters before ranking. Results carry plain-text evidence
+per leg, a bounded-candidate indicator and distinct empty/weak-match states.
+`/api/v1/search/status` reports activation without exposing corpus counts.
+
+The interactive executor has two slots and no waiting queue. Its vector cache
+is RAM-only (256 entries, five-minute TTL), keyed by immutable Space, query and
+authorization context. Query text is neither stored in the cache nor written to
+search tables. A three-second default inference deadline degrades to lexical.
+Permissions, content hashes and every contributor are checked before scoring
+and again before evidence is returned. A pinned retired generation can finish
+an admitted query; a cutover that wins before the pin gets one bounded retry.
+
+Page cursors bind the query, user/permissions, types, legs, ranking settings and
+generations. Changes require restarting pagination. Candidate retrieval is
+bounded to 100 dense Subjects per leg, a 100,000-unit scan, 8× native overfetch,
+and one authorization refetch; short pages are explicit. RRF is an ordering
+mechanism, not a confidence percentage.
+
+Advanced defaults use `VAULT_AI_SEARCH_QUERY_TIMEOUT_SECONDS`,
+`VAULT_AI_SEARCH_LEXICAL_WEIGHT`, `VAULT_AI_SEARCH_SEMANTIC_WEIGHT`,
+`VAULT_AI_SEARCH_RRF_K` and `VAULT_AI_SEARCH_SEMANTIC_FLOOR`. Saved settings can
+also select a floor by exact Space hash. The generic initial floor (0.35) is a
+fallback; model-specific relevance calibration remains part of the real-model
+quality stage.
+
 ## Compressed generations
 
 Generations retain native float32 vectors and store an independently versioned
@@ -252,10 +282,16 @@ capability checks, 14 PostgreSQL/transfer regressions and two compressed
 SQLite-to-PostgreSQL transfer checks. Repository hygiene passed 3,175 tests;
 OpenAPI and type checking passed.
 
+W6 passed 264 search/API/lifecycle regressions, four PostgreSQL authorization
+checks, a real HTTP hybrid query, two continuous-reader transform switches,
+and a deterministic admission/cutover race. Query/cache checks passed 23 tests;
+core rank fusion passed 12. Repository hygiene passed 3,203 tests. Natural-language
+relevance targets still require the real-model quality stage.
+
 W5 connects transactional content invalidation to durable embedding work and
 maintains distinct active/building text-prefix recipes. Coexistence of different
 passage-template versions remains tracked with the caption recipe work.
-Local model acquisition, hybrid retrieval, UI, visual profiles, captions, sparse
+Local model acquisition, UI, visual profiles, captions, sparse
 expansion and natural-language filters remain in progress.
 
 The [coverage matrix](ai-search-coverage.md) retains all 142 original planned
