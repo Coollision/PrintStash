@@ -234,6 +234,20 @@ def postgres_url() -> str:
     return _resolve("postgres", POSTGRES_RESOURCE, _start_postgres)
 
 
+def pgvector_url() -> str:
+    """Real optional pgvector capability, independent of plain PostgreSQL tests."""
+    def start() -> str:
+        from testcontainers.community.postgres import PostgresContainer
+
+        container = _start_container(lambda: PostgresContainer(
+            "pgvector/pgvector:0.8.0-pg16@sha256:a132765ec351c65111b5b675928a3a0515a466a40f97277329db8b8209ad8bc9",
+            username=POSTGRES_USER, password=POSTGRES_PASSWORD, dbname=POSTGRES_DB,
+        ))
+        _started.append(container)
+        return container.get_connection_url(driver=None)
+    return _resolve("pgvector", "PostgreSQL with pgvector", start)
+
+
 def s3_endpoint() -> str:
     """A real S3-compatible endpoint URL. Raises when Docker is not running."""
     return _resolve("s3", S3_RESOURCE, _start_seaweedfs)

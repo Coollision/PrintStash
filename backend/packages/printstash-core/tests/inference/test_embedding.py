@@ -15,6 +15,42 @@ def space():
 
 
 class TestEmbeddingSpace:
+    def test_preserves_legacy_space_hash(self, space):
+        import hashlib
+        import json
+
+        legacy = dict(
+            model_key="clip",
+            model_revision="sha256:123",
+            dimension=3,
+            modality="text_image",
+            render_recipe='{"render":"six-view-v1"}',
+            provider="onnx_cpu",
+            profile="mesh_view",
+            normalization="l2",
+            query_prefix="",
+            document_prefix="",
+        )
+        expected = hashlib.sha256(
+            json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        assert EmbeddingSpace(**legacy).config_hash == expected
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("alignment_identity", "clip:B/32@abc"),
+            ("model_repo", "owner/model"),
+            ("provider_config_hash", "a" * 64),
+        ],
+    )
+    def test_isolates_inference_identity(self, space, field, value):
+        assert replace(space, **{field: value}).config_hash != space.config_hash
+
+    @pytest.mark.parametrize("modality", ["text", "point_cloud"])
+    def test_supports_search_modalities(self, space, modality):
+        assert replace(space, modality=modality).modality == modality
+
     @pytest.mark.parametrize(
         "field,value",
         [

@@ -11,6 +11,7 @@ from app.core.logging import get_logger
 from app.db.session import get_session_factory
 from app.modules.search.lexical_index import rebuild_partition
 from app.modules.search.reconciliation import reconcile_partition
+from app.modules.search.vector_index import repair_partition as repair_vectors
 from app.runtime import maintenance
 
 logger = get_logger(__name__)
@@ -23,6 +24,7 @@ def process_one(kind: SubjectType) -> int:
         with get_session_factory().scoped_session() as session:
             changed = reconcile_partition(session, kind)
             rebuild_partition(session)
+            repair_vectors(session)
             session.commit()
             return changed
     finally:

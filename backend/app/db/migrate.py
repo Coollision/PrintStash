@@ -52,7 +52,11 @@ def _alembic_config(url: str) -> Config:
     """
     cfg = Config()
     cfg.set_main_option("script_location", str(_SCRIPT_LOCATION))
-    cfg.set_main_option("sqlalchemy.url", normalize_database_url(url))
+    # ConfigParser treats percent-encoded URL bytes as interpolation markers.
+    # Preserve the actual URL through its required literal-percent escape.
+    cfg.set_main_option(
+        "sqlalchemy.url", normalize_database_url(url).replace("%", "%%")
+    )
     return cfg
 
 

@@ -9,9 +9,9 @@ from sqlmodel import Session, select
 from app.core.errors import ErrorKind, OperationError
 from app.db.models import File, Model, PassageVector, User
 from app.db.session import SessionFactory
-from app.modules.inference import store
 from app.modules.inference.local import configured_provider
 from app.modules.similarity import candidates, runs
+from app.modules.similarity import vector_sources as store
 from app.modules.similarity.configuration import read_settings
 from app.modules.similarity.fingerprints import live_source_predicates
 

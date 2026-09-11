@@ -247,6 +247,7 @@ class Settings(BaseSettings):
     embedding_local_model_dir: str = ""
     embedding_model_key: str = ""
     embedding_onnx_threads: int = Field(default=1, ge=1, le=4)
+    search_native_vectors_enabled: bool = False
 
     # For large 3MF files, prefer the slicer-embedded preview before handing the
     # archive to trimesh, whose XML loader is the dominant memory cost. When on

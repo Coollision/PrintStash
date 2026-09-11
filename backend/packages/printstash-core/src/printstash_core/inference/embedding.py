@@ -19,19 +19,22 @@ class EmbeddingSpace:
     model_key: str
     model_revision: str
     dimension: int
-    modality: Literal["image", "text_image"]
+    modality: Literal["image", "text_image", "text", "point_cloud"]
     render_recipe: str
     provider: str = "onnx_cpu"
     profile: str = "mesh_view"
     normalization: Literal["l2"] = "l2"
     query_prefix: str = ""
     document_prefix: str = ""
+    model_repo: str | None = None
+    alignment_identity: str | None = None
+    provider_config_hash: str | None = None
 
     def __post_init__(self) -> None:
         if (
             type(self.dimension) is not int
             or not 1 <= self.dimension <= 4096
-            or self.modality not in ("image", "text_image")
+            or self.modality not in ("image", "text_image", "text", "point_cloud")
             or self.normalization != "l2"
             or any(
                 not value or len(value) > 128
@@ -46,13 +49,32 @@ class EmbeddingSpace:
             or len(self.document_prefix) > 256
             or not self.render_recipe
             or len(self.render_recipe) > 16384
+            or any(
+                value is not None and (not value or len(value) > 256)
+                for value in (self.model_repo, self.alignment_identity)
+            )
+            or (
+                self.provider_config_hash is not None
+                and (
+                    len(self.provider_config_hash) != 64
+                    or any(
+                        c not in "0123456789abcdef" for c in self.provider_config_hash
+                    )
+                )
+            )
         ):
             raise EmbeddingError("embedding_space_invalid")
 
     @property
     def config_hash(self) -> str:
+        # Optional additions must not change the identities of v1 Spaces whose
+        # native vectors already exist. Explicit alignment/provider identities
+        # enter the hash only when a new contract declares them.
+        values = {
+            key: value for key, value in asdict(self).items() if value is not None
+        }
         return hashlib.sha256(
-            json.dumps(asdict(self), sort_keys=True, separators=(",", ":")).encode()
+            json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
 
 

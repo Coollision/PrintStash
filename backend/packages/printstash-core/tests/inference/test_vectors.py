@@ -29,6 +29,18 @@ class TestNormalize:
 
 
 class TestCosineNeighbors:
+    def test_keeps_subject_types_distinct(self):
+        blob = normalize([1, 0], 2)
+        result = cosine_neighbors(
+            blob,
+            [VectorEntry(1, 1, blob, "model"), VectorEntry(2, 1, blob, "document")],
+            dimension=2,
+        )
+        assert [(item.subject_type, item.subject_id) for item in result.items] == [
+            ("document", 1),
+            ("model", 1),
+        ]
+
     def test_orders_by_score_then_subject(self):
         result = cosine_neighbors(
             normalize([1, 0], 2),

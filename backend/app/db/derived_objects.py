@@ -12,16 +12,73 @@ SEARCH_FTS_OBJECTS = frozenset(
 
 
 def managed_names(connection: Connection | None) -> frozenset[str]:
-    if connection is None or connection.dialect.name != "sqlite":
+    if connection is None:
         return frozenset()
+    if connection.dialect.name == "postgresql":
+        exists = connection.execute(
+            text("SELECT to_regclass('index_generations')")
+        ).scalar()
+        if exists is None:
+            return frozenset()
+        names = set()
+        # Older revisions do not yet contain a native table mapping.
+        mapped = connection.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='index_generations' AND column_name='vector_table_name'"
+            )
+        ).first()
+        if mapped is None:
+            return frozenset()
+        for id, name in connection.execute(
+            text(
+                "SELECT id, vector_table_name FROM index_generations WHERE vector_table_name IS NOT NULL"
+            )
+        ):
+            if name == f"gen_vectors_{id}" and type(id) is int and id > 0:
+                vector_column = connection.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=:name AND column_name='embedding' AND udt_name='vector'"
+                    ),
+                    {"name": name},
+                ).first()
+                if vector_column:
+                    names.update((name, name + "_hnsw"))
+        return frozenset(names)
+    if connection.dialect.name != "sqlite":
+        return frozenset()
+    names = set()
     ddl = connection.execute(
         text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:name"),
         {"name": SEARCH_FTS},
     ).scalar()
     if (
-        not isinstance(ddl, str)
-        or "using fts5(" not in ddl.lower()
-        or "content='search_passages'" not in ddl.lower()
+        isinstance(ddl, str)
+        and "using fts5(" in ddl.lower()
+        and "content='search_passages'" in ddl.lower()
     ):
-        return frozenset()
-    return SEARCH_FTS_OBJECTS
+        names.update(SEARCH_FTS_OBJECTS)
+    columns = connection.execute(text("PRAGMA table_info(index_generations)")).all()
+    if any(row[1] == "vector_table_name" for row in columns):
+        for id, name in connection.execute(
+            text(
+                "SELECT id, vector_table_name FROM index_generations WHERE vector_table_name IS NOT NULL"
+            )
+        ):
+            if name != f"vec_gen_{id}" or type(id) is not int or id < 1:
+                continue
+            ddl = connection.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:name"),
+                {"name": name},
+            ).scalar()
+            if isinstance(ddl, str) and "using vec0(" in ddl.lower():
+                names.update(
+                    name + suffix
+                    for suffix in (
+                        "",
+                        "_info",
+                        "_chunks",
+                        "_rowids",
+                        "_vector_chunks00",
+                    )
+                )
+    return frozenset(names)

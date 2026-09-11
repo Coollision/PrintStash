@@ -810,7 +810,7 @@ class TestSimilarityFactories:
 
         from printstash_core.inference import EmbeddingSpace
 
-        from app.modules.inference.store import active_generation
+        from app.modules.search.vector_store import active_generation
 
         space = factories.build_embedding_space(db_session)
         generation = factories.build_index_generation(db_session, space)
@@ -827,7 +827,7 @@ class TestSimilarityFactories:
 
         from printstash_core.inference import EmbeddingSpace
 
-        from app.modules.inference.store import active_generation
+        from app.modules.search.vector_store import active_generation
 
         space = factories.build_embedding_space(db_session)
         factories.build_index_generation(db_session, space, active=False)
@@ -841,7 +841,7 @@ class TestSimilarityFactories:
 
     @pytest.mark.parametrize("component", [0, 1, 2048])
     def test_vectors_encode_component_identity(self, db_session, component):
-        from app.modules.inference.store import unit_component
+        from printstash_core.inference.units import unit_component
 
         space = factories.build_embedding_space(db_session)
         generation = factories.build_index_generation(db_session, space)

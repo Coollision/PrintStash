@@ -15,6 +15,7 @@ class VectorEntry:
     unit_id: int
     subject_id: int
     blob: bytes
+    subject_type: str = "model"
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class Neighbor:
     unit_id: int
     subject_id: int
     score: float
+    subject_type: str = "model"
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class NeighborResult:
     items: tuple[Neighbor, ...]
     scanned: int
     truncated: bool
+    backend: str = "numpy"
 
 
 def normalize(vector: Iterable[float], dimension: int) -> bytes:
@@ -74,7 +77,7 @@ def cosine_neighbors(
     query_values = np.frombuffer(
         normalize(np.frombuffer(query, dtype="<f4"), dimension), dtype="<f4"
     )
-    best: dict[int, Neighbor] = {}
+    best: dict[tuple[str, int], Neighbor] = {}
     scanned = 0
     iterator = iter(entries)
     while scanned < max_scan:
@@ -93,25 +96,38 @@ def cosine_neighbors(
             raise EmbeddingError("embedding_vector_invalid")
         scores = np.clip((matrix / norms[:, None]) @ query_values, -1.0, 1.0)
         for entry, score in zip(block, scores, strict=True):
-            neighbor = Neighbor(entry.unit_id, entry.subject_id, float(score))
-            previous = best.get(entry.subject_id)
+            neighbor = Neighbor(
+                entry.unit_id, entry.subject_id, float(score), entry.subject_type
+            )
+            identity = (entry.subject_type, entry.subject_id)
+            previous = best.get(identity)
             if previous is None or (neighbor.score, -neighbor.unit_id) > (
                 previous.score,
                 -previous.unit_id,
             ):
-                best[entry.subject_id] = neighbor
+                best[identity] = neighbor
             if len(best) > limit:
-                worst = min(
+                worst = max(
                     best.values(),
-                    key=lambda item: (item.score, -item.subject_id, -item.unit_id),
+                    key=lambda item: (
+                        -item.score,
+                        item.subject_type,
+                        item.subject_id,
+                        item.unit_id,
+                    ),
                 )
-                del best[worst.subject_id]
+                del best[(worst.subject_type, worst.subject_id)]
         scanned += len(block)
     # One-row lookahead makes budget truncation explicit to the caller.
     truncated = next(iterator, None) is not None
     items = heapq.nsmallest(
         limit,
         best.values(),
-        key=lambda item: (-item.score, item.subject_id, item.unit_id),
+        key=lambda item: (
+            -item.score,
+            item.subject_type,
+            item.subject_id,
+            item.unit_id,
+        ),
     )
     return NeighborResult(tuple(items), scanned, truncated)

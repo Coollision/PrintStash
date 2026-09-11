@@ -42,15 +42,9 @@ def passage_engine():
         "sqlalchemy.url", url.render_as_string(hide_password=False).replace("%", "%%")
     )
     try:
-        SQLModel.metadata.create_all(
-            engine,
-            tables=[
-                table
-                for name, table in SQLModel.metadata.tables.items()
-                if not name.startswith("search_")
-            ],
-        )
-        command.stamp(config, "0118bda3e719")
+        SQLModel.metadata.create_all(engine)
+        command.stamp(config, "head")
+        command.downgrade(config, "0118bda3e719")
         yield engine, config
     finally:
         engine.dispose()

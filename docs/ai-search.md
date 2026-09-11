@@ -1,6 +1,6 @@
 # AI Search implementation status
 
-AI Search (#166) is in development. This branch implements the passage and lexical foundation of the
+AI Search (#166) is in development. This branch implements the passage, lexical and shared-vector foundation of the
 [independent implementation plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c),
 including the passage requirements from
 [jorgehermo9's plan](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c).
@@ -89,6 +89,62 @@ replaces only the current recipe; removing a missing or trashed Subject removes
 all its recipes. Multipart Models currently use hard deletion, and follow the
 missing-Subject path.
 
+## Shared vector platform
+
+The existing native-vector store now lives in `search.vector_store`. Similar
+Models supplies its own run/source/EDIT fences through `similarity.vector_sources`;
+the shared store and Search do not import that optional consumer. Its existing
+Space hashes, Artifact/component keys, IDs and native float32 BLOBs are preserved.
+Neighbors use the pair `(subject_type, subject_id)`, so a Document and Model with
+the same integer ID remain separate results.
+
+`register_space` persists the complete immutable contract. `publish` accepts a
+caller-supplied current-source SQL relation, validates the Space and vector, and
+fences generation state in the same upsert. It stages changes without committing.
+`query` requires an authorized current-unit SQL relation and has explicit scan,
+candidate and result bounds. New consumers need no SimilarityRun or model files
+to use these contracts. A source hash change invalidates that unit's old vector.
+
+Native indexes are optional (`VAULT_SEARCH_NATIVE_VECTORS_ENABLED`, default false).
+SQLite uses pinned sqlite-vec 0.1.6 from the `ai`/`full` extra; PostgreSQL probes
+the actual vector type and HNSW DDL. Failed capabilities retain NumPy retrieval
+over durable floats. SQLite extension loading closes after both successful and
+failed sync/async connection setup. Only exact, generation-registered derivative
+tables and shadows are excluded from Alembic. PostgreSQL restricts the relation
+before distance ordering; restrictive authorization deliberately takes precedence
+over an unfiltered HNSW scan. See the
+[sqlite-vec API](https://alexgarcia.xyz/sqlite-vec/features/knn.html) and
+[pgvector documentation](https://github.com/pgvector/pgvector).
+
+The worker repairs one bounded native partition at a time. Reads continue through
+NumPy while a derivative is absent or rebuilding. A retired generation can drop
+its derivative independently of its native floats; W5 adds verified activation,
+reader draining and retention before retirement is exposed operationally.
+
+## Database portability and backups
+
+From `backend/`, `uv run python -m scripts.migrate_database --source /path/vault.sqlite`
+previews a transfer to the PostgreSQL URL in `PRINTSTASH_TARGET_DB_URL`. Add
+`--apply` to copy into an empty destination. Credentials stay out of command-line
+arguments. The source must be at the current schema revision. Pause application
+writes for the eventual cutover; the copy itself reads a consistent SQLite
+snapshot and leaves the source untouched.
+
+The command copies raw durable columns in bounded batches, preserving encrypted
+ciphertext, vector BLOBs, IDs and cyclic Model/Artifact references. Counts and
+canonical hashes must match before commit. Failure rolls back the destination.
+Sequences are reset after copy; derived indexes are rebuilt without inference or
+model acquisition. Storage files and model weights are separate from this DB-only
+command and must remain available at their configured storage locations.
+
+The existing backup API now supports PostgreSQL. It exports durable tables into
+the archive's portable `db.sqlite3` snapshot and restores them in one PostgreSQL
+transaction, including the backup owner's staged restore marker. Native indexes
+and extensions are omitted from the snapshot and repaired from saved floats.
+SQLite still uses its transactional file backup. Both formats remain readable
+without the vector extension; querying a local model still requires its weights
+to be present, and restore never downloads them.
+
 ## Remaining implementation
 
 The W1/W2 stage gate passed 3,264 repository, integration and end-to-end tests.
@@ -96,10 +152,14 @@ Separate PostgreSQL checks passed seven migration, BM25 and authorization tests;
 the native-table-loss browse regression passed with its 18-test focused gate.
 These results cover the text foundation, not the unimplemented AI stages below.
 
-W3/W5 will retain every recipe needed by active/building generations and connect
-content invalidation to durable embedding work. Existing inference spaces,
-generations and vectors are the adoption point; the feature will not introduce
-a parallel vector store. W4/W4b add the remote embedding and chat contracts.
+The W3 stage gate passed 3,291 tests, with separate gates for core inference
+(59), backup regressions (431), schema/extension parity (10), database transfer
+(4), native PostgreSQL transfer/fallback (4), and the full PostgreSQL backup API
+flow. The remaining stages still require their own acceptance evidence.
+
+W5 will retain every recipe needed by active/building generations and connect
+content invalidation to durable embedding work. W4/W4b add the remote embedding
+and chat contracts.
 Local model acquisition, hybrid retrieval, UI, visual profiles, captions, sparse
 expansion, quantization and natural-language filters remain in progress.
 

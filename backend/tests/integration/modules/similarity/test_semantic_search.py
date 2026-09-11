@@ -6,9 +6,10 @@ from app.core.config import _overlay
 from app.core.errors import OperationError
 from app.db.models import IndexGeneration
 from app.db.session import get_session_factory
-from app.modules.inference import search, store
 from app.modules.inference.local import configured_provider
 from app.modules.similarity import configuration
+from app.modules.similarity import semantic_search as search
+from app.modules.similarity import vector_sources as store
 from tests.factories.embeddings import local_embedding_assets
 
 

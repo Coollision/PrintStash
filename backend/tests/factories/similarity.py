@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any
 
 from printstash_core.inference import EmbeddingSpace as SpaceContract
+from printstash_core.inference.units import unit_key
 from sqlmodel import Session
 
 from app.core.time import utcnow
@@ -24,7 +25,6 @@ from app.db.models import (
     SimilarityRun,
     User,
 )
-from app.modules.inference.store import unit_key
 from app.modules.media.fingerprints import ALGORITHM_VERSION
 from app.modules.similarity.fingerprints import encode_json
 from tests.factories._support import nth, save, unique_hash
@@ -191,6 +191,8 @@ def build_passage_vector(
         ),
         "file_id": file.id,
         "model_id": file.model_id,
+        "subject_type": "model",
+        "subject_id": file.model_id,
         "input_hash": file.sha256,
         "native_dimension": dimension,
         "vector_blob": struct.pack(f"<{dimension}f", 1.0, *([0.0] * (dimension - 1))),

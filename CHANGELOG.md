@@ -7,8 +7,13 @@
 - AI Search groundwork adds automatic, transactional text indexing for library
   Subjects, authorized lexical results with match evidence, and ranked browse.
   SQLite FTS5 and PostgreSQL BM25 share durable passages with a ranked fallback;
-  background repair is bounded. The remaining AI Search stages are in development
-  under #166.
+  background repair is bounded. Search adopts existing native vectors, adds
+  optional SQLite/PostgreSQL vector indexes with a portable float fallback, and
+  preserves them through database migration and restore. The remaining AI Search
+  stages are in development under #166.
+- PostgreSQL supports the existing backup API through verified portable snapshots.
+  A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
+  cyclic library references and native vector bytes without re-embedding.
 - Model Families preserve independent Models and Revisions while recording human
   variant roles, an explicit canonical selection and relative measurements.
   Membership moves and Family restoration are atomic; Model trash reserves its

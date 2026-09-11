@@ -12,6 +12,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    text as sql_text,
+)
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlmodel import Field
 
@@ -55,10 +58,12 @@ class SearchPassage(SQLModel, table=True):
     content_hash: str = Field(max_length=64)
     text: str = Field(sa_column=Column(Text, nullable=False))
     title: str = Field(
-        default="", sa_column=Column(Text, nullable=False, server_default="")
+        default="",
+        sa_column=Column(Text, nullable=False, server_default=sql_text("''")),
     )
     tags_text: str = Field(
-        default="", sa_column=Column(Text, nullable=False, server_default="")
+        default="",
+        sa_column=Column(Text, nullable=False, server_default=sql_text("''")),
     )
     token_count: int = Field(
         default=0, sa_column=Column(Integer, nullable=False, server_default="0")
