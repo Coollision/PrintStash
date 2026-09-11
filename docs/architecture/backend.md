@@ -24,6 +24,7 @@ HTTP endpoint or persisted archive format.
 | `administration` | Dynamic OSS settings, setup, audit and operational inspection | `runtime_config`, `setup_bootstrap`, `audit`, `vault_audit`, `release_check` |
 | `runtime` | Local process coordination, maintenance, job tracking and delivery transports | `maintenance`, `jobs`, `work_wakeup`, `realtime` |
 | `db` | Session factories, SQL schema and metadata registration | `session`, `scopes`, `models`, `publication`, `transactions` |
+| `search` | Versioned, visibility-segmented text projections (AI Search W1 in progress) | `sources.project_subject`, `passages.sync_subject` |
 
 The table identifies interfaces, not permission to reach through an operation
 into its implementation. A function prefixed `_` belongs to its owner. Public

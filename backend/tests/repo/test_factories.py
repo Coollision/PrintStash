@@ -27,6 +27,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from printstash_core.search.passages import SearchSubject, SubjectType
 from sqlmodel import Session, select
 
 from app.core.time import utcnow
@@ -47,6 +48,17 @@ from tests import factories
 
 
 class TestGeneratedIdentities:
+    def test_search_passage_builder_preserves_subject_identity(self, db_session):
+        model = factories.build_model(db_session)
+        subject = SearchSubject(SubjectType.MODEL, model.id)
+
+        passage = factories.build_search_passage(db_session, subject)
+
+        assert passage.subject_type == "model"
+        assert passage.subject_id == model.id
+        assert passage.access_dependencies_json == "[]"
+        assert passage.text == "Title: Stored passage"
+
     def test_migration_builders_preserve_workflow_ownership(
         self, db_session: Session
     ) -> None:

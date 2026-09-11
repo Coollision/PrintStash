@@ -19,6 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from printstash_core.search.passages import SearchSubject
+
 from app.db.models import (
     ArtifactProvenanceLink,
     CaptureUploadSlot,
@@ -79,6 +81,7 @@ from app.db.models import (
     VaultMigrationObject,
     VaultMigrationRun,
 )
+from app.db.models.search import SearchPassage
 
 
 class MakeUser(Protocol):
@@ -542,6 +545,10 @@ class MakeIndexGeneration(Protocol):
     def __call__(
         self, space: EmbeddingSpace, *, active: bool = True, **overrides: Any
     ) -> IndexGeneration: ...
+
+
+class MakeSearchPassage(Protocol):
+    def __call__(self, subject: SearchSubject, **overrides: Any) -> SearchPassage: ...
 
 
 class MakePassageVector(Protocol):

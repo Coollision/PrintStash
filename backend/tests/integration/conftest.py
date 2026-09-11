@@ -60,6 +60,7 @@ from tests.factories.protocols import (
     MakePrinterFile,
     MakePrintJob,
     MakeProvenanceSource,
+    MakeSearchPassage,
     MakeShareLink,
     MakeSimilarityCandidate,
     MakeSimilarityDecision,
@@ -613,6 +614,11 @@ def make_passage_vector(db_session: Session) -> MakePassageVector:
     return _bound(factories.build_passage_vector, db_session)
 
 
+@pytest.fixture
+def make_search_passage(db_session: Session) -> MakeSearchPassage:
+    return _bound(factories.build_search_passage, db_session)
+
+
 __all__ += [
     "make_geometry_fingerprint",
     "make_similarity_run",
@@ -622,4 +628,5 @@ __all__ += [
     "make_embedding_space",
     "make_index_generation",
     "make_passage_vector",
+    "make_search_passage",
 ]

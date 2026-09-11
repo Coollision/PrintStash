@@ -216,6 +216,7 @@ from .provenance import (
 from .provenance import (
     ProvenanceCapture as ProvenanceCapture,
 )
+from .search import SearchPassage as SearchPassage
 from .similarity import GeometryFingerprint as GeometryFingerprint
 from .similarity import SimilarityCandidate as SimilarityCandidate
 from .similarity import SimilarityCandidateObservation as SimilarityCandidateObservation

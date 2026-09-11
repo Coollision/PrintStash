@@ -152,6 +152,7 @@ from tests.factories.scenarios import (
     a_member_who_can_see_one_collection,
     a_printer_with_a_queue,
 )
+from tests.factories.search import build_search_passage as build_search_passage
 from tests.factories.similarity import (
     build_embedding_space,
     build_geometry_fingerprint,
@@ -281,6 +282,7 @@ __all__ += [
     "build_geometry_fingerprint",
     "build_index_generation",
     "build_passage_vector",
+    "build_search_passage",
     "build_similarity_candidate",
     "build_similarity_decision",
     "build_similarity_observation",
