@@ -65,6 +65,8 @@ from app.db.models import (
     PrintJob,
     PrintJobState,
     ProvenanceCapture,
+    SearchGenerationLease,
+    SearchIndexFailure,
     SearchLexicalPosting,
     SearchLexicalState,
     SearchLexicalTerm,
@@ -557,7 +559,9 @@ class MakeIndexGeneration(Protocol):
 
 
 class MakeInferenceEndpoint(Protocol):
-    def __call__(self, *, kind: str = "embedding", **overrides: Any) -> InferenceEndpoint: ...
+    def __call__(
+        self, *, kind: str = "embedding", **overrides: Any
+    ) -> InferenceEndpoint: ...
 
 
 class MakeSearchPassage(Protocol):
@@ -568,11 +572,24 @@ class MakePassageVector(Protocol):
     def __call__(
         self,
         generation: IndexGeneration,
-        file: File,
+        file: File | None = None,
         *,
         component_index: int = 0,
+        passage: SearchPassage | None = None,
         **overrides: Any,
     ) -> PassageVector: ...
+
+
+class MakeSearchIndexFailure(Protocol):
+    def __call__(
+        self, generation: IndexGeneration, passage: SearchPassage, **overrides: Any
+    ) -> SearchIndexFailure: ...
+
+
+class MakeSearchGenerationLease(Protocol):
+    def __call__(
+        self, generation: IndexGeneration, **overrides: Any
+    ) -> SearchGenerationLease: ...
 
 
 class MakeSearchDependency(Protocol):

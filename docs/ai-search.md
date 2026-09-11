@@ -177,6 +177,29 @@ consent are required before captions can be enabled. UI and consumers are connec
 in their later work stages. These protocols support compatible self-hosted services;
 using them does not require an OpenAI account or a hosted OpenAI model.
 
+## Durable index generations
+
+Administrators propose an immutable generation through
+`POST /api/v1/config/ai-search/generations`. The current generation keeps its
+Space and endpoint while the replacement reconciles all four Subject types,
+backfills current hashes, and verifies coverage and a query smoke test. A
+successful default proposal activates automatically. Changing only the index
+backend reuses saved native floats without embedding again.
+
+Each modality/profile admits one building generation. Mini-batches use durable
+leases, check cancellation and reject late results after content changes.
+Repeatedly failing inputs are isolated and quarantined; they block activation
+until an administrator retries them successfully. Restart resumes committed
+work. Status reports eligible/indexed/quarantined counts, provider-budget
+truncation and the background job.
+
+Activation checks the proposal token and current coverage under database locks.
+Retired generations retain floats for the rollback interval (24 hours by
+default), and live reader leases postpone pruning. The lease duration exceeds
+the maximum inference deadline. Capacity admission includes existing vectors
+and the replacement; `max_index_bytes` defaults to 2 GiB. Native acceleration
+still requires the deployment opt-in described above.
+
 ## Remaining implementation
 
 The W1/W2 stage gate passed 3,264 repository, integration and end-to-end tests.
@@ -194,8 +217,13 @@ checks. The schema/repository gate passed 3,208 tests, core inference passed 79,
 and local inference/lifecycle regressions passed 82. These are stage checks; the
 completed feature still needs the full final coverage and security gates.
 
-W5 will retain every recipe needed by active/building generations and connect
-content invalidation to durable embedding work.
+The W5 regression gate passed 395 tests; the repository hygiene gate passed
+3,351. Separate checks cover PostgreSQL concurrency and schema parity, a real
+NumPy-to-sqlite-vec switch, and recovery after killing the worker mid-batch.
+
+W5 connects transactional content invalidation to durable embedding work and
+maintains distinct active/building text-prefix recipes. Coexistence of different
+passage-template versions remains tracked with the caption recipe work.
 Local model acquisition, hybrid retrieval, UI, visual profiles, captions, sparse
 expansion, quantization and natural-language filters remain in progress.
 

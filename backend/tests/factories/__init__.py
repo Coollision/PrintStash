@@ -157,6 +157,12 @@ from tests.factories.scenarios import (
 )
 from tests.factories.search import build_search_dependency as build_search_dependency
 from tests.factories.search import (
+    build_search_generation_lease as build_search_generation_lease,
+)
+from tests.factories.search import (
+    build_search_index_failure as build_search_index_failure,
+)
+from tests.factories.search import (
     build_search_lexical_posting as build_search_lexical_posting,
 )
 from tests.factories.search import (

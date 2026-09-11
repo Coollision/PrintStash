@@ -17,7 +17,13 @@ from app.modules.search.dependencies import SUBJECT_MODELS
 from app.modules.search.passages import sync_subject
 
 
-def reconcile_partition(session: Session, kind: SubjectType, *, limit: int = 64) -> int:
+def reconcile_partition(
+    session: Session,
+    kind: SubjectType,
+    *,
+    limit: int = 64,
+    checkpoint_key: str | None = None,
+) -> int:
     """Repair at most three bounded pages and checkpoint in the same transaction.
 
     The timestamp stream catches ordinary edits quickly. The independent ID
@@ -26,15 +32,18 @@ def reconcile_partition(session: Session, kind: SubjectType, *, limit: int = 64)
     """
     if not 1 <= limit <= 1024:
         raise ValueError("search_reconciliation_limit")
+    key = checkpoint_key or kind.value
+    if len(key) > 32:
+        raise ValueError("search_reconciliation_key")
     state = session.exec(
         select(SearchReconciliationState)
         .where(
-            SearchReconciliationState.subject_type == kind.value,
+            SearchReconciliationState.subject_type == key,
         )
         .with_for_update()
     ).first()
     if state is None:
-        state = SearchReconciliationState(subject_type=kind.value)
+        state = SearchReconciliationState(subject_type=key)
         session.add(state)
         session.flush()
     table = SUBJECT_MODELS[kind]

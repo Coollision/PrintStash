@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 import threading
 import time
@@ -131,8 +132,14 @@ def _json(raw: bytes) -> dict:
     def reject_constant(_value):
         raise ValueError("nonfinite JSON")
 
+    def finite(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("nonfinite JSON")
+        return number
+
     try:
-        body = json.loads(raw, parse_constant=reject_constant)
+        body = json.loads(raw, parse_constant=reject_constant, parse_float=finite)
     except (ValueError, UnicodeError, RecursionError):
         raise EndpointError("inference_invalid_json") from None
     if not isinstance(body, dict):
@@ -172,6 +179,11 @@ def post_json(
     if path not in {"embeddings", "chat/completions", "responses"}:
         raise EndpointError("inference_operation_invalid")
     context = context or InferenceContext.bounded(config.timeout_seconds)
+    context = InferenceContext(
+        min(context.deadline, time.monotonic() + config.timeout_seconds),
+        context.cancelled,
+        context.priority,
+    )
     request_bytes = json.dumps(payload, allow_nan=False, separators=(",", ":")).encode()
     if len(request_bytes) > MAX_REQUEST_BYTES:
         raise EndpointError("inference_request_too_large")

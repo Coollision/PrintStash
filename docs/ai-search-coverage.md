@@ -2,15 +2,15 @@
 
 Work in progress for #166, based on the [owner’s independent plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c) and [jorgehermo9’s attachment](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c). One branch and one eventual PR. No AI Search availability claim yet.
 
-The branch implements W1–W3 and the remote provider/configuration contracts from W4/W4b. W5 connects generation-aware recipes and vector invalidation next. Local acquisition, hybrid retrieval and the remaining feature stages still need their acceptance evidence.
+The branch implements W1–W5: durable text indexing, remote provider contracts and generation lifecycle. Active/building text-prefix recipes receive fresh vectors; coexistence of different passage-template versions is still tracked in A072. Local acquisition, hybrid retrieval and the remaining feature stages still need their acceptance evidence.
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
 | A001 | renders a passage with every configured field in template order | Happy | model with name, description, tags, collection | returned text matches the golden template | Unit | ✅ `core/search/test_passages.py::TestRenderPassages::test_renders_every_recipe_field_in_stable_order` |
 | A002 | chunks a document body at the token cap with overlap | Edge | body above the cap | N passages, contiguous, overlap preserved | Unit | ✅ `core/search/test_passages.py::TestRenderPassages::test_chunks_a_document_body_at_the_token_cap_with_overlap` |
 | A003 | caps the number of chunks for an oversized document | Edge | body far above the cap | chunk count == cap; no error | Unit | ✅ `core/search/test_passages.py::TestRenderPassages::test_caps_the_number_of_chunks_for_an_oversized_document` |
-| A004 | changes the content hash when an indexed field changes | Happy | model description edited | `content_hash` differs; stale vectors deleted | Integration | ❌ missing |
-| A005 | leaves the content hash untouched for a non-indexed edit | Edge | `updated_at` bumped, fields equal | hash unchanged; no re-embed enqueued | Integration | ❌ missing |
+| A004 | changes the content hash when an indexed field changes | Happy | model description edited | `content_hash` differs; stale vectors deleted | Integration | ✅ `integration/modules/search/test_passages.py::TestSyncSubject::test_invalidates_vectors_when_indexed_content_changes` |
+| A005 | leaves the content hash untouched for a non-indexed edit | Edge | `updated_at` bumped, fields equal | hash unchanged; no re-embed enqueued | Integration | ✅ `integration/modules/search/test_passages.py::TestSyncSubject::test_preserves_vectors_for_nonindexed_edits` |
 | A006 | removes passages when a subject is trashed | Edge | model trashed | no passages; no vectors; not returned by search | Integration | ❌ missing |
 | A007 | restores passages when a subject is restored | Edge | trashed model restored | passages exist again; searchable | Integration | ❌ missing |
 | A008 | re-derives a passage the mutation seam missed | Error | row updated bypassing the seam | watermark sweep repairs it | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_repairs_a_body_change_without_a_timestamp` |
@@ -28,14 +28,14 @@ The branch implements W1–W3 and the remote provider/configuration contracts fr
 | A020 | degrades to lexical when the endpoint times out | Error | endpoint hangs | 200 with `legs: ["lexical"]`; no 5xx | Integration | ❌ missing |
 | A021 | retries a 429 with backoff | Error | endpoint returns 429 then 200 | batch completes; attempt count recorded | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_retries_bounded_rate_limits` |
 | A022 | never logs the endpoint API key | Error | provider error path | key absent from job status, logs and response | Integration | ❌ missing |
-| A023 | resumes a backfill after a process restart | Edge | killed mid-backfill | resumes from the last committed page | Integration | ❌ missing |
-| A024 | cancels a backfill between batches | Happy | cancel requested | terminal state; active generation untouched | Integration | ❌ missing |
-| A025 | quarantines a repeatedly failing unit | Error | passage that always throws | quarantined after N attempts; worker continues | Integration | ❌ missing |
+| A023 | resumes a backfill after a process restart | Edge | killed mid-backfill | resumes from the last committed page | E2E | ✅ `e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_resumes_committed_work_after_process_loss` |
+| A024 | cancels a backfill between batches | Happy | cancel requested | terminal state; active generation untouched | Integration | ✅ `integration/modules/search/test_generations.py::TestCancel::test_cancels_durable_work` |
+| A025 | quarantines a repeatedly failing unit | Error | passage that always throws | quarantined after N attempts; worker continues | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_quarantines_poison_inputs_without_repeating_healthy_work` |
 | A026 | writes new ingests into a building generation | Edge | model ingested mid-backfill | vector present in the building generation | Integration | ❌ missing |
 | A027 | keeps serving the old generation during a backfill | Happy | backfill in progress | results come from the active generation | Integration | ❌ missing |
-| A028 | activates atomically | Happy | ready generation | one transaction flips both rows; never two active | Integration | ❌ missing |
-| A029 | refuses activation when verification fails | Error | Smoke query inválida | building/verify_failed o failed; active preservada | Integration | ❌ missing |
-| A030 | refuses a second concurrent generation for one modality | Edge | two starts | second rejected | Integration | ❌ missing |
+| A028 | activates atomically | Happy | ready generation | one transaction flips both rows; never two active | Integration | ✅ `integration/modules/search/test_generations.py::TestActivate::test_replaces_the_old_active_atomically` |
+| A029 | refuses activation when verification fails | Error | Smoke query inválida | building/verify_failed o failed; active preservada | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_keeps_active_ready_when_the_replacement_probe_fails` |
+| A030 | refuses a second concurrent generation for one modality | Edge | two starts | second rejected | Integration | ✅ `integration/postgres/test_search_generations.py::TestPrepare::test_fences_concurrent_proposals` |
 | A031 | fuses two legs by weighted RRF | Happy | known rank lists | expected fused order | Unit | ❌ missing |
 | A032 | drops results below the similarity floor | Edge | out-of-domain query | empty "no strong matches", not nearest neighbours | Integration | ❌ missing |
 | A033 | excludes trashed subjects from fused results | Edge | trashed model with a vector | absent | Integration | ❌ missing |
@@ -96,9 +96,9 @@ The branch implements W1–W3 and the remote provider/configuration contracts fr
 | A088 | switches_index_backend_without_embedding | Happy | NumPy↔sqlite-vec o pgvector↔NumPy | Flip continuo; ningún nuevo input recibido por fake provider | E2E | ❌ missing |
 | A089 | serves_queries_during_startup_rebuild | Edge | Restart con derivados ausentes | Búsqueda sirve antes de completar rebuild | E2E | ❌ missing |
 | A090 | preserves_inflight_generation_readers | Edge | Activate durante query antigua | Query completa con su Space; cleanup espera drain | Integration | ❌ missing |
-| A091 | refuses_insufficient_swap_capacity | Error | Cache/disco no admite old+new | 409/resource code; active utilizable | Integration | ❌ missing |
-| A092 | rejects_stale_backfill_publication | Edge | Passage cambia durante inference | No vector viejo publicado como current | Integration | ❌ missing |
-| A093 | refuses_unexplained_quarantine_at_activation | Error | Fallos de inferencia pendientes al verify | No activa generación incompleta sin explicación | Integration | ❌ missing |
+| A091 | refuses_insufficient_swap_capacity | Error | Cache/disco no admite old+new | 409/resource code; active utilizable | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_rejects_capacity_overcommit` |
+| A092 | rejects_stale_backfill_publication | Edge | Passage cambia durante inference | No vector viejo publicado como current | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_rejects_source_edits_during_inference` |
+| A093 | refuses_unexplained_quarantine_at_activation | Error | Fallos de inferencia pendientes al verify | No activa generación incompleta sin explicación | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_quarantines_poison_inputs_without_repeating_healthy_work` |
 | A094 | detects_unmanaged_schema_drift | Error | Tabla ajena termina en _data | Autogenerate la detecta; no exclusión genérica | Integration | ❌ missing |
 | A095 | disables_sqlite_extension_loading_after_connect | Edge | Conexiones sync/async; carga falla | Load_extension deshabilitado al terminar hook | Integration | ✅ `integration/db/test_vector_extensions.py::TestVectorExtensions::test_disables_loading_after_async_connect` |
 | A096 | degrades_when_pg_extension_cannot_be_created | Error | Disponible pero usuario sin permiso | NumPy fallback; startup no falla | Integration | ✅ `integration/postgres/test_vector_index.py::TestPostgresVectorIndex::test_degrades_when_pg_extension_cannot_be_created` |
@@ -370,19 +370,69 @@ internal persistence subcontracts below now pass. `core/` paths refer to
 | C011 | does_not_fall_back_after_a_responses_timeout | Error | ambiguous Responses timeout | no second paid dialect request | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_does_not_fall_back_after_a_responses_timeout` |
 | C012 | configures_chat_with_reported_json_guarantees | Happy | admin HTTP setup, JSON-only real fake | reduced guarantee persisted and independent switch | E2E | ✅ `e2e/test_remote_inference.py::TestRemoteInferenceSetup::test_configures_chat_with_reported_json_guarantees` |
 
-## Durable generation lifecycle — planned
+## Durable generation lifecycle
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
-| G001 | prepares_without_mutating_active | Happy | configured endpoint, old generation | immutable building proposal; old still serves | Integration | ❌ missing |
-| G002 | fences_concurrent_proposals | Error | same modality/profile | at most one building | PostgreSQL | ❌ missing |
-| G003 | backfills_current_passages | Happy | seeded four-type library | native vectors at current content hash | Integration | ❌ missing |
-| G004 | rejects_late_publication | Error | content edit or cancellation during inference | no stale vector committed | Integration | ❌ missing |
-| G005 | resumes_expired_leases | Edge | interrupted worker | committed work retained, expired unit reclaimed | Integration | ❌ missing |
-| G006 | quarantines_poison_units | Error | repeat inference failure | bounded attempts; other units progress; verify refuses incomplete | Integration | ❌ missing |
-| G007 | activates_verified_generation_atomically | Happy | ready proposal and correct version | one active, old retired, no serving gap | Integration | ❌ missing |
-| G008 | preserves_active_when_verification_fails | Error | smoke failure or unreconciled edits | old active unchanged | Integration | ❌ missing |
-| G009 | maintains_active_and_building_recipes | Edge | edits during rebuild | both serving/building hashes current | Integration | ❌ missing |
-| G010 | drains_readers_before_pruning | Edge | query pinned during flip | old vectors retained until expiry and rollback retention | Integration | ❌ missing |
-| G011 | rejects_capacity_overcommit | Error | old+new exceed storage budget | proposal rejected; old retained | Integration | ❌ missing |
-| G012 | switches_index_without_reembedding | Happy | same Space, new backend/transform | durable floats reused, no embedding request | E2E | ❌ missing |
+| G001 | prepares_without_mutating_active | Happy | configured endpoint, no active index | immutable building proposal; not prematurely serving | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_prepares_a_building_generation` |
+| G002 | fences_concurrent_proposals | Error | PostgreSQL, same modality/profile | at most one building | Integration | ✅ `integration/postgres/test_search_generations.py::TestPrepare::test_fences_concurrent_proposals` |
+| G003 | backfills_current_passages | Happy | seeded four-type library | current native vectors for every public Subject type | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_indexes_each_public_subject_type` |
+| G004 | rejects_late_publication | Error | content edit during inference | no stale vector committed | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_rejects_source_edits_during_inference` |
+| G005 | resumes_expired_leases | Edge | interrupted worker | committed work retained, expired unit reclaimed | E2E | ✅ `e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_resumes_committed_work_after_process_loss` |
+| G006 | quarantines_poison_units | Error | repeat inference failure | bounded attempts; other units progress; verify refuses incomplete | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_quarantines_poison_inputs_without_repeating_healthy_work` |
+| G007 | activates_verified_generation_atomically | Happy | ready proposal and correct version | one active, old retired, no serving gap | Integration | ✅ `integration/modules/search/test_generations.py::TestActivate::test_replaces_the_old_active_atomically` |
+| G008 | preserves_active_when_verification_fails | Error | smoke failure or unreconciled edits | old active unchanged | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_keeps_active_ready_when_the_replacement_probe_fails` |
+| G009 | maintains_active_and_building_recipes | Edge | different text prefixes; edits during rebuild | both serving/building hashes current | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_refreshes_both_generations_after_an_edit` |
+| G010 | drains_readers_before_pruning | Edge | query pinned during flip | old vectors retained until expiry and rollback retention | Integration | ✅ `integration/modules/search/test_generations.py::TestPruneOne::test_retains_old_vectors_while_a_reader_is_pinned` |
+| G011 | rejects_capacity_overcommit | Error | old+new exceed storage budget | proposal rejected; old retained | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_rejects_capacity_overcommit` |
+| G012 | switches_index_without_reembedding | Happy | same Space, NumPy → sqlite-vec | durable floats reused, no embedding request | E2E | ✅ `e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_switches_to_native_index_without_reembedding` |
+| G013 | rejects_publication_after_cancellation | Error | cancel while inference is running | no vector committed after cancellation | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_rejects_publication_after_cancellation` |
+| G014 | preserves_a_live_worker_lease | Edge | another worker owns the generation | second claim refused | Integration | ✅ `integration/modules/search/test_indexing.py::TestClaim::test_preserves_a_live_worker_lease` |
+| G015 | activates_automatically_after_verification | Happy | default proposal, complete backfill | active without a second administrator action | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_activates_automatically_after_verification` |
+| G016 | refuses_content_added_after_verification | Error | new passage between ready and activation | activation rejected; old active retained | Integration | ✅ `integration/modules/search/test_generations.py::TestActivate::test_refuses_content_added_after_verification` |
+| G017 | rejects_stale_proposal_versions | Error | wrong version token | conflict response | Integration | ✅ `integration/modules/search/test_generations.py::TestActivate::test_rejects_stale_proposal_versions` |
+| G018 | refuses_cancellation_after_concurrent_activation | Error | PostgreSQL cancel waits behind activation | active remains serving | Integration | ✅ `integration/postgres/test_search_generations.py::TestCancel::test_refuses_cancellation_after_concurrent_activation` |
+| G019 | serializes_concurrent_activation | Edge | two PostgreSQL activations | one active result, one conflict | Integration | ✅ `integration/postgres/test_search_generations.py::TestActivate::test_serializes_concurrent_activation` |
+| G020 | retries_quarantined_inputs_after_manual_reset | Happy | quarantined current passage | manual reset leads to a verified vector | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_retries_quarantined_inputs_after_manual_reset` |
+| G021 | preserves_rollback_retention_after_readers_finish | Edge | retired generation within retention | floats remain stored | Integration | ✅ `integration/modules/search/test_generations.py::TestPruneOne::test_preserves_rollback_retention_after_readers_finish` |
+| G022 | prunes_expired_generations_with_their_checkpoints | Happy | retirement retention elapsed | old floats and checkpoints removed; new generation retained | Integration | ✅ `integration/modules/search/test_generations.py::TestPruneOne::test_prunes_expired_generations_with_their_checkpoints` |
+| G023 | reports_provider_budget_truncation | Edge | passage exceeds provider input budget | truncation recorded; human source text unchanged | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_reports_provider_budget_truncation` |
+| G024 | pauses_backfill_when_ai_is_disabled | Edge | opt-in revoked | no inference; durable work retained | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_pauses_backfill_when_ai_is_disabled` |
+| G025 | does_not_publish_a_rolled_back_job | Error | caller transaction rolls back | job and caller changes absent | Integration | ✅ `integration/runtime/test_jobs.py::TestJobRegistry::test_does_not_publish_a_rolled_back_job` |
+| G026 | rehydrates_a_committed_transactional_job | Happy | new registry after commit | pending job recovered from database | Integration | ✅ `integration/runtime/test_jobs.py::TestJobRegistry::test_rehydrates_a_committed_transactional_job` |
+| G027 | preserves_generation_backfill_jobs_after_restart | Edge | committed running backfill | startup retains work and progress | Integration | ✅ `integration/runtime/test_jobs.py::TestReconcileInterruptedJobs::test_preserves_generation_backfill_jobs_after_restart` |
+| G028 | keeps_the_migrated_postgres_schema_in_sync | Happy | downgrade then upgrade lifecycle schema | autogenerate comparison empty | Integration | ✅ `integration/postgres/test_search_generations.py::TestPrepare::test_keeps_the_migrated_postgres_schema_in_sync` |
+| G029 | preserves_legacy_serving_indexes_across_roundtrip | Edge | old Similar Models vectors | bytes and serving identity preserved, work not adopted | Integration | ✅ `integration/db/migrations/test_search_generations_migration.py::TestSearchGenerationsMigration::test_preserves_legacy_serving_indexes_across_roundtrip` |
+| G030 | rejects_numeric_overflow_in_structured_output | Error | valid JSON number overflowing float | stable rejection before downstream use | Unit | ✅ `unit/modules/inference/test_chat.py::TestRemoteChatProvider::test_rejects_numeric_overflow_in_structured_output` |
+| G031 | rejects_numeric_overflow | Error | overflowing transport JSON number | invalid-JSON error | Unit | ✅ `unit/modules/inference/test_transport.py::TestPostJson::test_rejects_numeric_overflow` |
+| G032 | preserves_endpoint_deadline_inside_a_longer_job | Error | short endpoint timeout, long batch deadline | socket cancelled within endpoint deadline | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_preserves_endpoint_deadline_inside_a_longer_job` |
+| G033 | rejects_unavailable_recipes | Error | unknown recipe/version or invalid budget | stable recipe error | Unit | ✅ `unit/modules/search/test_text_inputs.py::TestTextRecipe::test_rejects_unavailable_recipes` |
+| G034 | preserves_document_prefix_inside_budget | Edge | provider cap smaller than passage | prefix retained, body truncated at exact cap | Unit | ✅ `unit/modules/search/test_text_inputs.py::TestDocumentInput::test_preserves_document_prefix_inside_budget` |
+| G035 | preserves_short_inputs | Happy | input below provider cap | exact text without truncation | Unit | ✅ `unit/modules/search/test_text_inputs.py::TestDocumentInput::test_preserves_short_inputs` |
+| G036 | exposes_a_durable_build_job | Happy | administrator generation proposal | 202 with persisted job/status | Integration | ✅ `integration/api/v1/test_inference.py::TestProposeGeneration::test_exposes_a_durable_build_job` |
+| G037 | requires_admin_generation_proposals | Error | ordinary user proposal | 403 without generation creation | Integration | ✅ `integration/api/v1/test_inference.py::TestProposeGeneration::test_requires_admin_generation_proposals` |
+| G038 | requires_admin_generation_actions | Error | ordinary user activates/cancels/retries | 403 for each action | Integration | ✅ `integration/api/v1/test_inference.py::TestCancelGeneration::test_requires_admin_generation_actions` |
+| G039 | cancels_the_selected_proposal | Happy | matching admin action token | durable cancelled status | Integration | ✅ `integration/api/v1/test_inference.py::TestCancelGeneration::test_cancels_the_selected_proposal` |
+| G040 | rejects_unavailable_recipes_at_api | Error | unsupported passage version | 400 with stable error | Integration | ✅ `integration/api/v1/test_inference.py::TestProposeGeneration::test_rejects_unavailable_recipes` |
+| G041 | requires_ai_opt_in | Error | AI disabled | proposal refused before work | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_requires_ai_opt_in` |
+| G042 | refuses_unverified_generations | Error | backfill incomplete | activation conflict | Integration | ✅ `integration/modules/search/test_generations.py::TestActivate::test_refuses_unverified_generations` |
+| G043 | reclaims_an_expired_worker_lease | Edge | worker lease expired | fresh unique token claims same durable generation | Integration | ✅ `integration/modules/search/test_indexing.py::TestClaim::test_reclaims_an_expired_worker_lease` |
+| G044 | prunes_vectors_in_bounded_batches | Edge | more than 128 retired vectors | at most 128 deleted per worker unit | Integration | ✅ `integration/modules/search/test_generations.py::TestPruneOne::test_prunes_vectors_in_bounded_batches` |
+| G045 | refreshes_different_passage_template_versions | Edge | active/building templates differ | both templates maintained until drain | Integration | ❌ missing |
+
+| G046 | indexes_content_added_during_backfill | Edge | new Document after first batch | new passage vector present before activation | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_indexes_content_added_during_backfill` |
+
+## Compressed index transforms — planned
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| Q001 | rejects_unapproved_truncation | Error | unknown MRL prefix size | proposal rejected before index creation | Unit | ❌ missing |
+| Q002 | normalizes_an_approved_prefix | Happy | approved prefix of a full native vector | unit-length prefix; original bytes intact | Unit | ❌ missing |
+| Q003 | roundtrips_a_versioned_int8_recipe | Happy | fixed symmetric unit scale | identical codes after metadata reload | Unit | ❌ missing |
+| Q004 | packs_binary_signs_in_declared_order | Happy | mixed signs including zero | exact packed bits and Hamming distance | Unit | ❌ missing |
+| Q005 | rejects_corrupt_native_vectors | Error | wrong length, NaN, zero prefix | stable error before derived publication | Unit | ❌ missing |
+| Q006 | bounds_compressed_shortlists | Edge | iterable exceeds scan budget | bounded candidates with truncation disclosed | Unit | ❌ missing |
+| Q007 | rejects_incompatible_transform_metadata | Error | dimensions, quantization or version changed | stable error instead of cross-generation scoring | Unit | ❌ missing |
+| Q008 | stores_compact_derivatives_on_both_databases | Happy | quantized generation on SQLite/PostgreSQL | compact codes; full native bytes retained | Integration | ❌ missing |
+| Q009 | uses_native_quantized_shortlists | Happy | installed sqlite-vec or pgvector | authorized compressed shortlist then native-float scores | Integration | ❌ missing |
+| Q010 | rebuilds_compressed_derivatives_without_inference | Edge | derived table removed after restart | fallback serves; bounded rebuild reuses saved floats | Integration | ❌ missing |

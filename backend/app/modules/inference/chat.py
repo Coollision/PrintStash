@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import threading
 from copy import deepcopy
 
@@ -66,6 +67,12 @@ def _parse(body: dict, dialect: str, validator: Draft202012Validator) -> dict:
     def constant(_value):
         raise ValueError()
 
+    def finite(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError()
+        return number
+
     def unique(items):
         result = {}
         for key, value in items:
@@ -97,7 +104,12 @@ def _parse(body: dict, dialect: str, validator: Draft202012Validator) -> dict:
             content = calls[0]["function"]["arguments"]
         if not isinstance(content, str) or len(content) > 16384:
             raise ValueError()
-        value = json.loads(content, parse_constant=constant, object_pairs_hook=unique)
+        value = json.loads(
+            content,
+            parse_constant=constant,
+            parse_float=finite,
+            object_pairs_hook=unique,
+        )
         validator.validate(value)
     except (
         ValueError,

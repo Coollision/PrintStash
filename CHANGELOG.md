@@ -11,8 +11,10 @@
   optional SQLite/PostgreSQL vector indexes with a portable float fallback, and
   preserves them through database migration and restore. Encrypted remote
   endpoints add bounded embedding and structured-chat protocols for compatible
-  services, with independent opt-ins and administrator disclosures. The remaining AI Search
-  stages are in development under #166.
+  services, with independent opt-ins and administrator disclosures. Durable
+  generation rebuilds resume after interruption, reject stale results, retain the
+  serving index during replacement, and reuse floats for backend changes. The
+  remaining AI Search stages are in development under #166.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
   cyclic library references and native vector bytes without re-embedding.

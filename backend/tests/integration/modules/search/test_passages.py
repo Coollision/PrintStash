@@ -6,14 +6,81 @@ or user-facing retrieval is implied by these internal persistence contracts.
 
 from datetime import datetime
 
+import pytest
 from printstash_core.search.passages import RECIPE_VERSION, SearchSubject, SubjectType
 from sqlmodel import select
 
+from app.db.models import PassageVector
 from app.db.models.search import SearchPassage
 from app.modules.search.passages import PassageChanges, sync_subject
 
 
+@pytest.fixture
+def indexed_model(
+    db_session,
+    make_model,
+    make_file,
+    make_embedding_space,
+    make_index_generation,
+    make_passage_vector,
+):
+    model = make_model("Dragon")
+    file = make_file(model)
+    subject = SearchSubject(SubjectType.MODEL, model.id)
+    sync_subject(db_session, subject)
+    db_session.commit()
+    passage = db_session.exec(select(SearchPassage)).one()
+    generation = make_index_generation(make_embedding_space())
+    vector = make_passage_vector(
+        generation,
+        file,
+        passage_id=passage.id,
+        unit_kind="passage",
+        unit_key=f"passage:{passage.id}",
+        input_hash=passage.content_hash,
+    )
+    return model, subject, vector.id
+
+
 class TestSyncSubject:
+    def test_invalidates_vectors_when_indexed_content_changes(
+        self, db_session, indexed_model
+    ):
+        model, subject, vector_id = indexed_model
+        model.description = "Changed source text"
+        db_session.add(model)
+
+        sync_subject(db_session, subject)
+        db_session.commit()
+
+        assert db_session.get(PassageVector, vector_id, populate_existing=True) is None
+
+    def test_preserves_vectors_for_nonindexed_edits(self, db_session, indexed_model):
+        model, subject, vector_id = indexed_model
+        model.thumbnail_path = "replacement.webp"
+        db_session.add(model)
+
+        sync_subject(db_session, subject)
+        db_session.commit()
+
+        assert (
+            db_session.get(PassageVector, vector_id, populate_existing=True) is not None
+        )
+
+    def test_rolls_back_vector_invalidation_with_content(
+        self, db_session, indexed_model
+    ):
+        model, subject, vector_id = indexed_model
+        model.description = "Uncommitted change"
+        db_session.add(model)
+
+        sync_subject(db_session, subject)
+        db_session.rollback()
+
+        assert (
+            db_session.get(PassageVector, vector_id, populate_existing=True) is not None
+        )
+
     def test_persists_model_text(self, db_session, make_model):
         model = make_model("Dragon", description="No supports")
 

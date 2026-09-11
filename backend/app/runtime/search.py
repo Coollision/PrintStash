@@ -9,6 +9,7 @@ from printstash_core.search.passages import SubjectType
 
 from app.core.logging import get_logger
 from app.db.session import get_session_factory
+from app.modules.search.indexing import IndexProcessor
 from app.modules.search.lexical_index import rebuild_partition
 from app.modules.search.reconciliation import reconcile_partition
 from app.modules.search.vector_index import repair_partition as repair_vectors
@@ -26,7 +27,8 @@ def process_one(kind: SubjectType) -> int:
             rebuild_partition(session)
             repair_vectors(session)
             session.commit()
-            return changed
+        IndexProcessor(get_session_factory()).work_one()
+        return changed
     finally:
         maintenance.end_mutating_operation()
 

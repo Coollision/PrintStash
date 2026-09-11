@@ -163,6 +163,7 @@ def publish(
     input_hash: str,
     vector: Iterable[float],
     source: Select,
+    truncated: bool = False,
     states: tuple[str, ...] = ("active", "building"),
 ) -> bool:
     """Upsert from a source-fenced SELECT; never commit or invoke inference.
@@ -199,6 +200,7 @@ def publish(
         current.c.passage_id,
         literal(input_hash),
         literal(space.dimension),
+        literal(truncated),
         literal(blob),
         literal(utcnow()),
     ).where(generation_live)
@@ -215,6 +217,7 @@ def publish(
             "passage_id",
             "input_hash",
             "native_dimension",
+            "truncated",
             "vector_blob",
             "created_at",
         ],
@@ -238,6 +241,7 @@ def publish(
                     "passage_id",
                     "input_hash",
                     "native_dimension",
+                    "truncated",
                     "vector_blob",
                     "created_at",
                 )

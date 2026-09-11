@@ -23,6 +23,7 @@ from app.db.models.search import SearchDependency, SearchPassage
 from app.db.projections import ContentSource
 from app.modules.search import lexical_index
 from app.modules.search.dependencies import extraction_dependencies
+from app.modules.search.invalidation import invalidate_passage
 from app.modules.search.sources import project_subject
 
 
@@ -72,6 +73,7 @@ def sync_subject(session: Session, subject: SearchSubject) -> PassageChanges:
     rows = session.exec(statement).all()
     if projection is None:
         for row in rows:
+            invalidate_passage(session, row.id)
             lexical_index.replace(
                 session, row, lexical_index.snapshot(row), deleted=True
             )
@@ -110,6 +112,7 @@ def sync_subject(session: Session, subject: SearchSubject) -> PassageChanges:
                 )
                 inserted += 1
             elif any(getattr(row, field) != value for field, value in values.items()):
+                invalidate_passage(session, row.id)
                 for field, value in values.items():
                     setattr(row, field, value)
                 row.updated_at = utcnow()
@@ -119,6 +122,7 @@ def sync_subject(session: Session, subject: SearchSubject) -> PassageChanges:
             session.flush()
             lexical_index.replace(session, row, old_lexical)
     for row in existing.values():
+        invalidate_passage(session, row.id)
         lexical_index.replace(session, row, lexical_index.snapshot(row), deleted=True)
         session.delete(row)
     session.flush()

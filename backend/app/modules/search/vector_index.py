@@ -151,6 +151,30 @@ def replace(session: Session, generation: IndexGeneration, row: PassageVector) -
         _fallback(session, generation, "embedding_native_unavailable")
 
 
+def remove(session: Session, generation: IndexGeneration, vector_id: int) -> None:
+    if generation.index_backend == "numpy" or generation.index_state not in {
+        "building",
+        "ready",
+    }:
+        return
+    name = table_name(generation.id, session.get_bind().dialect.name)
+    if generation.vector_table_name != name:
+        # Content writers must not acquire generation row locks after passage
+        # locks: cutover/publish acquire those in the opposite order. The repair
+        # worker probes and reports native availability independently.
+        return
+    column = "rowid" if session.get_bind().dialect.name == "sqlite" else "id"
+    try:
+        with session.begin_nested():
+            session.execute(
+                text(f"DELETE FROM {name} WHERE {column}=:id"), {"id": vector_id}
+            )
+    except DBAPIError:
+        # Durable deletion and authorized ID filtering already exclude this
+        # stale derivative. Never turn native cleanup into a content failure.
+        return
+
+
 def rebuild_partition(
     session: Session, generation: IndexGeneration, *, limit: int = 128
 ) -> int:
@@ -261,7 +285,7 @@ def _vector_type():
 
 def drop(session: Session, generation: IndexGeneration) -> None:
     """Only a drained retired generation can discard its reconstructible DDL."""
-    if generation.state != "retired":
+    if generation.state not in {"retired", "cancelled", "failed"}:
         raise EmbeddingError("embedding_generation_not_retired")
     name = table_name(generation.id, session.get_bind().dialect.name)
     if generation.vector_table_name == name:
@@ -276,17 +300,24 @@ def repair_partition(session: Session) -> int:
     """Round-robin one live Generation; startup never waits for a full rebuild."""
     if not settings.search_native_vectors_enabled:
         return 0
-    checkpoint = session.exec(select(SearchReconciliationState).where(
-        SearchReconciliationState.subject_type == "vector_index")).first()
+    checkpoint = session.exec(
+        select(SearchReconciliationState).where(
+            SearchReconciliationState.subject_type == "vector_index"
+        )
+    ).first()
     if checkpoint is None:
         checkpoint = SearchReconciliationState(subject_type="vector_index")
         session.add(checkpoint)
         session.flush()
     eligible = select(IndexGeneration).where(
         IndexGeneration.state.in_(("active", "building", "ready")),
-        IndexGeneration.index_backend != "numpy")
-    generation = session.exec(eligible.where(IndexGeneration.id > checkpoint.partition_after_id)
-        .order_by(IndexGeneration.id).limit(1)).first()
+        IndexGeneration.index_backend != "numpy",
+    )
+    generation = session.exec(
+        eligible.where(IndexGeneration.id > checkpoint.partition_after_id)
+        .order_by(IndexGeneration.id)
+        .limit(1)
+    ).first()
     if generation is None:
         checkpoint.partition_after_id = 0
         session.add(checkpoint)

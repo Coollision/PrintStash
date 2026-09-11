@@ -49,6 +49,7 @@ class SearchSettings(BaseModel):
     send_query_images: bool = False
     chat_endpoint_id: int | None = Field(default=None, ge=1)
     rollback_retention_hours: int = Field(default=24, ge=1, le=720)
+    max_index_bytes: int = Field(default=2147483648, ge=1048576, le=1099511627776)
 
 
 class SearchSettingsRead(BaseModel):

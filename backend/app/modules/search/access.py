@@ -4,7 +4,15 @@ from sqlalchemy import Integer, and_, cast, false, func, literal, select, union_
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Session
 
-from app.db.models import Collection, Document, MultipartModel, SearchPassage, User
+from app.db.models import (
+    SENTINEL_MODEL_HASH,
+    Collection,
+    Document,
+    Model,
+    MultipartModel,
+    SearchPassage,
+    User,
+)
 from app.db.scopes import live
 from app.modules.identity.rbac import accessible_collection_ids
 from app.modules.library.model_views.access import accessible_live_model_ids_stmt
@@ -39,6 +47,32 @@ def visible_subjects(session: Session, user: User):
 
 def visible_passage_ids(session: Session, user: User):
     visible = visible_subjects(session, user)
+    return _passages_for_subjects(session, visible)
+
+
+def indexable_passage_ids(session: Session):
+    """Instance-consented background indexing includes only live contributors.
+
+    This is not a user authorization scope. Interactive retrieval must continue
+    to use visible_passage_ids with its freshly authenticated principal.
+    """
+    statements = []
+    for kind, table in (
+        ("model", Model),
+        ("collection", Collection),
+        ("document", Document),
+        ("multipart_model", MultipartModel),
+    ):
+        statement = select(literal(kind).label("kind"), table.id)
+        if table is not MultipartModel:
+            statement = statement.where(live(table))
+        if table is Model:
+            statement = statement.where(Model.hash != SENTINEL_MODEL_HASH)
+        statements.append(statement)
+    return _passages_for_subjects(session, union_all(*statements).cte())
+
+
+def _passages_for_subjects(session: Session, visible):
     owner_visible = (
         select(visible.c.id)
         .where(

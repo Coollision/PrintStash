@@ -10,7 +10,7 @@ from pydantic import SecretStr
 
 from app.modules.inference.endpoint import EndpointConfig
 from app.modules.inference.remote import RemoteEmbeddingProvider
-from app.modules.inference.transport import close_client
+from app.modules.inference.transport import close_client, post_json
 from tests.fakes.inference import InferenceFake
 from tests.fakes.server import start_server
 
@@ -43,6 +43,23 @@ def remote():
 
 
 class TestRemoteEmbeddingProvider:
+    def test_preserves_endpoint_deadline_inside_a_longer_job(self, remote):
+        fake, provider = remote
+        fake.fault = "trickle"
+        endpoint = provider.endpoint.model_copy(update={"timeout_seconds": 0.3})
+        started = time.monotonic()
+
+        with pytest.raises(EmbeddingError, match="inference_timeout"):
+            post_json(
+                endpoint,
+                "embeddings",
+                {"model": fake.model, "input": ["boat"], "encoding_format": "float"},
+                context=InferenceContext.bounded(120),
+            )
+
+        assert time.monotonic() - started < 1
+        assert len(fake.calls) == 1
+
     def test_keeps_inference_wire_data_out_of_debug_logs(self, remote, caplog):
         fake, provider = remote
         caplog.set_level("DEBUG")

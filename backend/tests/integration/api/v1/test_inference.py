@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import select
 
-from app.db.models import AuditLog, InferenceEndpoint
+from app.db.models import AuditLog, IndexGeneration, InferenceEndpoint
 from app.modules.inference.configuration import load
 
 PROPOSAL = {
@@ -168,6 +168,7 @@ class TestReadSettings:
                 "send_query_images": False,
                 "chat_endpoint_id": None,
                 "rollback_retention_hours": 24,
+                "max_index_bytes": 2147483648,
             },
             "endpoints": [],
         }
@@ -225,6 +226,98 @@ class TestUpdateSettings:
     def test_requires_admin_settings_changes(self, client, user_headers):
         response = client.put(
             "/api/v1/config/ai-search", json={"enabled": True}, headers=user_headers()
+        )
+
+        assert response.status_code == 403, response.text
+
+
+class TestProposeGeneration:
+    def test_exposes_a_durable_build_job(
+        self, client, auth_headers, make_inference_endpoint
+    ):
+        endpoint = make_inference_endpoint()
+        enabled = client.put(
+            "/api/v1/config/ai-search", headers=auth_headers, json={"enabled": True}
+        )
+        assert enabled.status_code == 200, enabled.text
+
+        response = client.post(
+            "/api/v1/config/ai-search/generations",
+            headers=auth_headers,
+            json={"endpoint_id": endpoint.id, "index_backend": "numpy"},
+        )
+
+        assert response.status_code == 202, response.text
+        assert response.json()["state"] == "building"
+        assert response.json()["job_id"]
+        listed = client.get(
+            "/api/v1/config/ai-search/generations", headers=auth_headers
+        )
+        assert listed.json() == [response.json()]
+
+    def test_rejects_unavailable_recipes(
+        self, client, auth_headers, make_inference_endpoint
+    ):
+        endpoint = make_inference_endpoint()
+        enabled = client.put(
+            "/api/v1/config/ai-search", headers=auth_headers, json={"enabled": True}
+        )
+        assert enabled.status_code == 200, enabled.text
+
+        response = client.post(
+            "/api/v1/config/ai-search/generations",
+            headers=auth_headers,
+            json={"endpoint_id": endpoint.id, "passage_recipe_version": 999},
+        )
+
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "search_recipe_unavailable"
+
+    def test_requires_admin_generation_proposals(
+        self, client, user_headers, db_session
+    ):
+        response = client.post(
+            "/api/v1/config/ai-search/generations",
+            headers=user_headers(),
+            json={"endpoint_id": 1},
+        )
+
+        assert response.status_code == 403, response.text
+        assert db_session.exec(select(IndexGeneration)).all() == []
+
+
+class TestCancelGeneration:
+    def test_cancels_the_selected_proposal(
+        self, client, auth_headers, make_inference_endpoint
+    ):
+        endpoint = make_inference_endpoint()
+        enabled = client.put(
+            "/api/v1/config/ai-search", headers=auth_headers, json={"enabled": True}
+        )
+        assert enabled.status_code == 200, enabled.text
+        proposal = client.post(
+            "/api/v1/config/ai-search/generations",
+            headers=auth_headers,
+            json={"endpoint_id": endpoint.id, "index_backend": "numpy"},
+        ).json()
+
+        response = client.post(
+            f"/api/v1/config/ai-search/generations/{proposal['id']}/cancel",
+            headers=auth_headers,
+            json={"version_token": proposal["version_token"]},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["state"] == "cancelled"
+
+    @pytest.mark.parametrize(
+        "action", ["activate", "cancel", "retry"], ids=["activate", "cancel", "retry"]
+    )
+    def test_requires_admin_generation_actions(self, client, user_headers, action):
+        response = client.post(
+            f"/api/v1/config/ai-search/generations/1/{action}",
+            headers=user_headers(),
+            json={"version_token": "a" * 32},
         )
 
         assert response.status_code == 403, response.text

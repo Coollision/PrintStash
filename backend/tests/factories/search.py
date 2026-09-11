@@ -1,6 +1,8 @@
 """Durable passage fixtures use the same immutable recipe identity as search."""
 
+from datetime import timedelta
 from typing import Any
+from uuid import uuid4
 
 from printstash_core.search.passages import (
     RECIPE_VERSION,
@@ -13,7 +15,14 @@ from printstash_core.search.passages import (
 from sqlmodel import Session
 
 from app.core.time import utcnow
-from app.db.models import SearchLexicalPosting, SearchLexicalState, SearchLexicalTerm
+from app.db.models import (
+    IndexGeneration,
+    SearchGenerationLease,
+    SearchIndexFailure,
+    SearchLexicalPosting,
+    SearchLexicalState,
+    SearchLexicalTerm,
+)
 from app.db.models.search import (
     SearchDependency,
     SearchPassage,
@@ -81,3 +90,31 @@ def build_search_lexical_posting(
 ) -> SearchLexicalPosting:
     defaults = {"passage_id": passage.id, "term": term, "frequency": 1.0}
     return save(session, SearchLexicalPosting(**(defaults | overrides)))
+
+
+def build_search_index_failure(
+    session: Session,
+    generation: IndexGeneration,
+    passage: SearchPassage,
+    **overrides: Any,
+) -> SearchIndexFailure:
+    defaults = {
+        "generation_id": generation.id,
+        "passage_id": passage.id,
+        "input_hash": passage.content_hash,
+        "attempts": 3,
+        "state": "quarantined",
+        "error_code": "inference_request_rejected",
+    }
+    return save(session, SearchIndexFailure(**(defaults | overrides)))
+
+
+def build_search_generation_lease(
+    session: Session, generation: IndexGeneration, **overrides: Any
+) -> SearchGenerationLease:
+    defaults = {
+        "token": uuid4().hex,
+        "generation_id": generation.id,
+        "expires_at": utcnow() + timedelta(minutes=3),
+    }
+    return save(session, SearchGenerationLease(**(defaults | overrides)))

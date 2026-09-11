@@ -19,6 +19,7 @@ from app.db.models import (
     IndexGeneration,
     Model,
     PassageVector,
+    SearchPassage,
     SimilarityCandidate,
     SimilarityCandidateObservation,
     SimilarityReviewDecision,
@@ -174,12 +175,31 @@ def build_index_generation(
 def build_passage_vector(
     session: Session,
     generation: IndexGeneration,
-    file: File,
+    file: File | None = None,
     *,
     component_index: int = 0,
+    passage: SearchPassage | None = None,
     **overrides: Any,
 ) -> PassageVector:
-    dimension = generation.index_dimension
+    dimension = session.get(EmbeddingSpace, generation.space_id).native_dimension
+    if passage is not None:
+        defaults = {
+            "generation_id": generation.id,
+            "unit_kind": "passage",
+            "unit_key": f"passage:{passage.id}",
+            "passage_id": passage.id,
+            "subject_type": passage.subject_type,
+            "subject_id": passage.subject_id,
+            "model_id": passage.subject_id if passage.subject_type == "model" else None,
+            "input_hash": passage.content_hash,
+            "native_dimension": dimension,
+            "vector_blob": struct.pack(
+                f"<{dimension}f", 1.0, *([0.0] * (dimension - 1))
+            ),
+        }
+        return save(session, PassageVector(**(defaults | overrides)))
+    if file is None:
+        raise ValueError("a persisted Artifact or Passage is required")
     defaults = {
         "generation_id": generation.id,
         "unit_kind": "mesh_component" if component_index else "mesh_artifact",

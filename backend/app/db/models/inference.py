@@ -95,6 +95,32 @@ class IndexGeneration(SQLModel, table=True):
     )
     index_error: str | None = Field(default=None, max_length=64)
     indexed_after_id: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    version_token: str | None = Field(default=None, max_length=32)
+    actor_id: int | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+    replaces_generation_id: int | None = Field(default=None)
+    lease_token: str | None = Field(default=None, max_length=64)
+    lease_expires_at: datetime | None = Field(default=None)
+    cancel_requested: bool = Field(
+        default=False, sa_column_kwargs={"server_default": "0"}
+    )
+    auto_activate: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
+    passage_after_id: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    reconcile_kind: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    processed: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    copied: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    truncated_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    verified_count: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    verified_at: datetime | None = Field(default=None)
+    last_activity_at: datetime | None = Field(default=None)
+    activated_at: datetime | None = Field(default=None)
+    retired_at: datetime | None = Field(default=None)
+    retain_until: datetime | None = Field(default=None)
+    error_code: str | None = Field(default=None, max_length=64)
+    job_id: str | None = Field(default=None, max_length=64)
+    reservation_id: str | None = Field(default=None, max_length=128)
+    estimated_bytes: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -130,5 +156,45 @@ class PassageVector(SQLModel, table=True):
     )
     input_hash: str = Field(max_length=64)
     native_dimension: int
+    truncated: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
     vector_blob: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class SearchIndexFailure(SQLModel, table=True):
+    """Hash-scoped retry/quarantine records never contain source text or replies."""
+
+    __tablename__ = "search_index_failures"
+    __audit_exclude__: ClassVar[bool] = True
+    __table_args__ = (
+        UniqueConstraint(
+            "generation_id",
+            "passage_id",
+            "input_hash",
+            name="uq_search_index_failure_unit",
+        ),
+    )
+    id: int | None = Field(default=None, primary_key=True)
+    generation_id: int = Field(
+        foreign_key="index_generations.id", ondelete="CASCADE", index=True
+    )
+    passage_id: int = Field(
+        foreign_key="search_passages.id", ondelete="CASCADE", index=True
+    )
+    input_hash: str = Field(max_length=64)
+    attempts: int = 0
+    state: str = Field(default="retry", max_length=16)
+    retry_after: datetime | None = Field(default=None)
+    error_code: str = Field(max_length=64)
+
+
+class SearchGenerationLease(SQLModel, table=True):
+    """A short, durable reader pin survives worker/process boundaries."""
+
+    __tablename__ = "search_generation_leases"
+    __audit_exclude__: ClassVar[bool] = True
+    token: str = Field(primary_key=True, max_length=64)
+    generation_id: int = Field(
+        foreign_key="index_generations.id", ondelete="CASCADE", index=True
+    )
+    expires_at: datetime = Field(index=True)

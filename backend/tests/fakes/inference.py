@@ -27,6 +27,7 @@ class InferenceFake:
     chat_result: dict = field(default_factory=lambda: {"caption": "A small boat"})
     chat_malformed_remaining: int = 0
     responses_available: bool = False
+    hold_embedding_call: int | None = None
 
     def app(self) -> FastAPI:
         app = FastAPI()
@@ -52,6 +53,9 @@ class InferenceFake:
                 or not all(isinstance(item, str) for item in inputs)
             ):
                 return JSONResponse({"error": {"code": "bad_input"}}, status_code=422)
+            call_number = len(self.calls)
+            while self.hold_embedding_call == call_number:
+                await asyncio.sleep(0.05)
             if self.fault == "redirect":
                 return RedirectResponse("/redirected", status_code=307)
             if self.fault in {"429", "500", "401"} or self.failures_remaining:

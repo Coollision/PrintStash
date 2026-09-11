@@ -24,6 +24,23 @@ def provider():
 
 
 class TestRemoteChatProvider:
+    def test_rejects_numeric_overflow_in_structured_output(self, provider):
+        schema = {
+            "type": "object",
+            "properties": {"score": {"type": "number"}},
+            "required": ["score"],
+            "additionalProperties": False,
+        }
+        body = {
+            "choices": [
+                {"finish_reason": "stop", "message": {"content": '{"score":1e999}'}}
+            ]
+        }
+
+        with patch("app.modules.inference.chat.post_json", return_value=body):
+            with pytest.raises(EmbeddingError, match="chat_output_invalid"):
+                provider.complete(ChatInput("Score", "boat", schema))
+
     @pytest.mark.parametrize(
         "body",
         [

@@ -62,6 +62,8 @@ from tests.factories.protocols import (
     MakePrintJob,
     MakeProvenanceSource,
     MakeSearchDependency,
+    MakeSearchGenerationLease,
+    MakeSearchIndexFailure,
     MakeSearchLexicalPosting,
     MakeSearchLexicalState,
     MakeSearchLexicalTerm,
@@ -630,6 +632,16 @@ def make_inference_endpoint(db_session: Session) -> MakeInferenceEndpoint:
     return _bound(factories.build_inference_endpoint, db_session)
 
 
+@pytest.fixture
+def make_search_index_failure(db_session: Session) -> MakeSearchIndexFailure:
+    return _bound(factories.build_search_index_failure, db_session)
+
+
+@pytest.fixture
+def make_search_generation_lease(db_session: Session) -> MakeSearchGenerationLease:
+    return _bound(factories.build_search_generation_lease, db_session)
+
+
 __all__ += [
     "make_geometry_fingerprint",
     "make_similarity_run",
@@ -649,7 +661,9 @@ def make_search_dependency(db_session: Session) -> MakeSearchDependency:
 
 
 @pytest.fixture
-def make_search_reconciliation_state(db_session: Session) -> MakeSearchReconciliationState:
+def make_search_reconciliation_state(
+    db_session: Session,
+) -> MakeSearchReconciliationState:
     return _bound(factories.build_search_reconciliation_state, db_session)
 
 
@@ -671,4 +685,8 @@ def make_search_lexical_posting(db_session: Session) -> MakeSearchLexicalPosting
     return _bound(factories.build_search_lexical_posting, db_session)
 
 
-__all__ += ["make_search_lexical_state", "make_search_lexical_term", "make_search_lexical_posting"]
+__all__ += [
+    "make_search_lexical_state",
+    "make_search_lexical_term",
+    "make_search_lexical_posting",
+]

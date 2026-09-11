@@ -24,6 +24,14 @@ def endpoint():
 
 
 class TestPostJson:
+    def test_rejects_numeric_overflow(self, endpoint):
+        with patch(
+            "app.modules.inference.http_runtime.request",
+            return_value=(200, {}, b'{"score":1e999}'),
+        ):
+            with pytest.raises(EmbeddingError, match="inference_invalid_json"):
+                transport.post_json(endpoint, "embeddings", {})
+
     def test_rejects_unregistered_operations(self, endpoint):
         with pytest.raises(EmbeddingError, match="inference_operation_invalid"):
             transport.post_json(endpoint, "../admin", {})

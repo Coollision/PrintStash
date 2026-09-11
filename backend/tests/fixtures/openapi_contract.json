@@ -6095,6 +6095,276 @@
         "title": "GcApprovalRequest",
         "type": "object"
       },
+      "GenerationAction": {
+        "additionalProperties": false,
+        "properties": {
+          "version_token": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Version Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_token"
+        ],
+        "title": "GenerationAction",
+        "type": "object"
+      },
+      "GenerationProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_activate": {
+            "default": true,
+            "title": "Auto Activate",
+            "type": "boolean"
+          },
+          "document_prefix": {
+            "default": "",
+            "maxLength": 256,
+            "title": "Document Prefix",
+            "type": "string"
+          },
+          "endpoint_id": {
+            "minimum": 1.0,
+            "title": "Endpoint Id",
+            "type": "integer"
+          },
+          "index_backend": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "numpy",
+              "sqlite_vec",
+              "pgvector"
+            ],
+            "title": "Index Backend",
+            "type": "string"
+          },
+          "index_dimension": {
+            "anyOf": [
+              {
+                "maximum": 4096.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Dimension"
+          },
+          "passage_recipe_version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Passage Recipe Version",
+            "type": "integer"
+          },
+          "profile": {
+            "const": "semantic_text",
+            "default": "semantic_text",
+            "title": "Profile",
+            "type": "string"
+          },
+          "quantization": {
+            "default": "float32",
+            "enum": [
+              "float32",
+              "int8",
+              "binary"
+            ],
+            "title": "Quantization",
+            "type": "string"
+          },
+          "query_prefix": {
+            "default": "",
+            "maxLength": 256,
+            "title": "Query Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint_id"
+        ],
+        "title": "GenerationProposal",
+        "type": "object"
+      },
+      "GenerationRead": {
+        "properties": {
+          "config_hash": {
+            "title": "Config Hash",
+            "type": "string"
+          },
+          "copied": {
+            "title": "Copied",
+            "type": "integer"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "estimated_bytes": {
+            "title": "Estimated Bytes",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "index_backend": {
+            "title": "Index Backend",
+            "type": "string"
+          },
+          "index_dimension": {
+            "title": "Index Dimension",
+            "type": "integer"
+          },
+          "index_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Error"
+          },
+          "index_state": {
+            "title": "Index State",
+            "type": "string"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "native_dimension": {
+            "title": "Native Dimension",
+            "type": "integer"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "quantization": {
+            "title": "Quantization",
+            "type": "string"
+          },
+          "quarantined": {
+            "title": "Quarantined",
+            "type": "integer"
+          },
+          "retain_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retain Until"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "truncated_count": {
+            "title": "Truncated Count",
+            "type": "integer"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "version_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Token"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "phase",
+          "version_token",
+          "modality",
+          "profile",
+          "model",
+          "config_hash",
+          "native_dimension",
+          "index_dimension",
+          "quantization",
+          "index_backend",
+          "index_state",
+          "index_error",
+          "error_code",
+          "processed",
+          "copied",
+          "truncated_count",
+          "eligible",
+          "indexed",
+          "quarantined",
+          "estimated_bytes",
+          "job_id",
+          "verified_at",
+          "retain_until"
+        ],
+        "title": "GenerationRead",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -15030,6 +15300,13 @@
             "title": "Local Models Enabled",
             "type": "boolean"
           },
+          "max_index_bytes": {
+            "default": 2147483648,
+            "maximum": 1099511627776.0,
+            "minimum": 1048576.0,
+            "title": "Max Index Bytes",
+            "type": "integer"
+          },
           "nl_filters_enabled": {
             "default": false,
             "title": "Nl Filters Enabled",
@@ -22253,6 +22530,251 @@
           }
         ],
         "summary": "Create Endpoint",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search/generations": {
+      "get": {
+        "operationId": "read_generations_api_v1_config_ai_search_generations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GenerationRead"
+                  },
+                  "title": "Response Read Generations Api V1 Config Ai Search Generations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Generations",
+        "tags": [
+          "config"
+        ]
+      },
+      "post": {
+        "operationId": "propose_generation_api_v1_config_ai_search_generations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Propose Generation",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search/generations/{generation_id}/activate": {
+      "post": {
+        "operationId": "activate_generation_api_v1_config_ai_search_generations__generation_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Activate Generation",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search/generations/{generation_id}/cancel": {
+      "post": {
+        "operationId": "cancel_generation_api_v1_config_ai_search_generations__generation_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cancel Generation",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search/generations/{generation_id}/retry": {
+      "post": {
+        "operationId": "retry_generation_api_v1_config_ai_search_generations__generation_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Retry Generation",
         "tags": [
           "config"
         ]

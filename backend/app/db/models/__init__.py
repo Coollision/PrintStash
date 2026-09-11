@@ -72,6 +72,8 @@ from .inference import EmbeddingSpace as EmbeddingSpace
 from .inference import IndexGeneration as IndexGeneration
 from .inference import InferenceEndpoint as InferenceEndpoint
 from .inference import PassageVector as PassageVector
+from .inference import SearchGenerationLease as SearchGenerationLease
+from .inference import SearchIndexFailure as SearchIndexFailure
 from .ingestion import (
     BackgroundJob as BackgroundJob,
 )
