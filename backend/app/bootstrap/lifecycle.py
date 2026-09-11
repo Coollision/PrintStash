@@ -70,6 +70,7 @@ async def _close_outbound_clients() -> None:
     """Close pooled outbound clients while preserving the first close error."""
 
     from app.core.provider_redaction import redact_exception
+    from app.modules.inference.transport import close_client as close_inference_client
     from app.modules.ingestion.capture_provider_transport import (
         close_provider_transport,
     )
@@ -78,6 +79,10 @@ async def _close_outbound_clients() -> None:
     try:
         await close_http_client()
     finally:
+        try:
+            await asyncio.to_thread(close_inference_client)
+        except Exception:
+            logger.error("failed to close inference transport")
         try:
             await close_provider_transport()
         except Exception as exc:

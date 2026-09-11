@@ -1,8 +1,9 @@
 """Unit identities preserve Artifact/component keys independently of an ORM."""
 
 import pytest
+
 from printstash_core.inference import EmbeddingError
-from printstash_core.inference.units import unit_key, unit_component
+from printstash_core.inference.units import unit_component, unit_key
 
 
 class TestUnitIdentity:

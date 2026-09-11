@@ -83,6 +83,9 @@ from tests.factories.identity import (
     grant_printer_role,
     user_config,
 )
+from tests.factories.inference import (
+    build_inference_endpoint as build_inference_endpoint,
+)
 from tests.factories.library import (
     build_collection,
     build_file,
@@ -296,6 +299,7 @@ __all__ += [
     "build_index_generation",
     "build_passage_vector",
     "build_search_passage",
+    "build_inference_endpoint",
     "build_search_dependency",
     "build_search_reconciliation_state",
     "build_similarity_candidate",

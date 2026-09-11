@@ -46,6 +46,7 @@ from tests.factories.protocols import (
     MakeGeometryFingerprint,
     MakeInboxItem,
     MakeIndexGeneration,
+    MakeInferenceEndpoint,
     MakeModel,
     MakeMultipartBuild,
     MakeMultipartBuildAttempt,
@@ -622,6 +623,11 @@ def make_passage_vector(db_session: Session) -> MakePassageVector:
 @pytest.fixture
 def make_search_passage(db_session: Session) -> MakeSearchPassage:
     return _bound(factories.build_search_passage, db_session)
+
+
+@pytest.fixture
+def make_inference_endpoint(db_session: Session) -> MakeInferenceEndpoint:
+    return _bound(factories.build_inference_endpoint, db_session)
 
 
 __all__ += [

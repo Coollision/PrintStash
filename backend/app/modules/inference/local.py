@@ -14,6 +14,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from printstash_core.inference import EmbeddingError, EmbeddingInput, EmbeddingSpace
+from printstash_core.inference.context import InferenceContext
 from printstash_core.inference.vectors import normalize
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlmodel import Session
@@ -55,7 +56,11 @@ class LocalEmbeddingProvider:
         return self.manifest
 
     def embed(
-        self, inputs: tuple[EmbeddingInput, ...], space: EmbeddingSpace
+        self,
+        inputs: tuple[EmbeddingInput, ...],
+        space: EmbeddingSpace,
+        *,
+        context: InferenceContext | None = None,
     ) -> tuple[tuple[float, ...], ...]:
         if space != self.space:
             raise EmbeddingError("embedding_space_mismatch")
@@ -65,7 +70,7 @@ class LocalEmbeddingProvider:
             item.modality == "text" for item in inputs
         ):
             raise EmbeddingError("embedding_text_unavailable")
-        return self._execute(inputs)
+        return self._execute(inputs, context=context)
 
     @staticmethod
     def _release_slot(session: Session, slot_id: int | None, token: str) -> None:
@@ -73,8 +78,13 @@ class LocalEmbeddingProvider:
         session.commit()
 
     def _execute(
-        self, inputs: tuple[EmbeddingInput, ...]
+        self,
+        inputs: tuple[EmbeddingInput, ...],
+        *,
+        context: InferenceContext | None = None,
     ) -> tuple[tuple[float, ...], ...]:
+        if context is not None:
+            context.remaining()
         if importlib.util.find_spec("onnxruntime") is None:
             raise EmbeddingError("embedding_runtime_unavailable")
         with ExitStack() as cleanup:
@@ -144,6 +154,8 @@ class LocalEmbeddingProvider:
             budget = compute_slots.native_memory_budget_bytes()
             try:
                 while process.poll() is None:
+                    if context is not None:
+                        context.remaining()
                     rss = compute_slots.native_process_rss_bytes(process.pid)
                     if rss is not None and rss > budget:
                         failure = "embedding_worker_oom"

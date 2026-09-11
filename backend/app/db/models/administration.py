@@ -51,6 +51,9 @@ class SystemConfig(SQLModel, table=True):
     similarity_settings_json: Optional[str] = Field(
         default=None, sa_column=Column(Text, nullable=True)
     )
+    ai_search_settings_json: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
 
     # Local storage paths (overridden at runtime)
     data_dir: Optional[str] = Field(default=None, max_length=1024)

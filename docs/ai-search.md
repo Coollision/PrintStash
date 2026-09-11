@@ -145,6 +145,38 @@ SQLite still uses its transactional file backup. Both formats remain readable
 without the vector extension; querying a local model still requires its weights
 to be present, and restore never downloads them.
 
+## Remote inference
+
+Administrators can create immutable endpoint versions at
+`POST /api/v1/config/ai-search/endpoints`. Text embeddings use the
+[compatible embeddings contract](https://developers.openai.com/api/reference/python/resources/embeddings/methods/create): native float vectors only, one indexed result per
+input, checked dimension, finite values and nonzero normalization. Image embedding
+is not inferred from text compatibility. LAN HTTP endpoints are supported.
+
+The shared transport limits concurrency to four operations, input to 1 MiB,
+response to 2 MiB, retries to three attempts and each operation to at most 120
+seconds. One deadline covers admission, reads, retries and cancellation; slow
+streaming cannot extend it. Redirects and compressed responses are refused.
+Retryable failures open a per-endpoint circuit. Keys and extra headers are stored
+with `EncryptedText`; invalid-input responses, audit records and DEBUG wire logs
+omit credentials and inference text. No request payload uses a temporary file.
+
+Chat tries schema-constrained output, then tool calls, then strict JSON with at
+most one repair. Only a structured unsupported response changes the dialect.
+Outputs are checked locally against closed, bounded inline schemas; external
+references are forbidden. An optional `prefer_responses` probe enables the
+[Responses structured-output contract](https://developers.openai.com/api/docs/guides/structured-outputs)
+only after success, always with `store=false`. Responses timeouts never trigger
+another dialect. Reported guarantees distinguish schema/tool constraints from
+locally validated JSON.
+
+`GET/PUT /api/v1/config/ai-search` exposes administrator disclosures and independent,
+default-off opt-ins for retrieval, captions, natural-language filters, local model
+acquisition, rendered images and query images. A capable chat endpoint and image
+consent are required before captions can be enabled. UI and consumers are connected
+in their later work stages. These protocols support compatible self-hosted services;
+using them does not require an OpenAI account or a hosted OpenAI model.
+
 ## Remaining implementation
 
 The W1/W2 stage gate passed 3,264 repository, integration and end-to-end tests.
@@ -157,9 +189,13 @@ The W3 stage gate passed 3,291 tests, with separate gates for core inference
 (4), native PostgreSQL transfer/fallback (4), and the full PostgreSQL backup API
 flow. The remaining stages still require their own acceptance evidence.
 
+W4/W4b add remote embedding and chat contracts with real-loopback and full API
+checks. The schema/repository gate passed 3,208 tests, core inference passed 79,
+and local inference/lifecycle regressions passed 82. These are stage checks; the
+completed feature still needs the full final coverage and security gates.
+
 W5 will retain every recipe needed by active/building generations and connect
-content invalidation to durable embedding work. W4/W4b add the remote embedding
-and chat contracts.
+content invalidation to durable embedding work.
 Local model acquisition, hybrid retrieval, UI, visual profiles, captions, sparse
 expansion, quantization and natural-language filters remain in progress.
 

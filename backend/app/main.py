@@ -96,10 +96,15 @@ app.add_middleware(VaultGenerationMiddleware)
 async def validation_exception_handler(
     _request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    errors = exc.errors()
+    if _request.url.path.startswith("/api/v1/config/ai-search"):
+        # Pydantic includes the entire submitted object for a model validator.
+        # This boundary accepts credentials, so even invalid inputs stay secret.
+        errors = [{"type": error["type"], "loc": error["loc"]} for error in errors]
     return JSONResponse(
         status_code=422,
         content=jsonable_encoder(
-            {"detail": "request_validation_failed", "errors": exc.errors()}
+            {"detail": "request_validation_failed", "errors": errors}
         ),
     )
 

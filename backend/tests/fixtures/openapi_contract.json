@@ -3985,6 +3985,184 @@
         "title": "DocumentUpdate",
         "type": "object"
       },
+      "EndpointProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "default": "",
+            "format": "password",
+            "maxLength": 8192,
+            "title": "Api Key",
+            "type": "string",
+            "writeOnly": true
+          },
+          "base_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            "maxProperties": 16,
+            "title": "Headers",
+            "type": "object"
+          },
+          "kind": {
+            "default": "embedding",
+            "enum": [
+              "embedding",
+              "chat"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "max_input_characters": {
+            "default": 16384,
+            "maximum": 16384.0,
+            "minimum": 128.0,
+            "title": "Max Input Characters",
+            "type": "integer"
+          },
+          "model": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "native_dimension": {
+            "anyOf": [
+              {
+                "maximum": 4096.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Dimension"
+          },
+          "prefer_responses": {
+            "default": false,
+            "title": "Prefer Responses",
+            "type": "boolean"
+          },
+          "revision": {
+            "default": "configured-v1",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision",
+            "type": "string"
+          },
+          "supports_images": {
+            "default": false,
+            "title": "Supports Images",
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "default": 15,
+            "exclusiveMinimum": 0.0,
+            "maximum": 120.0,
+            "title": "Timeout Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "base_url",
+          "model"
+        ],
+        "title": "EndpointProposal",
+        "type": "object"
+      },
+      "EndpointRead": {
+        "properties": {
+          "config_hash": {
+            "title": "Config Hash",
+            "type": "string"
+          },
+          "dialect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dialect"
+          },
+          "guarantee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guarantee"
+          },
+          "has_credentials": {
+            "title": "Has Credentials",
+            "type": "boolean"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "native_dimension": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Dimension"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "supports_images": {
+            "title": "Supports Images",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "host",
+          "model",
+          "revision",
+          "config_hash",
+          "native_dimension",
+          "supports_images",
+          "dialect",
+          "guarantee",
+          "has_credentials"
+        ],
+        "title": "EndpointRead",
+        "type": "object"
+      },
       "ExternalLibraryCollectionMode": {
         "description": "How a scanned file's NAS subfolder maps to a vault Collection.",
         "enum": [
@@ -9988,6 +10166,7 @@
       },
       "ModelSort": {
         "enum": [
+          "relevance",
           "date-desc",
           "date-asc",
           "name-asc",
@@ -14627,6 +14806,46 @@
         "title": "SavedViewUpdate",
         "type": "object"
       },
+      "SearchEvidence": {
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "leg": {
+            "default": "lexical",
+            "title": "Leg",
+            "type": "string"
+          },
+          "ranges": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Ranges",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "text"
+        ],
+        "title": "SearchEvidence",
+        "type": "object"
+      },
       "SearchRequest": {
         "additionalProperties": false,
         "properties": {
@@ -14678,6 +14897,183 @@
           }
         },
         "title": "SearchRequest",
+        "type": "object"
+      },
+      "SearchResponse": {
+        "properties": {
+          "degraded": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Degraded",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "legs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "lexical_backend": {
+            "enum": [
+              "fts5",
+              "postgres_bm25",
+              "ranked_like"
+            ],
+            "title": "Lexical Backend",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "semantic_ready": {
+            "default": false,
+            "title": "Semantic Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "lexical_backend"
+        ],
+        "title": "SearchResponse",
+        "type": "object"
+      },
+      "SearchResult": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/SearchEvidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "href": {
+            "title": "Href",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelListItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "integer"
+          },
+          "subject_type": {
+            "$ref": "#/components/schemas/SubjectType"
+          }
+        },
+        "required": [
+          "subject_type",
+          "subject_id",
+          "name",
+          "href",
+          "evidence"
+        ],
+        "title": "SearchResult",
+        "type": "object"
+      },
+      "SearchSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "captions_enabled": {
+            "default": false,
+            "title": "Captions Enabled",
+            "type": "boolean"
+          },
+          "chat_endpoint_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Endpoint Id"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "local_models_enabled": {
+            "default": false,
+            "title": "Local Models Enabled",
+            "type": "boolean"
+          },
+          "nl_filters_enabled": {
+            "default": false,
+            "title": "Nl Filters Enabled",
+            "type": "boolean"
+          },
+          "rollback_retention_hours": {
+            "default": 24,
+            "maximum": 720.0,
+            "minimum": 1.0,
+            "title": "Rollback Retention Hours",
+            "type": "integer"
+          },
+          "send_query_images": {
+            "default": false,
+            "title": "Send Query Images",
+            "type": "boolean"
+          },
+          "send_rendered_images": {
+            "default": false,
+            "title": "Send Rendered Images",
+            "type": "boolean"
+          }
+        },
+        "title": "SearchSettings",
+        "type": "object"
+      },
+      "SearchSettingsRead": {
+        "properties": {
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/EndpointRead"
+            },
+            "title": "Endpoints",
+            "type": "array"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SearchSettings"
+          }
+        },
+        "required": [
+          "settings",
+          "endpoints"
+        ],
+        "title": "SearchSettingsRead",
         "type": "object"
       },
       "SendToPrinter": {
@@ -16630,6 +17026,16 @@
         ],
         "title": "StorageUsageRead",
         "type": "object"
+      },
+      "SubjectType": {
+        "enum": [
+          "model",
+          "collection",
+          "multipart_model",
+          "document"
+        ],
+        "title": "SubjectType",
+        "type": "string"
       },
       "TagCreate": {
         "additionalProperties": false,
@@ -21731,6 +22137,122 @@
           }
         ],
         "summary": "Update vault configuration",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search": {
+      "get": {
+        "operationId": "read_settings_api_v1_config_ai_search_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Settings",
+        "tags": [
+          "config"
+        ]
+      },
+      "put": {
+        "operationId": "update_settings_api_v1_config_ai_search_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Settings",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search/endpoints": {
+      "post": {
+        "operationId": "create_endpoint_api_v1_config_ai_search_endpoints_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndpointProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Endpoint",
         "tags": [
           "config"
         ]
@@ -35571,6 +36093,98 @@
         "summary": "Update Saved View",
         "tags": [
           "saved views"
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "search_library_api_v1_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 512,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "hybrid",
+              "enum": [
+                "lexical",
+                "hybrid"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Search Library",
+        "tags": [
+          "search"
         ]
       }
     },

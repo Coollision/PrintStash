@@ -16,7 +16,7 @@ from app.modules.inference.manifest import read_manifest
 class WorkerInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     modality: Literal["text", "image"]
-    text: str | None = Field(default=None, max_length=4096)
+    text: str | None = Field(default=None, max_length=16384)
     width: int = Field(default=0, ge=0, le=1024, strict=True)
     height: int = Field(default=0, ge=0, le=1024, strict=True)
 

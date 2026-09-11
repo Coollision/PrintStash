@@ -9,7 +9,9 @@
   SQLite FTS5 and PostgreSQL BM25 share durable passages with a ranked fallback;
   background repair is bounded. Search adopts existing native vectors, adds
   optional SQLite/PostgreSQL vector indexes with a portable float fallback, and
-  preserves them through database migration and restore. The remaining AI Search
+  preserves them through database migration and restore. Encrypted remote
+  endpoints add bounded embedding and structured-chat protocols for compatible
+  services, with independent opt-ins and administrator disclosures. The remaining AI Search
   stages are in development under #166.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,

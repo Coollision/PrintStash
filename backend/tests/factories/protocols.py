@@ -41,6 +41,7 @@ from app.db.models import (
     InboxItemState,
     InboxSourceKind,
     IndexGeneration,
+    InferenceEndpoint,
     Model,
     ModelFamily,
     ModelFamilyMember,
@@ -553,6 +554,10 @@ class MakeIndexGeneration(Protocol):
     def __call__(
         self, space: EmbeddingSpace, *, active: bool = True, **overrides: Any
     ) -> IndexGeneration: ...
+
+
+class MakeInferenceEndpoint(Protocol):
+    def __call__(self, *, kind: str = "embedding", **overrides: Any) -> InferenceEndpoint: ...
 
 
 class MakeSearchPassage(Protocol):

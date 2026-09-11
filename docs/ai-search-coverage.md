@@ -2,7 +2,7 @@
 
 Work in progress for #166, based on the [owner’s independent plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c) and [jorgehermo9’s attachment](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c). One branch and one eventual PR. No AI Search availability claim yet.
 
-The branch now implements the W1 passage/transaction/reconciliation foundation and the W2 authorized lexical API and ranked browse. W3/W5 still need to connect generation-aware recipes and vector invalidation. Existing Similar Models inference is the adoption point for W3/W12.
+The branch implements W1–W3 and the remote provider/configuration contracts from W4/W4b. W5 connects generation-aware recipes and vector invalidation next. Local acquisition, hybrid retrieval and the remaining feature stages still need their acceptance evidence.
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
@@ -23,10 +23,10 @@ The branch now implements the W1 passage/transaction/reconciliation foundation a
 | A015 | preserves vectors across SQLite→PostgreSQL migration | Happy | seeded generation | same vectors, index rebuilt, no re-embed | Integration | ✅ `integration/modules/administration/test_database_transfer.py::TestDatabaseTransfer::test_copies_sqlite_to_postgres_without_inference` |
 | A016 | serves search after a backup restore without a reindex | Happy | backup, wipe, restore | identical results | E2E | ✅ `e2e/test_postgres_backup.py::TestPostgresBackup::test_restores_searchable_documents_through_the_api` |
 | A017 | returns brute-force results when the vector extension is missing | Error | extension probe fails | same top-k as the native path | Integration | ✅ `integration/postgres/test_vector_index.py::TestPostgresVectorIndex::test_restores_without_pgvector` |
-| A018 | embeds a batch through the remote provider | Happy | contract-enforcing fake endpoint over loopback | returned vectors match inputs and declared dimension; persistence covered separately | Contract | ❌ missing |
+| A018 | embeds a batch through the remote provider | Happy | contract-enforcing fake endpoint over loopback | returned vectors match inputs and declared dimension; persistence covered separately | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_embeds_ordered_text_batches` |
 | A019 | refuses a remote dimension mismatch | Error | endpoint returns 512 for a 384 space | generation fails with a stable code; active untouched | Contract | ❌ missing |
 | A020 | degrades to lexical when the endpoint times out | Error | endpoint hangs | 200 with `legs: ["lexical"]`; no 5xx | Integration | ❌ missing |
-| A021 | retries a 429 with backoff | Error | endpoint returns 429 then 200 | batch completes; attempt count recorded | Contract | ❌ missing |
+| A021 | retries a 429 with backoff | Error | endpoint returns 429 then 200 | batch completes; attempt count recorded | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_retries_bounded_rate_limits` |
 | A022 | never logs the endpoint API key | Error | provider error path | key absent from job status, logs and response | Integration | ❌ missing |
 | A023 | resumes a backfill after a process restart | Edge | killed mid-backfill | resumes from the last committed page | Integration | ❌ missing |
 | A024 | cancels a backfill between batches | Happy | cancel requested | terminal state; active generation untouched | Integration | ❌ missing |
@@ -63,9 +63,9 @@ The branch now implements the W1 passage/transaction/reconciliation foundation a
 | A055 | audit-logs an embedding configuration change | Happy | settings patched | audit row with actor and change | Integration | ❌ missing |
 | A056 | shows the remote-egress disclosure whenever a remote modality is on | Happy | remote configured | notice present, names the host | Playwright | ❌ missing |
 | A057 | finds a just-uploaded model by name immediately | Happy | upload then search | found by lexical before any embedding | Playwright | ❌ missing |
-| A058 | returns schema-valid output from a json_schema endpoint | Happy | fake chat endpoint, schema dialect | parsed object matches the schema | Contract | ❌ missing |
-| A059 | falls back to parse-and-repair without schema support | Error | probe reports no schema, no tools | usable result; reduced guarantee reported | Contract | ❌ missing |
-| A060 | probes the Responses API dialect without assuming it | Edge | endpoint lacking it | detected absent; chat-completions used | Contract | ❌ missing |
+| A058 | returns schema-valid output from a json_schema endpoint | Happy | fake chat endpoint, schema dialect | parsed object matches the schema | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_returns_a_locally_validated_object` |
+| A059 | falls back to parse-and-repair without schema support | Error | probe reports no schema, no tools | usable result; reduced guarantee reported | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_repairs_json_once` |
+| A060 | probes the Responses API dialect without assuming it | Edge | endpoint lacking it | detected absent; chat-completions used | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_probes_responses_without_assuming_availability` |
 | A061 | never logs the chat API key | Error | chat provider error path | key absent from logs, status and response | Integration | ❌ missing |
 | A062 | parses natural language into typed filters | Happy | benchy printed last month under 3 hours | Filtros de fecha/duración/outcome válidos más residual benchy | Integration | ❌ missing |
 | A063 | rejects a parsed field outside the filter vocabulary | Error | provider emits an unknown field | discarded; query still runs | Integration | ❌ missing |
@@ -105,7 +105,7 @@ The branch now implements the W1 passage/transaction/reconciliation foundation a
 | A097 | restores_without_vector_extension | Edge | Backup nativo restaurado sin extensión | Datos/vector durables consultables; rebuild background | E2E | ❌ missing |
 | A098 | probes_chat_tool_calling_fallback | Happy | Endpoint tools sin json_schema | Objeto validado con guarantee reportada | Contract | ❌ missing |
 | A099 | rejects_invalid_chat_schema_output | Error | Endpoint devuelve key extra/type erróneo | Nada ejecutado como filtro; fallback limpio | Contract | ❌ missing |
-| A100 | bounds_chat_parse_repair | Error | JSON inválido repetido | Se detiene en límite; no loop de llamadas | Contract | ❌ missing |
+| A100 | bounds_chat_parse_repair | Error | JSON inválido repetido | Se detiene en límite; no loop de llamadas | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_rejects_a_failed_repair` |
 | A101 | opens_circuit_after_provider_failures | Error | Endpoint devuelve fallos repetidos | Operaciones se degradan dentro del deadline | Contract | ❌ missing |
 | A102 | requires_declared_image_embedding_contract | Error | Endpoint solo compatible texto | Imagen unavailable, no payload adivinado | Contract | ❌ missing |
 | A103 | separates_remote_modality_consent | Error | Texto consentido, visual/caption no | No imágenes recibidas por fake host | Contract | ❌ missing |
@@ -332,3 +332,57 @@ internal persistence subcontracts below now pass. `core/` paths refer to
 | V027 | restores_searchable_documents_through_the_api | Happy | PostgreSQL HTTP backup then data loss | restored Document and search result through real HTTP API | E2E | ✅ `e2e/test_postgres_backup.py::TestPostgresBackup::test_restores_searchable_documents_through_the_api` |
 | V028 | preserves_encoded_database_urls | Edge | encoded credentials and PostgreSQL options | Alembic receives exact URL | Unit | ✅ `unit/db/test_migrate.py::TestMigrationConfig::test_preserves_encoded_database_urls` |
 | V029 | supports_search_modalities | Happy | text and point-cloud contract identities | valid immutable Space values | Core | ✅ `core/inference/test_embedding.py::TestEmbeddingSpace::test_supports_search_modalities` |
+
+## Remote inference
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| R001 | embeds_ordered_text_batches | Happy | loopback endpoint returns vectors out of order | output matches each input index with native normalization | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_embeds_ordered_text_batches` |
+| R002 | rejects_invalid_embedding_outputs | Error | missing/duplicate indexes, wrong dimension, nonfinite/zero vector | stable failure, no partial batch | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_rejects_invalid_embedding_outputs` |
+| R003 | bounds_remote_response_bytes | Error | oversized or compressed response | rejected inside response budget | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_bounds_remote_response_bytes` |
+| R004 | retries_bounded_rate_limits | Error | 429 then success | bounded retry and successful batch | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_retries_bounded_rate_limits` |
+| R005 | refuses_redirected_embeddings | Error | endpoint redirects to another origin | no redirected request or credential forwarding | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_refuses_redirected_embeddings` |
+| R006 | opens_a_failed_endpoint_circuit | Error | repeated retryable failures | subsequent call rejected without a socket request | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_opens_a_failed_endpoint_circuit` |
+| R007 | cancels_remote_inference | Edge | operation cancelled before/during wait | bounded cancellation; no publication | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_cancels_remote_inference` |
+| R008 | keeps_inference_credentials_encrypted | Error | endpoint saved with key and secret headers | raw DB lacks plaintext and read API redacts secrets | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_keeps_inference_credentials_encrypted` |
+| R009 | requires_admin_endpoint_configuration | Error | ordinary user submits endpoint | rejected before probe or mutation | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_requires_admin_endpoint_configuration` |
+| R010 | isolates_endpoint_configuration_versions | Edge | endpoint/model/credential version changes | new immutable provider identity; old Space retained | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_isolates_endpoint_configuration_versions` |
+| R011 | bounds_the_whole_operation | Error | stalled and trickling server | single deadline, one request | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_bounds_the_whole_operation` |
+| R012 | keeps_inference_wire_data_out_of_debug_logs | Error | DEBUG logging with private text and response header | query/key/upstream header/URL absent | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_keeps_inference_wire_data_out_of_debug_logs` |
+| R013 | does_not_retry_rejected_credentials | Error | 401 endpoint | one request and stable code | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_does_not_retry_rejected_credentials` |
+| R014 | redacts_invalid_configuration_input | Error | invalid secret header | 422 omits submitted credentials | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_redacts_invalid_configuration_input` |
+| R015 | omits_credentials_from_audit | Happy | saved endpoint | audit has only kind/host/model | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_omits_credentials_from_audit` |
+| R016 | defaults_to_independent_opt_ins | Happy | fresh settings | all AI uses and outbound images off | Integration | ✅ `integration/api/v1/test_inference.py::TestReadSettings::test_defaults_to_independent_opt_ins` |
+| R017 | requires_a_capable_chat_endpoint | Error | generative opt-in without endpoint | rejected, settings remain off | Integration | ✅ `integration/api/v1/test_inference.py::TestUpdateSettings::test_requires_a_capable_chat_endpoint` |
+| R018 | configures_a_probed_embedding_endpoint | Happy | admin HTTP setup plus real socket canary | stored capability and secret-free readback | E2E | ✅ `e2e/test_remote_inference.py::TestRemoteInferenceSetup::test_configures_a_probed_embedding_endpoint` |
+| R019 | preserves_existing_settings_on_upgrade | Happy | existing library and config at W3 revision | content retained, new opt-ins absent | Integration | ✅ `integration/db/migrations/test_inference_endpoints_migration.py::TestInferenceEndpointsMigration::test_preserves_existing_settings_on_upgrade` |
+| R020 | downgrades_without_losing_existing_settings | Edge | current schema | old settings survive downgrade | Integration | ✅ `integration/db/migrations/test_inference_endpoints_migration.py::TestInferenceEndpointsMigration::test_downgrades_without_losing_existing_settings` |
+| C001 | returns_a_locally_validated_object | Happy | Ollama-schema/vLLM-tool/llama.cpp-JSON contract variants | typed result and honest guarantee | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_returns_a_locally_validated_object` |
+| C002 | reuses_a_probed_dialect | Edge | previous structured unsupported responses | one subsequent completion request | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_reuses_a_probed_dialect` |
+| C003 | repairs_json_once | Error | strict JSON output malformed once | validated repaired result | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_repairs_json_once` |
+| C004 | rejects_a_failed_repair | Error | two invalid JSON outputs | stable error, bounded calls | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_rejects_a_failed_repair` |
+| C005 | rejects_unsupported_fields_locally | Error | endpoint ignores supplied schema | no extra field accepted | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_rejects_unsupported_fields_locally` |
+| C006 | never_changes_dialect_after_timeout | Error | ambiguous timeout | one dialect, one request | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_never_changes_dialect_after_timeout` |
+| C007 | never_changes_dialect_after_server_failure | Error | 500 responses | bounded retry of original dialect | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_never_changes_dialect_after_server_failure` |
+| C008 | rejects_external_schema_references_before_egress | Error | schema URL reference | rejected without HTTP | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_rejects_external_schema_references_before_egress` |
+| C009 | probes_responses_without_assuming_availability | Edge | optional Responses API absent | falls back to chat-completions | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_probes_responses_without_assuming_availability` |
+| C010 | uses_a_confirmed_responses_endpoint | Happy | Responses API responds to canary | validated schema result with store=false | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_uses_a_confirmed_responses_endpoint` |
+| C011 | does_not_fall_back_after_a_responses_timeout | Error | ambiguous Responses timeout | no second paid dialect request | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_does_not_fall_back_after_a_responses_timeout` |
+| C012 | configures_chat_with_reported_json_guarantees | Happy | admin HTTP setup, JSON-only real fake | reduced guarantee persisted and independent switch | E2E | ✅ `e2e/test_remote_inference.py::TestRemoteInferenceSetup::test_configures_chat_with_reported_json_guarantees` |
+
+## Durable generation lifecycle — planned
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| G001 | prepares_without_mutating_active | Happy | configured endpoint, old generation | immutable building proposal; old still serves | Integration | ❌ missing |
+| G002 | fences_concurrent_proposals | Error | same modality/profile | at most one building | PostgreSQL | ❌ missing |
+| G003 | backfills_current_passages | Happy | seeded four-type library | native vectors at current content hash | Integration | ❌ missing |
+| G004 | rejects_late_publication | Error | content edit or cancellation during inference | no stale vector committed | Integration | ❌ missing |
+| G005 | resumes_expired_leases | Edge | interrupted worker | committed work retained, expired unit reclaimed | Integration | ❌ missing |
+| G006 | quarantines_poison_units | Error | repeat inference failure | bounded attempts; other units progress; verify refuses incomplete | Integration | ❌ missing |
+| G007 | activates_verified_generation_atomically | Happy | ready proposal and correct version | one active, old retired, no serving gap | Integration | ❌ missing |
+| G008 | preserves_active_when_verification_fails | Error | smoke failure or unreconciled edits | old active unchanged | Integration | ❌ missing |
+| G009 | maintains_active_and_building_recipes | Edge | edits during rebuild | both serving/building hashes current | Integration | ❌ missing |
+| G010 | drains_readers_before_pruning | Edge | query pinned during flip | old vectors retained until expiry and rollback retention | Integration | ❌ missing |
+| G011 | rejects_capacity_overcommit | Error | old+new exceed storage budget | proposal rejected; old retained | Integration | ❌ missing |
+| G012 | switches_index_without_reembedding | Happy | same Space, new backend/transform | durable floats reused, no embedding request | E2E | ❌ missing |

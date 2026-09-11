@@ -99,7 +99,7 @@ class TestEmbeddingInput:
             {"modality": "image", "rgb": b"abc", "width": 1, "height": 1.0},
             {"modality": "other"},
             {"modality": "text", "text": " "},
-            {"modality": "text", "text": "x" * 4097},
+            {"modality": "text", "text": "x" * 16385},
             {"modality": "text", "text": "x", "rgb": b"abc"},
             {"modality": "image", "rgb": b"x", "width": 1, "height": 1},
             {"modality": "image", "rgb": b"", "width": 0, "height": 1},

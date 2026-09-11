@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
+
+if TYPE_CHECKING:
+    from .context import InferenceContext
 
 
 class EmbeddingError(ValueError):
@@ -93,7 +96,7 @@ class EmbeddingInput:
             valid = (
                 self.text is not None
                 and bool(self.text.strip())
-                and len(self.text) <= 4096
+                and len(self.text) <= 16384
                 and self.rgb is None
                 and self.width == self.height == 0
             )
@@ -121,5 +124,9 @@ class EmbeddingProvider(Protocol):
     """
 
     def embed(
-        self, inputs: tuple[EmbeddingInput, ...], space: EmbeddingSpace
+        self,
+        inputs: tuple[EmbeddingInput, ...],
+        space: EmbeddingSpace,
+        *,
+        context: InferenceContext | None = None,
     ) -> tuple[tuple[float, ...], ...]: ...

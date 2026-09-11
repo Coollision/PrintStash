@@ -14,8 +14,28 @@ from sqlalchemy import (
 from sqlmodel import Field
 
 from app.core.time import utcnow
+from app.db.encrypted import EncryptedText
 
 from .base import SQLModel
+
+
+class InferenceEndpoint(SQLModel, table=True):
+    """Immutable admin-validated endpoint version; credentials stay encrypted."""
+
+    __audit_exclude__: ClassVar[bool] = True
+    __tablename__ = "inference_endpoints"
+    id: int | None = Field(default=None, primary_key=True)
+    config_hash: str = Field(max_length=64, unique=True)
+    kind: str = Field(max_length=16)
+    config_json: str = Field(sa_column=Column(Text, nullable=False))
+    api_key: str = Field(default="", sa_column=Column(EncryptedText(), nullable=False))
+    headers_json: str = Field(
+        default="{}", sa_column=Column(EncryptedText(), nullable=False)
+    )
+    native_dimension: int | None = Field(default=None)
+    supports_images: bool = False
+    dialect: str | None = Field(default=None, max_length=32)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class EmbeddingSpace(SQLModel, table=True):
