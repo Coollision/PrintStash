@@ -72,16 +72,20 @@ async def _close_outbound_clients() -> None:
     from app.core.provider_redaction import redact_exception
     from app.modules.inference.query import close_queries
     from app.modules.inference.transport import close_client as close_inference_client
+    from app.modules.inference.worker_pool import pool as model_workers
     from app.modules.ingestion.capture_provider_transport import (
         close_provider_transport,
     )
     from app.modules.printing.moonraker import close_http_client
+    from app.runtime.model_acquisition import close as close_model_downloads
 
     try:
         await close_http_client()
     finally:
         try:
+            await asyncio.to_thread(close_model_downloads)
             await asyncio.to_thread(close_queries)
+            await asyncio.to_thread(model_workers.close)
             await asyncio.to_thread(close_inference_client)
         except Exception:
             logger.error("failed to close inference transport")

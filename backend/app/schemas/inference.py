@@ -48,6 +48,9 @@ class SearchSettings(BaseModel):
     captions_enabled: bool = False
     nl_filters_enabled: bool = False
     local_models_enabled: bool = False
+    download_enabled: bool = Field(
+        default_factory=lambda: environment.embedding_download_enabled
+    )
     send_rendered_images: bool = False
     send_query_images: bool = False
     chat_endpoint_id: int | None = Field(default=None, ge=1)

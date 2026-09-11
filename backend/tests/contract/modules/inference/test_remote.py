@@ -43,6 +43,18 @@ def remote():
 
 
 class TestRemoteEmbeddingProvider:
+    def test_keeps_remote_inference_available_without_onnx(self, remote, monkeypatch):
+        import sys
+
+        fake, provider = remote
+        for name in ("onnx", "onnxruntime", "tokenizers"):
+            monkeypatch.setitem(sys.modules, name, None)
+        vector = provider.embed((EmbeddingInput("text", text="boat"),), provider.space)[
+            0
+        ]
+        assert vector == pytest.approx((0.70710678, 0.70710678, 0, 0))
+        assert len(fake.calls) == 1
+
     def test_preserves_endpoint_deadline_inside_a_longer_job(self, remote):
         fake, provider = remote
         fake.fault = "trickle"

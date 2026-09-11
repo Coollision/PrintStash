@@ -1,7 +1,9 @@
 """Native protocol and manifest validation reject untrusted bytes before publication."""
 
+import base64
 import json
 from dataclasses import replace
+from io import BytesIO
 
 import numpy as np
 import pytest
@@ -19,6 +21,18 @@ def assets(tmp_path):
 
 
 class TestManifest:
+    def test_preserves_legacy_visual_space_identity(self):
+        from tests.paths import FIXTURES_DIR
+
+        payload = (
+            FIXTURES_DIR / "embeddings" / "clip-vit-base-patch32-fp32.json"
+        ).read_bytes()
+        # Verified against the implementation at main c11db102 before changing it.
+        assert (
+            manifest.LocalModelManifest.model_validate_json(payload).space().config_hash
+            == "7f56e23951620776f8a65d4de5441b6ff1eecd1f48c8ddf1eca8a82f1dea2089"
+        )
+
     @pytest.mark.parametrize(
         "change", ["missing", "symlink", "large", "invalid", "key"]
     )
@@ -86,66 +100,116 @@ class TestManifest:
 
 
 class TestNativeProtocol:
-    def test_runs_both_towers_from_bounded_protocol(self, assets, tmp_path):
+    @pytest.mark.parametrize(
+        "frame", [b"\x00", b"\xff\xff\xff\xff", b"\x00\x00\x00\x02x"]
+    )
+    def test_bounds_worker_pipe_frames(self, frame):
+        output = BytesIO()
+        assert worker.serve(BytesIO(frame), output) == 2
+        assert output.getvalue() == b""
+
+    def test_serves_multiple_private_requests(self, assets, monkeypatch):
+        import struct
+
         contract = manifest.read_manifest(assets, "two-tower-contract")
-        (tmp_path / "request.json").write_text(
-            json.dumps(
+        monkeypatch.setattr(
+            worker.sys,
+            "argv",
+            ["worker", str(assets), contract.model_key, "1", "--persistent"],
+        )
+        frames = []
+        for color in ("red", "blue"):
+            payload = json.dumps(
                 {
                     "config_hash": contract.space().config_hash,
-                    "inputs": [
-                        {"modality": "text", "text": "red"},
-                        {"modality": "image", "width": 1, "height": 1},
-                    ],
+                    "inputs": [{"modality": "text", "text": color}],
                 }
-            )
-        )
-        (tmp_path / "1.rgb").write_bytes(bytes([0, 0, 255]))
-        worker.execute(tmp_path, assets, contract.model_key, 1)
-        result = json.loads((tmp_path / "result.json").read_text())
+            ).encode()
+            frames.append(struct.pack("!I", len(payload)) + payload)
+        output = BytesIO()
+        assert worker.serve(BytesIO(b"".join(frames)), output) == 0
+        output.seek(0)
+        values = []
+        for _ in range(2):
+            length = struct.unpack("!I", output.read(4))[0]
+            values.append(json.loads(output.read(length))["vectors"])
+        assert values == [[[1, 0, 0]], [[0, 0, 1]]]
+        assert output.read() == b""
+
+    def test_runs_both_towers_from_bounded_protocol(self, assets):
+        contract = manifest.read_manifest(assets, "two-tower-contract")
+        payload = json.dumps(
+            {
+                "config_hash": contract.space().config_hash,
+                "inputs": [
+                    {"modality": "text", "text": "red"},
+                    {
+                        "modality": "image",
+                        "width": 1,
+                        "height": 1,
+                        "rgb_base64": base64.b64encode(bytes([0, 0, 255])).decode(),
+                    },
+                ],
+            }
+        ).encode()
+
+        result = json.loads(worker.execute(payload, assets, contract.model_key, 1))
+
         assert result["config_hash"] == contract.space().config_hash
         np.testing.assert_allclose(result["vectors"], [[1, 0, 0], [0, 0, 1]])
 
-    @pytest.mark.parametrize("change", ["large", "space", "image_size"])
-    def test_refuses_invalid_input_protocol(self, assets, tmp_path, change):
+    @pytest.mark.parametrize("change", ["large", "space", "image_size", "base64"])
+    def test_refuses_invalid_input_protocol(self, assets, change):
         contract = manifest.read_manifest(assets, "two-tower-contract")
         data = {"config_hash": contract.space().config_hash, "inputs": []}
         if change == "space":
             data["config_hash"] = "a" * 64
-        if change == "image_size":
-            data["inputs"] = [{"modality": "image", "width": 1, "height": 1}]
-            (tmp_path / "0.rgb").write_bytes(b"invalid")
-        (tmp_path / "request.json").write_text(
-            " " * (64 * 1024 + 1) if change == "large" else json.dumps(data)
+        if change in ("image_size", "base64"):
+            data["inputs"] = [
+                {
+                    "modality": "image",
+                    "width": 1,
+                    "height": 1,
+                    "rgb_base64": "bad!"
+                    if change == "base64"
+                    else base64.b64encode(b"invalid").decode(),
+                }
+            ]
+        payload = (
+            b" " * (worker.MAX_INPUT_BYTES + 1)
+            if change == "large"
+            else json.dumps(data).encode()
         )
+
         with pytest.raises(EmbeddingError, match="embedding_(input|space)"):
-            worker.execute(tmp_path, assets, contract.model_key, 1)
-        assert not (tmp_path / "result.json").exists()
+            worker.execute(payload, assets, contract.model_key, 1)
 
     @pytest.mark.parametrize("change", ["valid", "contract", "unexpected", "argv"])
-    def test_sanitizes_worker_exit(self, assets, tmp_path, monkeypatch, change):
+    def test_sanitizes_worker_exit(self, assets, monkeypatch, change):
         contract = manifest.read_manifest(assets, "two-tower-contract")
-        (tmp_path / "request.json").write_text(
-            json.dumps(
-                {
-                    "config_hash": "a" * 64
-                    if change == "contract"
-                    else contract.space().config_hash
-                }
-            )
-        )
+        payload = json.dumps(
+            {
+                "config_hash": "a" * 64
+                if change == "contract"
+                else contract.space().config_hash
+            }
+        ).encode()
         if change == "unexpected":
-            (tmp_path / "request.json").write_text("bad private source path")
+            payload = b"bad private query"
         monkeypatch.setattr(
             worker.sys,
             "argv",
             ["worker"]
             if change == "argv"
-            else ["worker", str(tmp_path), str(assets), contract.model_key, "1"],
+            else ["worker", str(assets), contract.model_key, "1"],
         )
-        status = worker.main()
+        output = BytesIO()
+
+        status = worker.main(BytesIO(payload), output)
+
         assert status == {"valid": 0, "contract": 3, "unexpected": 4, "argv": 2}[change]
         if change in ("contract", "unexpected"):
-            assert json.loads((tmp_path / "error.json").read_text()) == {
+            assert json.loads(output.getvalue()) == {
                 "code": "embedding_space_mismatch"
                 if change == "contract"
                 else "embedding_inference_failed"

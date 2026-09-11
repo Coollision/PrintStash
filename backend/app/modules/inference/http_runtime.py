@@ -11,6 +11,8 @@ import asyncio
 import logging
 import threading
 from concurrent.futures import TimeoutError as FutureTimeout
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 import httpx
@@ -18,6 +20,7 @@ from printstash_core.inference.context import InferenceContext
 
 _lock = threading.Lock()
 _runtime: Runtime | None = None
+_private_wire: ContextVar[bool] = ContextVar("private_inference_wire", default=False)
 
 
 class _WirePrivacy(logging.Filter):
@@ -25,10 +28,29 @@ class _WirePrivacy(logging.Filter):
         # HTTPX's URL and httpcore's DEBUG response headers may carry secrets.
         # Only inference's private thread is suppressed; ordinary egress keeps
         # its configured diagnostics. Names are the pinned httpx/httpcore owners.
-        return record.threadName != "inference-http"
+        return record.threadName != "inference-http" and not _private_wire.get()
 
 
 _privacy = _WirePrivacy()
+
+
+@contextmanager
+def private_http():
+    """Model download redirects may contain signed credentials too."""
+    for name in (
+        "httpx",
+        "httpcore.connection",
+        "httpcore.http11",
+        "httpcore.http2",
+        "httpcore.proxy",
+        "httpcore.socks",
+    ):
+        logging.getLogger(name).addFilter(_privacy)
+    token = _private_wire.set(True)
+    try:
+        yield
+    finally:
+        _private_wire.reset(token)
 
 
 @dataclass

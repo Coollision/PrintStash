@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import os
 import secrets
+import selectors
+import struct
 import subprocess
 import sys
-import tempfile
+import threading
 import time
 from contextlib import ExitStack
 from pathlib import Path
@@ -22,15 +25,18 @@ from sqlmodel import Session
 from app import __file__ as application_file
 from app.core.config import settings
 from app.db.session import SessionFactory
-from app.modules.inference.manifest import LocalModelManifest, read_manifest
+from app.modules.inference.manifest import ModelManifest, read_manifest, validate_space
+from app.modules.inference.model_cache import pin, safe_directory
+from app.modules.inference.worker import MAX_INPUT_BYTES, MAX_OUTPUT_BYTES
+from app.modules.inference.worker_pool import pool
 from app.modules.media import compute_slots
-from app.modules.storage.capacity import CapacityManager, CapacityResource
 
 
 class WorkerResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     config_hash: str
     vectors: list[list[float]] = Field(max_length=8)
+    truncated: list[bool] = Field(default_factory=list, max_length=8)
 
 
 class WorkerError(BaseModel):
@@ -40,19 +46,31 @@ class WorkerError(BaseModel):
 
 class LocalEmbeddingProvider:
     def __init__(
-        self, sessions: SessionFactory, directory: Path, model_key: str, threads: int
+        self,
+        sessions: SessionFactory,
+        directory: Path,
+        model_key: str,
+        threads: int,
+        *,
+        space: EmbeddingSpace | None = None,
     ):
         if not 1 <= threads <= 4:
             raise EmbeddingError("embedding_thread_budget_invalid")
         self.sessions = sessions
-        self.directory = directory.resolve()
+        self.directory = safe_directory(directory)
         self.model_key = model_key
         self.threads = threads
         self.manifest = read_manifest(self.directory, model_key)
-        self.space = self.manifest.space()
+        self.space = space or self.manifest.space()
+        validate_space(self.manifest, self.space)
+        self._last_batch = threading.local()
 
-    def validate(self) -> LocalModelManifest:
-        self._execute(())
+    @property
+    def last_truncations(self) -> tuple[bool, ...]:
+        return getattr(self._last_batch, "truncations", ())
+
+    def validate(self, *, context: InferenceContext | None = None) -> ModelManifest:
+        self._execute((), context=context)
         return self.manifest
 
     def embed(
@@ -88,115 +106,166 @@ class LocalEmbeddingProvider:
         if importlib.util.find_spec("onnxruntime") is None:
             raise EmbeddingError("embedding_runtime_unavailable")
         with ExitStack() as cleanup:
+            cleanup.enter_context(pin(self.directory, context=context))
             session = cleanup.enter_context(self.sessions.scoped_session())
             token = "embedding:" + secrets.token_hex(20)
             slot = compute_slots.acquire(session, token)
             if slot is None:
                 raise EmbeddingError("embedding_compute_busy")
             cleanup.callback(self._release_slot, session, slot.id, token)
-            temporary = Path(
-                cleanup.enter_context(
-                    tempfile.TemporaryDirectory(prefix="printstash-embedding-")
-                )
+            request_inputs = [
+                {
+                    "modality": item.modality,
+                    "text": item.text,
+                    "width": item.width,
+                    "height": item.height,
+                    "rgb_base64": base64.b64encode(item.rgb).decode("ascii")
+                    if item.rgb is not None
+                    else None,
+                }
+                for item in inputs
+            ]
+            payload = json.dumps(
+                {
+                    "config_hash": self.space.config_hash,
+                    "space_json": json.dumps(self.space.__dict__),
+                    "inputs": request_inputs,
+                }
+            ).encode()
+            if len(payload) > MAX_INPUT_BYTES:
+                raise EmbeddingError("embedding_input_budget")
+            admission_context = context or InferenceContext.bounded(
+                120, priority="background"
             )
-            reservation = CapacityManager(self.sessions).reserve(
-                token,
-                [
-                    CapacityResource.for_path(
-                        temporary, 32 * 1024**2, role="local embedding"
+            try:
+                fingerprints = tuple(
+                    (
+                        asset.filename,
+                        (self.directory / asset.filename).stat().st_ino,
+                        (self.directory / asset.filename).stat().st_mtime_ns,
+                        (self.directory / asset.filename).stat().st_size,
                     )
-                ],
-            )
-            cleanup.callback(reservation.release)
-            request_inputs = []
-            for index, item in enumerate(inputs):
-                request_inputs.append(
-                    {
-                        "modality": item.modality,
-                        "text": item.text,
-                        "width": item.width,
-                        "height": item.height,
-                    }
+                    for asset in self.manifest.assets()
                 )
-                if item.rgb is not None:
-                    (temporary / f"{index}.rgb").write_bytes(item.rgb)
-            (temporary / "request.json").write_text(
-                json.dumps(
-                    {"config_hash": self.space.config_hash, "inputs": request_inputs}
-                )
+            except OSError:
+                raise EmbeddingError("embedding_asset_unavailable") from None
+            key = (
+                str(self.directory),
+                self.manifest.space().config_hash,
+                self.threads,
+                fingerprints,
             )
-            env = os.environ.copy()
-            env.update(
-                OMP_NUM_THREADS=str(self.threads),
-                OPENBLAS_NUM_THREADS=str(self.threads),
-                TOKENIZERS_PARALLELISM="false",
-                HF_HUB_OFFLINE="1",
-                TRANSFORMERS_OFFLINE="1",
-            )
-            process = subprocess.Popen(  # nosec B603 - fixed Python module, no shell
-                [
-                    sys.executable,
-                    "-m",
-                    "app.modules.inference.worker",
-                    str(temporary),
-                    str(self.directory),
-                    self.model_key,
-                    str(self.threads),
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=env,
-                cwd=Path(application_file).resolve().parent.parent,
-            )
-            failure = None
-            deadline = time.monotonic() + min(settings.mesh_step_timeout_seconds, 90)
-            budget = compute_slots.native_memory_budget_bytes()
-            try:
-                while process.poll() is None:
-                    if context is not None:
-                        context.remaining()
-                    rss = compute_slots.native_process_rss_bytes(process.pid)
-                    if rss is not None and rss > budget:
-                        failure = "embedding_worker_oom"
-                        break
-                    if time.monotonic() >= deadline:
-                        failure = "embedding_timeout"
-                        break
-                    time.sleep(0.05)
-            finally:
-                if process.poll() is None:
-                    process.kill()
-                process.wait()
-            if failure is not None:
-                raise EmbeddingError(failure)
-            if process.returncode != 0:
-                error_path = temporary / "error.json"
-                if error_path.is_file() and error_path.stat().st_size <= 1024:
+            with pool.acquire(
+                key, self.directory, self._spawn, admission_context
+            ) as process:
+                try:
+                    output = self._exchange(process, payload, context)
+                except EmbeddingError:
+                    raise
+                except (OSError, ValueError):
+                    raise EmbeddingError("embedding_inference_failed") from None
+                try:
+                    result = WorkerResult.model_validate_json(output)
+                except ValidationError:
                     try:
-                        error = WorkerError.model_validate_json(error_path.read_bytes())
-                    except ValidationError as exc:
-                        raise EmbeddingError("embedding_inference_failed") from exc
-                    raise EmbeddingError(error.code)
-                raise EmbeddingError(
-                    "embedding_worker_oom"
-                    if process.returncode == -9
-                    else "embedding_inference_failed"
+                        error = WorkerError.model_validate_json(output)
+                    except ValidationError:
+                        raise EmbeddingError("embedding_output_invalid") from None
+                    raise EmbeddingError(error.code) from None
+                if result.config_hash != self.space.config_hash or len(
+                    result.vectors
+                ) != len(inputs):
+                    raise EmbeddingError("embedding_output_mismatch")
+                if len(result.truncated) != len(inputs):
+                    raise EmbeddingError("embedding_output_mismatch")
+                self._last_batch.truncations = tuple(result.truncated)
+                for vector in result.vectors:
+                    normalize(vector, self.space.dimension)
+                if self.directory.parent == settings.embedding_cache_dir.absolute():
+                    try:
+                        os.utime(self.directory, None)
+                    except OSError:
+                        pass  # Read-only offline mounts still support inference.
+                return tuple(tuple(vector) for vector in result.vectors)
+
+    def _spawn(self) -> subprocess.Popen:
+        env = os.environ.copy()
+        env.update(
+            OMP_NUM_THREADS=str(self.threads),
+            OPENBLAS_NUM_THREADS=str(self.threads),
+            TOKENIZERS_PARALLELISM="false",
+            HF_HUB_OFFLINE="1",
+            TRANSFORMERS_OFFLINE="1",
+        )
+        return subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "app.modules.inference.worker",
+                str(self.directory),
+                self.model_key,
+                str(self.threads),
+                "--persistent",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            cwd=Path(application_file).resolve().parent.parent,
+        )
+
+    @staticmethod
+    def _exchange(
+        process: subprocess.Popen, payload: bytes, context: InferenceContext | None
+    ) -> bytes:
+        """Monitor both pipe directions without blocking on a stalled child."""
+        assert process.stdin is not None and process.stdout is not None
+        deadline = time.monotonic() + min(settings.mesh_step_timeout_seconds, 90)
+        budget = compute_slots.native_memory_budget_bytes()
+        result = bytearray()
+        framed = struct.pack("!I", len(payload)) + payload
+        offset = 0
+        expected = None
+        with selectors.DefaultSelector() as selector:
+            os.set_blocking(process.stdin.fileno(), False)
+            os.set_blocking(process.stdout.fileno(), False)
+            selector.register(process.stdin, selectors.EVENT_WRITE)
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while True:
+                if context is not None:
+                    context.remaining()
+                pool.enforce_memory_budget(
+                    process, budget, compute_slots.native_process_rss_bytes
                 )
-            result_path = temporary / "result.json"
-            try:
-                if result_path.stat().st_size > 1024**2:
-                    raise EmbeddingError("embedding_output_budget")
-                result = WorkerResult.model_validate_json(result_path.read_bytes())
-            except (OSError, ValidationError) as exc:
-                raise EmbeddingError("embedding_output_invalid") from exc
-            if result.config_hash != self.space.config_hash or len(
-                result.vectors
-            ) != len(inputs):
-                raise EmbeddingError("embedding_output_mismatch")
-            for vector in result.vectors:
-                normalize(vector, self.space.dimension)
-            return tuple(tuple(vector) for vector in result.vectors)
+                if time.monotonic() >= deadline:
+                    raise EmbeddingError("embedding_timeout")
+                if process.poll() is not None:
+                    raise EmbeddingError(
+                        "embedding_worker_oom"
+                        if process.returncode == -9
+                        else "embedding_inference_failed"
+                    )
+                for key, _ in selector.select(0.05):
+                    if key.fileobj is process.stdin:
+                        try:
+                            offset += os.write(key.fd, framed[offset : offset + 65536])
+                        except BrokenPipeError:
+                            raise EmbeddingError("embedding_inference_failed") from None
+                        if offset == len(framed):
+                            selector.unregister(process.stdin)
+                    else:
+                        chunk = os.read(key.fd, 65536)
+                        if not chunk:
+                            raise EmbeddingError("embedding_inference_failed")
+                        result.extend(chunk)
+                        if len(result) >= 4 and expected is None:
+                            expected = struct.unpack("!I", result[:4])[0]
+                            if expected > MAX_OUTPUT_BYTES:
+                                raise EmbeddingError("embedding_output_budget")
+                        if expected is not None and len(result) >= expected + 4:
+                            if len(result) != expected + 4:
+                                raise EmbeddingError("embedding_output_invalid")
+                            return bytes(result[4:])
 
 
 def configured_provider(sessions: SessionFactory) -> LocalEmbeddingProvider:

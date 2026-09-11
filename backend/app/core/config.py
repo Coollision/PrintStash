@@ -247,6 +247,12 @@ class Settings(BaseSettings):
     embedding_local_model_dir: str = ""
     embedding_model_key: str = ""
     embedding_onnx_threads: int = Field(default=1, ge=1, le=4)
+    embedding_cache_dir: Path = Path("/data/ai-models")
+    embedding_cache_max_bytes: int = Field(
+        default=4294967296, ge=1048576, le=1099511627776
+    )
+    embedding_download_enabled: bool = False
+    embedding_mirror_url: str = ""
     search_native_vectors_enabled: bool = False
     ai_search_query_timeout_seconds: float = Field(default=3, ge=0.05, le=30)
     ai_search_semantic_floor: float = Field(default=0.35, ge=-1, le=1)

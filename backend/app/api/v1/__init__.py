@@ -18,6 +18,7 @@ from app.api.v1 import (
     health,
     inbox,
     inference,
+    inference_models,
     ingest,
     maintenance,
     models,
@@ -63,6 +64,7 @@ api_router.include_router(multipart_builds.router)
 api_router.include_router(saved_views.router)
 api_router.include_router(search.router)
 api_router.include_router(inference.router)
+api_router.include_router(inference_models.router)
 api_router.include_router(files.router)
 api_router.include_router(filaments.router)
 api_router.include_router(printer_profiles.router)

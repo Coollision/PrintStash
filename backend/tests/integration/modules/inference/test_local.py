@@ -20,6 +20,41 @@ def assets(tmp_path):
 
 
 class TestLocalProvider:
+    def test_accepts_read_only_offline_models(self, db_session, assets, monkeypatch):
+        import os
+
+        def read_only(*args, **kwargs):
+            raise PermissionError("read-only model volume")
+
+        monkeypatch.setattr(os, "utime", read_only)
+        provider = LocalEmbeddingProvider(
+            get_session_factory(), assets, "two-tower-contract", 1
+        )
+        assert provider.embed(
+            (EmbeddingInput("text", text="red"),), provider.space
+        ) == ((1, 0, 0),)
+
+    @pytest.mark.parametrize("modality", ["text", "image"])
+    def test_keeps_local_query_inputs_in_memory(
+        self, db_session, assets, monkeypatch, modality
+    ):
+        import tempfile
+
+        provider = LocalEmbeddingProvider(
+            get_session_factory(), assets, "two-tower-contract", 1
+        )
+        value = (
+            EmbeddingInput("text", text="red")
+            if modality == "text"
+            else EmbeddingInput("image", rgb=bytes([255, 0, 0]), width=1, height=1)
+        )
+
+        def forbid_spooling(*args, **kwargs):
+            raise AssertionError("query input must not be spooled to a directory")
+
+        monkeypatch.setattr(tempfile, "TemporaryDirectory", forbid_spooling)
+        assert provider.embed((value,), provider.space) == ((1, 0, 0),)
+
     def test_queries_both_native_towers(self, db_session, assets):
         provider = LocalEmbeddingProvider(
             get_session_factory(), assets, "two-tower-contract", 1

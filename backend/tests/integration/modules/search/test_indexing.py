@@ -20,6 +20,64 @@ from app.schemas.search_generations import GenerationProposal
 
 
 class TestIndexProcessor:
+    def test_defers_busy_local_indexing_without_quarantine(
+        self, db_session, generation_setup, monkeypatch, advance_indexing
+    ):
+        from types import SimpleNamespace
+
+        from printstash_core.inference import EmbeddingError
+
+        actor, endpoint = generation_setup
+        proposal = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+
+        def busy(*args, **kwargs):
+            raise EmbeddingError("embedding_compute_busy")
+
+        monkeypatch.setattr(
+            indexing, "embedding_provider", lambda *args: SimpleNamespace(embed=busy)
+        )
+        advance_indexing(10)
+        db_session.expire_all()
+        assert db_session.exec(select(SearchIndexFailure)).all() == []
+        generation = db_session.get(IndexGeneration, proposal.id)
+        assert generation.state == "building"
+        assert generation.error_code == "embedding_compute_busy"
+
+    def test_reports_actual_token_truncation(
+        self, db_session, generation_setup, tmp_path, monkeypatch, advance_generation
+    ):
+        from app.core.config import _overlay
+        from app.modules.inference.model_cache import inspect
+        from app.modules.search import configuration
+        from app.schemas.inference import SearchSettings
+        from tests.factories.embeddings import text_embedding_assets
+
+        actor, _ = generation_setup
+        directory = text_embedding_assets(tmp_path / "cache" / "preplaced")
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", directory.parent)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        configuration.update(
+            db_session, SearchSettings(enabled=True, local_models_enabled=True)
+        )
+        model = inspect(directory)
+        document = db_session.exec(select(Document)).one()
+        document.body = "red " * 20
+        db_session.add(document)
+        db_session.commit()
+        proposal = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(local_model_id=model.id, index_backend="numpy"),
+        )
+        advance_generation(proposal.id)
+        db_session.expire_all()
+        assert db_session.exec(select(PassageVector.truncated)).all() == [True]
+        assert db_session.get(IndexGeneration, proposal.id).truncated_count == 1
+
     def test_indexes_content_added_during_backfill(
         self,
         db_session,

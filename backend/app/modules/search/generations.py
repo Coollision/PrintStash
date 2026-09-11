@@ -197,7 +197,7 @@ def resources(
     ).one()
     available = max(0, configuration.settings(session).max_index_bytes - occupied)
     result = [
-        CapacityResource.for_quota(
+        CapacityResource.for_budget(
             "search-index", estimated_bytes, available, role="search index generations"
         )
     ]
@@ -223,6 +223,38 @@ def prepare(
         raise OperationError("admin_required", kind=ErrorKind.FORBIDDEN)
     if not configuration.settings(session).enabled:
         raise OperationError("search_ai_disabled", kind=ErrorKind.CONFLICT)
+    if proposal.local_model_id:
+        from dataclasses import replace
+
+        from app.modules.inference import model_cache
+        from app.modules.inference.manifest import TextModelManifest
+
+        if not configuration.settings(session).local_models_enabled:
+            raise OperationError("embedding_local_disabled", kind=ErrorKind.CONFLICT)
+        with model_cache.cache_lock():
+            model = model_cache.resolve(proposal.local_model_id)
+            if not isinstance(model.manifest, TextModelManifest):
+                raise OperationError(
+                    "embedding_text_unavailable", kind=ErrorKind.INVALID
+                )
+            original = model.manifest.space()
+            recipe = replace(
+                TextRecipe.for_space(original),
+                passage_version=proposal.passage_recipe_version,
+            )
+            space = replace(
+                original,
+                render_recipe=recipe.encode(),
+                query_prefix=proposal.query_prefix
+                if proposal.query_prefix is not None
+                else original.query_prefix,
+                document_prefix=proposal.document_prefix
+                if proposal.document_prefix is not None
+                else original.document_prefix,
+            )
+            result = _prepare_space(session, actor, proposal, space, recipe)
+            session.commit()
+            return result
     endpoint_row = session.get(InferenceEndpoint, proposal.endpoint_id)
     if endpoint_row is None or endpoint_row.kind != "embedding":
         raise OperationError("inference_endpoint_unavailable", kind=ErrorKind.INVALID)
@@ -252,6 +284,16 @@ def prepare(
         provider_config_hash=endpoint.identity,
         model_repo=endpoint.model_repo,
     )
+    return _prepare_space(session, actor, proposal, space, recipe)
+
+
+def _prepare_space(
+    session: Session,
+    actor: User,
+    proposal: GenerationProposal,
+    space: Space,
+    recipe: TextRecipe,
+) -> GenerationRead:
     if len(space.document_prefix) >= recipe.max_input_characters:
         raise OperationError("search_prefix_exceeds_budget", kind=ErrorKind.INVALID)
     dimension = proposal.index_dimension or space.dimension

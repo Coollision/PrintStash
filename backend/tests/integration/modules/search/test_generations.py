@@ -42,6 +42,22 @@ def retired_vector_batch(
 
 
 class TestPrepare:
+    def test_admits_a_small_logical_index_budget(self, db_session, generation_setup):
+        actor, endpoint = generation_setup
+        configuration.update(
+            db_session, SearchSettings(enabled=True, max_index_bytes=2 * 1024**2)
+        )
+        db_session.commit()
+
+        proposal = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+
+        assert proposal.state == "building"
+        assert proposal.estimated_bytes < 2 * 1024**2
+
     def test_preserves_native_floats_when_switching_to_reviewed_mrl(
         self,
         db_session,

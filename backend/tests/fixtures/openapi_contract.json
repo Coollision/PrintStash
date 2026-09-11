@@ -3985,6 +3985,19 @@
         "title": "DocumentUpdate",
         "type": "object"
       },
+      "DownloadRead": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "DownloadRead",
+        "type": "object"
+      },
       "EndpointProposal": {
         "additionalProperties": false,
         "properties": {
@@ -6163,9 +6176,16 @@
             "title": "Document Prefix"
           },
           "endpoint_id": {
-            "minimum": 1.0,
-            "title": "Endpoint Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Id"
           },
           "index_backend": {
             "default": "auto",
@@ -6190,6 +6210,18 @@
               }
             ],
             "title": "Index Dimension"
+          },
+          "local_model_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Model Id"
           },
           "passage_recipe_version": {
             "default": 1,
@@ -6226,9 +6258,6 @@
             "title": "Query Prefix"
           }
         },
-        "required": [
-          "endpoint_id"
-        ],
         "title": "GenerationProposal",
         "type": "object"
       },
@@ -7014,6 +7043,96 @@
         ],
         "title": "InboxSourceKind",
         "type": "string"
+      },
+      "InferenceModelRead": {
+        "properties": {
+          "curated": {
+            "title": "Curated",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "license": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "native_dimension": {
+            "title": "Native Dimension",
+            "type": "integer"
+          },
+          "referenced": {
+            "title": "Referenced",
+            "type": "boolean"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "runtime_available": {
+            "title": "Runtime Available",
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "revision",
+          "repository",
+          "languages",
+          "license",
+          "modality",
+          "native_dimension",
+          "size_bytes",
+          "installed",
+          "curated",
+          "referenced",
+          "runtime_available"
+        ],
+        "title": "InferenceModelRead",
+        "type": "object"
       },
       "IngestJobStatus": {
         "properties": {
@@ -10655,6 +10774,24 @@
           }
         },
         "title": "ModelUpdate",
+        "type": "object"
+      },
+      "ModelValidationRead": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "ready"
+        ],
+        "title": "ModelValidationRead",
         "type": "object"
       },
       "MoonrakerConfigRead": {
@@ -15367,6 +15504,10 @@
               }
             ],
             "title": "Chat Endpoint Id"
+          },
+          "download_enabled": {
+            "title": "Download Enabled",
+            "type": "boolean"
           },
           "enabled": {
             "default": false,
@@ -28067,6 +28208,210 @@
         "summary": "Retry Item",
         "tags": [
           "pending imports"
+        ]
+      }
+    },
+    "/api/v1/inference/models": {
+      "get": {
+        "operationId": "list_models_api_v1_inference_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InferenceModelRead"
+                  },
+                  "title": "Response List Models Api V1 Inference Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Models",
+        "tags": [
+          "inference"
+        ]
+      }
+    },
+    "/api/v1/inference/models/downloads/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_download_api_v1_inference_models_downloads__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cancel Download",
+        "tags": [
+          "inference"
+        ]
+      }
+    },
+    "/api/v1/inference/models/{identity}": {
+      "delete": {
+        "operationId": "delete_model_api_v1_inference_models__identity__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete Model",
+        "tags": [
+          "inference"
+        ]
+      }
+    },
+    "/api/v1/inference/models/{identity}/validate": {
+      "post": {
+        "operationId": "validate_model_api_v1_inference_models__identity__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "title": "Identity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelValidationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Validate Model",
+        "tags": [
+          "inference"
+        ]
+      }
+    },
+    "/api/v1/inference/models/{key}/download": {
+      "post": {
+        "operationId": "download_model_api_v1_inference_models__key__download_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Download Model",
+        "tags": [
+          "inference"
         ]
       }
     },

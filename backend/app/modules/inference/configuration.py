@@ -17,6 +17,7 @@ from app.db.models import InferenceEndpoint
 from app.modules.administration import audit
 from app.modules.inference.chat import RemoteChatProvider
 from app.modules.inference.endpoint import EndpointConfig
+from app.modules.inference.local import LocalEmbeddingProvider
 from app.modules.inference.remote import RemoteEmbeddingProvider
 from app.schemas.inference import EndpointProposal, EndpointRead
 
@@ -145,7 +146,20 @@ def create(session: Session, proposal: EndpointProposal) -> EndpointRead:
 
 def embedding_provider(
     session: Session, space: EmbeddingSpace
-) -> RemoteEmbeddingProvider:
+) -> RemoteEmbeddingProvider | LocalEmbeddingProvider:
+    if space.provider == "onnx_cpu":
+        from app.core.config import settings
+        from app.db.session import get_session_factory
+        from app.modules.inference.model_cache import for_space
+
+        model = for_space(space)
+        return LocalEmbeddingProvider(
+            get_session_factory(),
+            model.directory,
+            model.manifest.model_key,
+            settings.embedding_onnx_threads,
+            space=space,
+        )
     row = session.exec(
         select(InferenceEndpoint).where(
             InferenceEndpoint.config_hash == space.provider_config_hash,

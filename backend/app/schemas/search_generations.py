@@ -3,12 +3,13 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class GenerationProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    endpoint_id: int = Field(ge=1)
+    endpoint_id: int | None = Field(default=None, ge=1)
+    local_model_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     profile: Literal["semantic_text"] = "semantic_text"
     query_prefix: str | None = Field(default=None, max_length=256)
     document_prefix: str | None = Field(default=None, max_length=256)
@@ -17,6 +18,12 @@ class GenerationProposal(BaseModel):
     index_dimension: int | None = Field(default=None, ge=1, le=4096)
     quantization: Literal["float32", "int8", "binary"] = "float32"
     auto_activate: bool = True
+
+    @model_validator(mode="after")
+    def require_one_provider(self):
+        if (self.endpoint_id is None) == (self.local_model_id is None):
+            raise ValueError("search_one_provider_required")
+        return self
 
 
 class GenerationAction(BaseModel):

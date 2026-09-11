@@ -2180,7 +2180,10 @@ dependencies = [
 
 [package.optional-dependencies]
 ai = [
+    { name = "onnx" },
+    { name = "onnxruntime" },
     { name = "sqlite-vec" },
+    { name = "tokenizers" },
 ]
 async-db = [
     { name = "aiosqlite" },
@@ -2212,6 +2215,7 @@ full = [
     { name = "asyncssh" },
     { name = "cadquery-ocp-novtk" },
     { name = "cascadio" },
+    { name = "onnx" },
     { name = "onnxruntime" },
     { name = "opendal" },
     { name = "sqlite-vec" },
@@ -2253,7 +2257,10 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.1,<7" },
     { name = "networkx", specifier = ">=3.6,<4" },
     { name = "numpy", specifier = ">=2,<3" },
+    { name = "onnx", marker = "extra == 'ai'", specifier = ">=1.22,<2" },
     { name = "onnx", marker = "extra == 'dev'", specifier = ">=1.22,<2" },
+    { name = "onnx", marker = "extra == 'full'", specifier = ">=1.22,<2" },
+    { name = "onnxruntime", marker = "extra == 'ai'", specifier = ">=1.30,<2" },
     { name = "onnxruntime", marker = "extra == 'full'", specifier = ">=1.30,<2" },
     { name = "opendal", marker = "extra == 'full'", specifier = "==0.47.6" },
     { name = "opendal", marker = "extra == 'storage-opendal'", specifier = "==0.47.6" },
@@ -2284,6 +2291,7 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.39,<0.1" },
     { name = "starlette", specifier = ">=1.6,<2" },
     { name = "testcontainers", extras = ["postgres"], marker = "extra == 'dev'", specifier = ">=4.9,<5" },
+    { name = "tokenizers", marker = "extra == 'ai'", specifier = ">=0.23,<0.24" },
     { name = "tokenizers", marker = "extra == 'full'", specifier = ">=0.23,<0.24" },
     { name = "trimesh", specifier = ">=5,<6" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1" },

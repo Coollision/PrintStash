@@ -9,6 +9,8 @@ from printstash_core.search.passages import SubjectType
 
 from app.core.logging import get_logger
 from app.db.session import get_session_factory
+from app.modules.inference import model_cache
+from app.modules.inference.worker_pool import pool as model_workers
 from app.modules.search.indexing import IndexProcessor
 from app.modules.search.lexical_index import rebuild_partition
 from app.modules.search.reconciliation import reconcile_partition
@@ -23,6 +25,13 @@ def process_one(kind: SubjectType) -> int:
         return 0
     try:
         with get_session_factory().scoped_session() as session:
+            model_workers.prune_idle(
+                tuple(
+                    model.directory
+                    for model in model_cache.inventory()
+                    if model_cache.referenced(session, model)
+                )
+            )
             changed = reconcile_partition(session, kind)
             rebuild_partition(session)
             repair_vectors(session)

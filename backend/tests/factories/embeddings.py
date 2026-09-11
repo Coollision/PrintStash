@@ -115,3 +115,74 @@ def local_embedding_assets(directory: Path, *, family: str = "clip") -> Path:
         }
     (directory / "manifest.json").write_text(json.dumps(manifest))
     return directory
+
+
+def text_embedding_assets(directory: Path, *, pooling: str = "cls") -> Path:
+    """Original CC0 token embeddings expose pooling and mask errors explicitly."""
+    import numpy as np
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
+    from tokenizers import Tokenizer, models, pre_tokenizers
+
+    directory.mkdir(parents=True, exist_ok=True)
+    # Padding is deliberately nonzero: mean pooling must apply the mask.
+    table = numpy_helper.from_array(
+        np.asarray([[0, 10, 0], [1, 1, 1], [1, 0, 0], [0, 0, 1]], dtype=np.float32),
+        name="table",
+    )
+    graph = helper.make_model(
+        helper.make_graph(
+            [helper.make_node("Gather", ["table", "input_ids"], ["last_hidden_state"])],
+            "original-sentence-contract",
+            [
+                helper.make_tensor_value_info(name, TensorProto.INT64, [1, 8])
+                for name in ("input_ids", "attention_mask", "token_type_ids")
+            ],
+            [
+                helper.make_tensor_value_info(
+                    "last_hidden_state", TensorProto.FLOAT, [1, 8, 3]
+                )
+            ],
+            [table],
+        ),
+        opset_imports=[helper.make_opsetid("", 17)],
+        ir_version=9,
+    )
+    onnx.save(graph, directory / "text.onnx")
+    tokenizer = Tokenizer(
+        models.WordLevel(
+            {"[PAD]": 0, "[UNK]": 1, "red": 2, "blue": 3}, unk_token="[UNK]"
+        )
+    )
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.save(str(directory / "tokenizer.json"))
+    manifest = {
+        "schema_version": 2,
+        "model_key": "text-contract",
+        "repository": "printstash/original-cc0",
+        "model_revision": "1" * 40,
+        "native_dimension": 3,
+        "language": ["en"],
+        "license": "CC0-1.0",
+        "text": {
+            "graph": {
+                "filename": "text.onnx",
+                "sha256": hashlib.sha256(
+                    (directory / "text.onnx").read_bytes()
+                ).hexdigest(),
+            },
+            "tokenizer": {
+                "filename": "tokenizer.json",
+                "sha256": hashlib.sha256(
+                    (directory / "tokenizer.json").read_bytes()
+                ).hexdigest(),
+            },
+            "max_tokens": 8,
+            "pooling": pooling,
+            "opset": 17,
+            "canary_text": "red",
+            "canary": [1, 0, 0],
+        },
+    }
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    return directory

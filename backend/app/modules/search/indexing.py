@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 import struct
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
 from printstash_core.inference import EmbeddingError, EmbeddingInput
@@ -479,6 +479,7 @@ class IndexProcessor:
                 return True
             remote = [item for item in work if item.copied_blob is None]
             outputs = {}
+            truncations = {}
             if remote:
                 try:
                     vectors = provider.embed(
@@ -488,7 +489,16 @@ class IndexProcessor:
                         item.passage_id: vector
                         for item, vector in zip(remote, vectors, strict=True)
                     }
+                    truncations = dict(
+                        zip(
+                            (item.passage_id for item in remote),
+                            getattr(provider, "last_truncations", ()),
+                            strict=False,
+                        )
+                    )
                 except EmbeddingError as exc:
+                    if exc.code == "embedding_compute_busy":
+                        raise
                     if exc.code in {
                         "inference_cancelled",
                         "inference_timeout",
@@ -511,7 +521,11 @@ class IndexProcessor:
                                 outputs[item.passage_id] = provider.embed(
                                     (item.value,), space, context=context
                                 )[0]
+                                flags = getattr(provider, "last_truncations", ())
+                                truncations[item.passage_id] = bool(flags and flags[0])
                             except EmbeddingError as individual:
+                                if individual.code == "embedding_compute_busy":
+                                    raise
                                 with self.sessions.scoped_session() as session:
                                     record_failure(
                                         session,
@@ -534,7 +548,11 @@ class IndexProcessor:
                         session,
                         generation_id,
                         token,
-                        item,
+                        replace(
+                            item,
+                            truncated=item.truncated
+                            or truncations.get(item.passage_id, False),
+                        ),
                         vector,
                         copied=item.copied_blob is not None,
                     )
@@ -546,7 +564,10 @@ class IndexProcessor:
                 ).first()
                 if generation is not None:
                     generation.error_code = exc.code
-                    if generation.phase == "verify":
+                    if (
+                        generation.phase == "verify"
+                        and exc.code != "embedding_compute_busy"
+                    ):
                         generation.phase = "verify_failed"
                     session.add(generation)
                     session.commit()

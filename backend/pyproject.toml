@@ -52,6 +52,7 @@ step = [
 ]
 full = [
     "sqlite-vec==0.1.6",
+    "onnx>=1.22,<2",
     "onnxruntime>=1.30,<2",
     "tokenizers>=0.23,<0.24",
     "asyncssh>=2.21,<3",
@@ -98,6 +99,9 @@ dev = [
 ]
 ai = [
     "sqlite-vec==0.1.6",
+    "onnx>=1.22,<2",
+    "onnxruntime>=1.30,<2",
+    "tokenizers>=0.23,<0.24",
 ]
 
 [tool.pytest.ini_options]

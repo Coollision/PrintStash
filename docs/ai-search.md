@@ -285,16 +285,112 @@ OpenAPI and type checking passed.
 W6 passed 264 search/API/lifecycle regressions, four PostgreSQL authorization
 checks, a real HTTP hybrid query, two continuous-reader transform switches,
 and a deterministic admission/cutover race. Query/cache checks passed 23 tests;
-core rank fusion passed 12. Repository hygiene passed 3,203 tests. Natural-language
-relevance targets still require the real-model quality stage.
+core rank fusion passed 12. Repository hygiene passed 3,203 tests. The local BGE engineering regression corpus now clears the numeric recall
+targets; the separate human-labelled evaluation is still pending.
 
 W5 connects transactional content invalidation to durable embedding work and
 maintains distinct active/building text-prefix recipes. Coexistence of different
 passage-template versions remains tracked with the caption recipe work.
-Local model acquisition, UI, visual profiles, captions, sparse
-expansion and natural-language filters remain in progress.
+The local text acquisition/runtime path is implemented. Candidate benchmarks,
+UI, visual profiles, captions, sparse expansion and natural-language filters
+remain in progress.
 
 The [coverage matrix](ai-search-coverage.md) retains all 142 original planned
 behaviors and the independently verified passage/lexical subcontracts. Full
 feature readiness also requires the remaining stages, feasibility evidence and
 a security diff scan of the completed branch.
+
+
+## Local text models (W7)
+
+The `ai` and `full` extras include CPU ONNX Runtime, ONNX graph inspection and
+Hugging Face tokenizers. The curated text baseline is
+[BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5/tree/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a)
+at commit `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`: English, MIT, 384 native
+float dimensions, CLS pooling, 512-token maximum, explicit query prefix.
+The graph is 133,093,490 bytes and the tokenizer 711,396 bytes. The checked-in
+registry manifest specifies both SHA-256 values, tensor names, opset and an
+independently measured canary. Other models are not advertised as validated by
+this catalog yet.
+
+`GET /api/v1/inference/models` lists installed and curated models for administrators,
+including languages, license, measured bytes and whether the optional runtime
+is installed. Listing performs no networking or inference. An installed entry
+is not an activation claim: `POST /api/v1/inference/models/{id}/validate` runs
+actual canaries; generation verification must also pass before activation.
+
+Acquisition requires the AI master, local-model and download switches plus an
+explicit admin `POST /api/v1/inference/models/{key}/download`. It returns a common
+background job ID. Downloads validate every HTTPS redirect, cap actual streamed
+bytes, verify each digest, reject external ONNX tensor data/custom operator
+libraries and atomically publish the complete model. The cancellation endpoint
+is `POST /api/v1/inference/models/downloads/{job_id}/cancel`. Startup never
+fetches weights. Failed/cancelled installs leave existing versions intact.
+
+Mount a writable model volume at `VAULT_EMBEDDING_CACHE_DIR` (default
+`/data/ai-models`). `VAULT_EMBEDDING_CACHE_MAX_BYTES` defaults to 4 GiB;
+`VAULT_EMBEDDING_DOWNLOAD_ENABLED` is off by default. An explicitly configured
+HTTPS mirror uses `VAULT_EMBEDDING_MIRROR_URL`; all redirect origins must remain
+within the registry/CDN/mirror policy. Model acquisition reserves physical disk
+capacity; the cache cap includes staging bytes. Least-recently-used pruning
+only removes unreferenced models. Active, building and retained generations
+protect their encoder, and an OS file lock prevents pruning during loading.
+
+For air-gapped operation, place the reviewed `manifest.json` and every named
+asset in a child directory of the model cache. The previous
+`VAULT_EMBEDDING_LOCAL_MODEL_DIR` custom directory is also discovered, can be
+read-only, and is never deleted by the cache. Paths cannot traverse or escape
+through symlinks. A new directory does not activate itself. Propose a generation
+using `local_model_id` from inventory instead of `endpoint_id`; exactly one is
+required. Existing remote generation requests are unchanged.
+
+One inference owner serves text and the existing visual towers. Up to two
+resident native workers share a total RSS limit and the existing render compute
+slots. Text/image requests and replies travel through bounded memory pipes;
+raw queries never become temporary files. Warm models are reused, background
+admission yields to waiting queries, failures evict workers, and shutdown drains
+tasks. Text inputs use dynamic sequence lengths when the reviewed graph allows
+it. Tokenizer truncation is carried into vector/generation status.
+
+The pre-existing CLIP manifest retains configuration hash
+`7f56e23951620776f8a65d4de5441b6ff1eecd1f48c8ddf1eca8a82f1dea2089`, verified
+against `main` at `c11db102`. The W7 native lane runs without downloads:
+
+```bash
+cd backend
+AI_SEARCH_TEXT_ASSETS=/absolute/path/to/bge uv run pytest \
+  tests/integration/modules/inference/preplaced_text.py -q -s
+```
+
+## Current text measurements
+
+The frozen engineering corpus in `backend/tests/fixtures/search/` has 32 fictional
+designs, opaque names, keyword/paraphrase/Spanish/typo queries, and two additional
+out-of-domain probes. Labels and descriptions were written before running BGE.
+It is an original regression corpus, not a human-labelled user study. Its
+versioned vectors were generated with the exact curated BGE model and passage
+recipe; ordinary CI replays those real vectors without fetching model weights.
+
+| Metric | Measured result |
+| --- | ---: |
+| Hybrid recall@5 | 0.96875 (31/32) |
+| SQLite FTS5 BM25 recall@5 | 0.875 (28/32) |
+| Ranked ILIKE recall@5 | 0.625 (20/32) |
+| Out-of-domain probes returning results at generic floor 0.35 | 2/2 |
+
+The missed hybrid query is a Spanish stress case. BGE is advertised as English.
+The generic floor needs additional calibration for rejecting unrelated queries;
+these measurements do not establish reliable out-of-domain rejection.
+
+On this x86_64 development machine, ten short warm BGE embeddings took
+0.054–0.123 seconds after dynamic sequence sizing; cold validation took 2.44
+seconds. The separately executed native test measured 0.055-second warm
+queries. These are embedding-only observations with one ONNX thread, not the
+100,000-passage end-to-end p95 or physical Raspberry Pi acceptance benchmarks.
+Physical ARM measurements, the human-labelled set and broader candidate/visual
+quality studies remain outstanding.
+
+The W7 stage suite passed 439 tests, followed by 35 contract/quality/end-to-end
+checks, 14 model-admin API checks, 11 core recipe checks and the actual preplaced
+BGE test. The hygiene pass covered 3,255 tests. These are checkpoint results;
+full final coverage and security gates remain required for the completed branch.
