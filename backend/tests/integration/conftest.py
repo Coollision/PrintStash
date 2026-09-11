@@ -60,7 +60,12 @@ from tests.factories.protocols import (
     MakePrinterFile,
     MakePrintJob,
     MakeProvenanceSource,
+    MakeSearchDependency,
+    MakeSearchLexicalPosting,
+    MakeSearchLexicalState,
+    MakeSearchLexicalTerm,
     MakeSearchPassage,
+    MakeSearchReconciliationState,
     MakeShareLink,
     MakeSimilarityCandidate,
     MakeSimilarityDecision,
@@ -630,3 +635,34 @@ __all__ += [
     "make_passage_vector",
     "make_search_passage",
 ]
+
+
+@pytest.fixture
+def make_search_dependency(db_session: Session) -> MakeSearchDependency:
+    return _bound(factories.build_search_dependency, db_session)
+
+
+@pytest.fixture
+def make_search_reconciliation_state(db_session: Session) -> MakeSearchReconciliationState:
+    return _bound(factories.build_search_reconciliation_state, db_session)
+
+
+__all__ += ["make_search_dependency", "make_search_reconciliation_state"]
+
+
+@pytest.fixture
+def make_search_lexical_state(db_session: Session) -> MakeSearchLexicalState:
+    return _bound(factories.build_search_lexical_state, db_session)
+
+
+@pytest.fixture
+def make_search_lexical_term(db_session: Session) -> MakeSearchLexicalTerm:
+    return _bound(factories.build_search_lexical_term, db_session)
+
+
+@pytest.fixture
+def make_search_lexical_posting(db_session: Session) -> MakeSearchLexicalPosting:
+    return _bound(factories.build_search_lexical_posting, db_session)
+
+
+__all__ += ["make_search_lexical_state", "make_search_lexical_term", "make_search_lexical_posting"]

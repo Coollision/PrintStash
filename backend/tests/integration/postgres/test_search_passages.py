@@ -11,10 +11,20 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from alembic import command
 from app.db.models.search import SearchPassage
+from app.db.projections import bind_content_projection, content_changed
 from app.db.url import normalize_database_url
 from app.modules.search.passages import sync_subject
+from app.modules.search.projection import LibraryProjection
+from app.modules.search.reconciliation import reconcile_partition
 from tests.containers import postgres_url
-from tests.factories import build_model, build_search_passage
+from tests.factories import (
+    build_collection,
+    build_document,
+    build_model,
+    build_search_passage,
+    build_tag,
+    tag_collection,
+)
 from tests.paths import ALEMBIC_INI
 
 
@@ -37,7 +47,7 @@ def passage_engine():
             tables=[
                 table
                 for name, table in SQLModel.metadata.tables.items()
-                if name != "search_passages"
+                if not name.startswith("search_")
             ],
         )
         command.stamp(config, "0118bda3e719")
@@ -56,7 +66,7 @@ class TestSearchPassages:
             model = build_model(session, "Dragón", description="Print without supports")
             subject = SearchSubject(SubjectType.MODEL, model.id)
 
-        command.upgrade(config, "bf435683b126")
+        command.upgrade(config, "head")
         with Session(engine) as session:
             sync_subject(session, subject)
             session.commit()
@@ -69,7 +79,7 @@ class TestSearchPassages:
 
     def test_rejects_duplicate_passage_identity(self, passage_engine):
         engine, config = passage_engine
-        command.upgrade(config, "bf435683b126")
+        command.upgrade(config, "head")
         with Session(engine) as session:
             model = build_model(session)
             subject = SearchSubject(SubjectType.MODEL, model.id)
@@ -80,3 +90,146 @@ class TestSearchPassages:
             session.rollback()
 
             assert len(session.exec(select(SearchPassage)).all()) == 1
+
+    def test_repairs_a_body_change_without_a_timestamp(self, passage_engine):
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            doc = build_document(session, "Guide", body="Before")
+            reconcile_partition(session, SubjectType.DOCUMENT)
+            session.commit()
+            doc.body = "After"
+            session.add(doc)
+            session.commit()
+            reconcile_partition(session, SubjectType.DOCUMENT)
+            session.commit()
+        with Session(engine) as session:
+            assert (
+                session.exec(select(SearchPassage.text)).one()
+                == "Title: Guide\nBody: After"
+            )
+
+    def test_projects_inherited_tag_deletion(self, passage_engine):
+        from sqlalchemy import delete
+
+        from app.db.models import CollectionTagLink
+
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        previous = bind_content_projection(LibraryProjection())
+        try:
+            with Session(engine) as session:
+                collection = build_collection(session, "Parts")
+                model = build_model(session, collection=collection)
+                tag = build_tag(session, "flexible")
+                tag_collection(session, collection, tag)
+                content_changed(session, "model", [model.id])
+                session.commit()
+                assert (
+                    "Tags: flexible" in session.exec(select(SearchPassage.text)).one()
+                )
+                session.exec(
+                    delete(CollectionTagLink).where(CollectionTagLink.tag_id == tag.id)
+                )
+                content_changed(session, "tag", [tag.id])
+                session.commit()
+            with Session(engine) as session:
+                assert "flexible" not in "\n".join(
+                    session.exec(select(SearchPassage.text)).all()
+                )
+        finally:
+            bind_content_projection(previous)
+
+    def test_ranks_postgres_with_real_bm25(self, passage_engine):
+        from app.modules.search.lexical_index import rebuild_partition
+        from app.modules.search.lexical_query import ordered_passages
+
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            body = build_model(session, "Notes", description="bracket")
+            title = build_model(session, "Bracket")
+            for model in (body, title):
+                sync_subject(session, SearchSubject(SubjectType.MODEL, model.id))
+            rebuild_partition(session)
+            session.commit()
+            rows = session.exec(
+                ordered_passages(session, "bracket", select(SearchPassage.id))
+            ).all()
+            subjects = [
+                session.get(SearchPassage, id).subject_id for id, _score in rows
+            ]
+            assert subjects == [title.id, body.id]
+            assert rows[0][1] > rows[1][1] > 0
+
+    def test_maintains_postgres_statistics_after_delete(self, passage_engine):
+        from app.core.time import utcnow
+        from app.db.models import SearchLexicalState, SearchLexicalTerm
+        from app.modules.search.lexical_index import rebuild_partition
+
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            model = build_model(session, "Bracket")
+            subject = SearchSubject(SubjectType.MODEL, model.id)
+            sync_subject(session, subject)
+            rebuild_partition(session)
+            session.commit()
+            assert session.get(SearchLexicalState, 1).document_count == 1
+            assert session.get(SearchLexicalTerm, "bracket").document_frequency == 1
+            model.deleted_at = utcnow()
+            session.add(model)
+            session.flush()
+            sync_subject(session, subject)
+            session.commit()
+        with Session(engine) as session:
+            state = session.get(SearchLexicalState, 1)
+            assert (state.document_count, state.total_length) == (0, 0)
+            assert session.get(SearchLexicalTerm, "bracket") is None
+
+    def test_hides_private_member_context_on_postgres(self, passage_engine):
+        from app.db.models import CollectionRole
+        from app.modules.library.multipart_models import save
+        from app.modules.search.lexical_index import rebuild_partition
+        from app.modules.search.retrieval import search
+        from app.schemas.multipart_models import (
+            MultipartChoiceWrite,
+            MultipartPartWrite,
+        )
+        from tests.factories import (
+            build_multipart_model,
+            build_user,
+            grant_collection_role,
+        )
+
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            admin = build_user(session, superuser=True)
+            viewer = build_user(session)
+            public = build_collection(session, "Shared")
+            private = build_collection(session, "Private")
+            member = build_model(session, "Secretprototype", collection=private)
+            aggregate = build_multipart_model(session, "Assembly", collection=public)
+            grant_collection_role(session, viewer, public, CollectionRole.VIEW)
+            save(
+                session,
+                admin,
+                aggregate,
+                [
+                    MultipartPartWrite(
+                        name="Leg", choices=[MultipartChoiceWrite(model_id=member.id)]
+                    )
+                ],
+            )
+            sync_subject(session, SearchSubject(SubjectType.MODEL, member.id))
+            sync_subject(
+                session, SearchSubject(SubjectType.MULTIPART_MODEL, aggregate.id)
+            )
+            rebuild_partition(session)
+            session.commit()
+
+            assert search(session, viewer, "Secretprototype").items == []
+            assert [
+                row.subject_id for row in search(session, viewer, "Assembly").items
+            ] == [aggregate.id]

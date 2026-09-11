@@ -267,6 +267,7 @@ class ModelListItem(BaseModel):
 
 
 class ModelSort(str, Enum):
+    RELEVANCE = "relevance"
     DATE_DESC = "date-desc"
     DATE_ASC = "date-asc"
     NAME_ASC = "name-asc"

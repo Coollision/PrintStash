@@ -48,6 +48,33 @@ from tests import factories
 
 
 class TestGeneratedIdentities:
+    def test_search_dependency_builder_tracks_removed_sources(self, db_session):
+        from app.db.projections import ContentSource
+        from app.modules.search.projection import affected_subjects
+
+        model = factories.build_model(db_session)
+        subject = SearchSubject(SubjectType.MODEL, model.id)
+        source = ContentSource("provenance", 999)
+        factories.build_search_dependency(db_session, subject, source)
+
+        assert list(affected_subjects(db_session, source)) == [subject]
+
+    def test_search_checkpoint_builder_resumes_a_partition(self, db_session):
+        from app.db.models import SearchPassage
+        from app.modules.search.reconciliation import reconcile_partition
+
+        first = factories.build_document(db_session, "First")
+        second = factories.build_document(db_session, "Second")
+        factories.build_search_reconciliation_state(
+            db_session, SubjectType.DOCUMENT,
+            watermark_at=second.updated_at, watermark_id=second.id,
+            partition_after_id=first.id,
+        )
+
+        reconcile_partition(db_session, SubjectType.DOCUMENT, limit=1)
+
+        assert db_session.exec(select(SearchPassage.subject_id)).all() == [second.id]
+
     def test_search_passage_builder_preserves_subject_identity(self, db_session):
         model = factories.build_model(db_session)
         subject = SearchSubject(SubjectType.MODEL, model.id)

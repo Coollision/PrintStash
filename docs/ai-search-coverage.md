@@ -2,7 +2,7 @@
 
 Work in progress for #166, based on the [owner’s independent plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c) and [jorgehermo9’s attachment](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c). One branch and one eventual PR. No AI Search availability claim yet.
 
-The first increment implements the W1 passage recipe, source extraction and transactional persistence. Mutation-port wiring, dependency reconciliation and every later stage remain unfinished. Existing Similar Models inference will be adopted at W3/W12 rather than duplicated.
+The branch now implements the W1 passage/transaction/reconciliation foundation and the W2 authorized lexical API and ranked browse. W3/W5 still need to connect generation-aware recipes and vector invalidation. Existing Similar Models inference is the adoption point for W3/W12.
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
@@ -13,10 +13,10 @@ The first increment implements the W1 passage recipe, source extraction and tran
 | A005 | leaves the content hash untouched for a non-indexed edit | Edge | `updated_at` bumped, fields equal | hash unchanged; no re-embed enqueued | Integration | ❌ missing |
 | A006 | removes passages when a subject is trashed | Edge | model trashed | no passages; no vectors; not returned by search | Integration | ❌ missing |
 | A007 | restores passages when a subject is restored | Edge | trashed model restored | passages exist again; searchable | Integration | ❌ missing |
-| A008 | re-derives a passage the mutation seam missed | Error | row updated bypassing the seam | watermark sweep repairs it | Integration | ❌ missing |
-| A009 | ranks an exact title match above a body mention | Happy | two models, FTS5 | ordering asserted | Integration | ❌ missing |
-| A010 | ranks the controlled BM25 fixture consistently on PostgreSQL | Happy | Mismo tokenizer, corpus y pesos; postgres marker | Orden de referencia BM25, no ts_rank etiquetado como BM25 | Integration | ❌ missing |
-| A011 | falls back to ranked LIKE when FTS is unavailable | Error | probe forced to fail | results still returned; capability reports the fallback | Integration | ❌ missing |
+| A008 | re-derives a passage the mutation seam missed | Error | row updated bypassing the seam | watermark sweep repairs it | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_repairs_a_body_change_without_a_timestamp` |
+| A009 | ranks an exact title match above a body mention | Happy | two models, FTS5 | ordering asserted | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_ranks_exact_title_above_body` |
+| A010 | ranks the controlled BM25 fixture consistently on PostgreSQL | Happy | Mismo tokenizer, corpus y pesos; postgres marker | Orden de referencia BM25, no ts_rank etiquetado como BM25 | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_ranks_postgres_with_real_bm25` |
+| A011 | falls back to ranked LIKE when FTS is unavailable | Error | probe forced to fail | results still returned; capability reports the fallback | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_falls_back_when_fts_is_unavailable` |
 | A012 | prepares a generation at its index dimension | Happy | Space nativa 1024; MRL index 128 | Tabla derivada de 128; floats durables de 1024 | Integration | ❌ missing |
 | A013 | drops the typed table when a generation is retired | Happy | retired generation | table gone; durable vectors deleted in batches | Integration | ❌ missing |
 | A014 | keeps autogenerate empty while a generation is live | Edge | live generation, `alembic revision --autogenerate` | empty diff | Integration | ❌ missing |
@@ -40,7 +40,7 @@ The first increment implements the W1 passage recipe, source extraction and tran
 | A032 | drops results below the similarity floor | Edge | out-of-domain query | empty "no strong matches", not nearest neighbours | Integration | ❌ missing |
 | A033 | excludes trashed subjects from fused results | Edge | trashed model with a vector | absent | Integration | ❌ missing |
 | A034 | applies visibility through browse authorization | Error | User sin acceso a vecinos principales | Solo resultados autorizados tras refetch bounded; página puede ser corta | Integration | ❌ missing |
-| A035 | rejects search from a share-link context | Error | share token | 403; no retrieval performed | Integration | ❌ missing |
+| A035 | rejects search from a share-link context | Error | share token | 403; no retrieval performed | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_rejects_share_context_search` |
 | A036 | returns per-result match evidence | Happy | hybrid query | each result names its leg and field | Integration | ❌ missing |
 | A037 | verifies a downloaded model digest before use | Error | tampered file | discarded; stable error; nothing installed | Contract | ❌ missing |
 | A038 | never downloads without the opt-in | Error | download disabled | no egress attempted | Integration | ❌ missing |
@@ -210,5 +210,91 @@ internal persistence subcontracts below now pass. `core/` paths refer to
 | P048 | emits portable offline schema | Happy | SQLite and PostgreSQL offline DDL | Passage table and constraints rendered | Integration | ✅ `integration/db/migrations/test_search_passages_migration.py::TestSearchPassagesMigration::test_emits_portable_offline_schema` |
 | P049 | projects existing models after upgrade | Happy | Existing PostgreSQL Model upgraded to passage schema | Durable Unicode passage after projection | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_projects_existing_models_after_upgrade` |
 | P050 | rejects duplicate passage identity | Error | Duplicate identity on PostgreSQL | Unique constraint rejects duplicate; original retained | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_rejects_duplicate_passage_identity` |
-| P051 | materializes a document created through the api | Happy | Document created through real HTTP API; explicit projection operation | Text readable from a new database session | E2E | ✅ `e2e/test_search_passages.py::TestSearchPassageLifecycle::test_materializes_a_document_created_through_the_api` |
+| P051 | indexes a new document before commit returns | Happy | Document created through the real HTTP API | Current passage visible in a fresh database session without explicit indexing | E2E | ✅ `e2e/test_search_passages.py::TestSearchPassageLifecycle::test_indexes_a_new_document_before_commit_returns` |
 | P052 | search passage builder preserves subject identity | Happy | Factory receives a real Model Subject | Persisted owner, access requirements and default text match | Integration | ✅ `repo/test_factories.py::TestGeneratedIdentities::test_search_passage_builder_preserves_subject_identity` |
+
+## W1 transaction and reconciliation checks
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| P053 | projects an authorized model edit | Happy | Authorized Model rename | Passage updated before operation returns | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_projects_an_authorized_model_edit` |
+| P054 | refreshes descendants after an ancestor tag change | Edge | Ancestor tag assignment | Descendant Model passage gains effective tag | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_refreshes_descendants_after_an_ancestor_tag_change` |
+| P055 | refreshes removed relationships | Edge | Direct tag link removed | Stale tag removed from passage | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_refreshes_removed_relationships` |
+| P056 | rolls back a content notification | Error | Content notification then rollback | Source projection restored atomically | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_rolls_back_a_content_notification` |
+| P057 | leaves content usable without a projection | Edge | Optional projection unbound | Content commit succeeds without passages | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_leaves_content_usable_without_a_projection` |
+| P058 | repairs a body change without a timestamp | Edge | Document changed outside mutation port | Partition sweep corrects text | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_repairs_a_body_change_without_a_timestamp` |
+| P059 | persists the partition cursor | Happy | First bounded page commits | Durable cursor names last visited Subject | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_persists_the_partition_cursor` |
+| P060 | removes a passage after an unobserved deletion | Edge | Subject removed without notification | Orphan passage removed | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_removes_a_passage_after_an_unobserved_deletion` |
+| P061 | limits work to the current partition | Edge | Four Subjects and page limit two | Only current two Subjects projected | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_limits_work_to_the_current_partition` |
+| P062 | reaches the next partition | Happy | Two successive bounded pages | All four Subjects eventually projected | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_reaches_the_next_partition` |
+
+## W1 content-owner lifecycle validation
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| P063 | indexes_a_new_document_before_commit_returns | Happy | create Markdown through the API | durable title and body passage | E2E | ⏭️ N/A — same headline lifecycle now covered by P051 |
+| P064 | replaces_a_document_body_after_edit | Happy | edit a projected Markdown body | only current body remains | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestDocumentProjection::test_replaces_a_document_body_after_edit` |
+| P065 | removes_a_trashed_document | Happy | trash a projected Document | no passage remains | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestDocumentProjection::test_removes_a_trashed_document` |
+| P066 | reindexes_a_restored_document | Happy | restore a trashed Document | current passage returns | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestDocumentProjection::test_reindexes_a_restored_document` |
+| P067 | removes_a_purged_document | Happy | permanently delete a projected Document | passages and dependencies removed | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestDocumentProjection::test_removes_a_purged_document` |
+| P068 | indexes_an_uploaded_markdown_document | Happy | upload Markdown bytes | body searchable in durable passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestDocumentProjection::test_indexes_an_uploaded_markdown_document` |
+| P069 | indexes_an_uploaded_binary_filename | Happy | upload PDF bytes | filename metadata indexed without binary content | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestDocumentProjection::test_indexes_an_uploaded_binary_filename` |
+| P070 | refreshes_models_after_collection_rename | Happy | rename an ancestor Collection | descendant Model passage contains new path | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestTaxonomyProjection::test_refreshes_models_after_collection_rename` |
+| P071 | replaces_collection_readme | Happy | edit Collection landing text | current README passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestTaxonomyProjection::test_replaces_collection_readme` |
+| P072 | refreshes_models_after_collection_tags | Happy | replace inherited tags through API | Model passage contains replacement tag | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestTaxonomyProjection::test_refreshes_models_after_collection_tags` |
+| P073 | removes_deleted_tag_text | Edge | delete a tag after projection | dependent Model omits deleted tag | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestTaxonomyProjection::test_removes_deleted_tag_text` |
+| P074 | indexes_a_new_multipart_model | Happy | create a multipart aggregate through API | shared title passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestMultipartProjection::test_indexes_a_new_multipart_model` |
+| P075 | refreshes_multipart_metadata | Happy | rename aggregate | current shared title passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestMultipartProjection::test_refreshes_multipart_metadata` |
+| P076 | removes_a_deleted_multipart_model | Happy | delete aggregate | no aggregate passages | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestMultipartProjection::test_removes_a_deleted_multipart_model` |
+| P077 | refreshes_batch_model_moves | Happy | move selected Models | current collection path | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_refreshes_batch_model_moves` |
+| P078 | refreshes_batch_model_tags | Happy | replace selected Model tags | current effective tag text | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_refreshes_batch_model_tags` |
+| P079 | removes_a_trashed_model | Happy | trash a projected Model | no Model passages | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_removes_a_trashed_model` |
+| P080 | reindexes_a_restored_model | Happy | restore Model | current Model passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_reindexes_a_restored_model` |
+| P081 | refreshes_revision_notes | Happy | edit Revision notes | current Revision text in Model passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_refreshes_revision_notes` |
+| P082 | removes_a_trashed_revision_filename | Happy | trash a Revision | removed filename absent from Model passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_removes_a_trashed_revision_filename` |
+| P083 | refreshes_artifact_tags | Happy | replace Artifact tags | Model effective tag text updated | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_refreshes_artifact_tags` |
+| P084 | refreshes_provenance_override | Happy | edit captured title override | effective override appears in Model passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_refreshes_provenance_override` |
+| P085 | indexes_ingested_artifact_metadata | Happy | persist a new Artifact | filename in durable Model passage | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_indexes_ingested_artifact_metadata` |
+| P086 | omits_derived_passages_from_audit | Edge | content projection while audit installed | no duplicate text in audit derivative rows | Integration | ✅ `integration/modules/search/projection/test_content_lifecycle.py::TestModelProjection::test_omits_derived_passages_from_audit` |
+| P087 | defers_projection_repair_during_restore | Edge | restore maintenance active | no repair checkpoint created | Integration | ✅ `integration/runtime/test_search.py::TestSearchRuntime::test_defers_projection_repair_during_restore` |
+| P088 | commits_a_projection_repair_partition | Happy | repair existing Document in worker | fresh session sees passage | Integration | ✅ `integration/runtime/test_search.py::TestSearchRuntime::test_commits_a_projection_repair_partition` |
+| P089 | cancellation_waits_for_projection_repair | Edge | cancel scheduler during admitted unit | unit finishes before cancellation completes | Integration | ✅ `integration/runtime/test_search.py::TestSearchRuntime::test_cancellation_waits_for_projection_repair` |
+| P090 | preserves_content_when_projection_fails | Error | projection raises during Model edit | source edit and projection roll back | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_preserves_content_when_projection_fails` |
+| P091 | rejects_an_invalid_repair_limit | Error | limit zero or above maximum | ValueError before writes | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_rejects_an_invalid_repair_limit` |
+| P092 | upgrades_projection_checkpoints_with_content | Happy | existing library at passage migration | upgrade preserves content and supports checkpoints | Integration | ✅ `integration/db/migrations/test_search_checkpoints_migration.py::TestSearchCheckpointsMigration::test_upgrades_projection_checkpoints_with_content` |
+| P093 | downgrades_projection_checkpoints_with_content | Happy | library at checkpoint migration | downgrade preserves library and passage rows | Integration | ✅ `integration/db/migrations/test_search_checkpoints_migration.py::TestSearchCheckpointsMigration::test_downgrades_projection_checkpoints_with_content` |
+
+## W2 lexical ranking and failure handling
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| L001 | tokenizes_unicode_query_without_operators | Edge | punctuation, accents, FTS operators | bounded literal tokens | Unit | ✅ `core/search/test_lexical.py::TestLexical::test_tokenizes_unicode_query_without_operators` |
+| L002 | computes_reference_bm25 | Happy | fixed corpus counts and field frequencies | numeric BM25 reference | Unit | ✅ `core/search/test_lexical.py::TestLexical::test_computes_reference_bm25` |
+| L003 | ranks_exact_title_above_body | Happy | identical word in title versus description | title Subject first | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_ranks_exact_title_above_body` |
+| L004 | searches_current_content_after_edit | Happy | already indexed Model renamed | new query matches; old does not | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_searches_current_content_after_edit` |
+| L005 | removes_deleted_content_from_native_index | Edge | indexed Subject trashed | old query returns no result | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_removes_deleted_content_from_native_index` |
+| L006 | rolls_back_lexical_edits | Error | source transaction rolled back | original matches preserved | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_rolls_back_lexical_edits` |
+| L007 | falls_back_when_fts_is_unavailable | Error | native capability absent | weighted LIKE returns result with fallback status | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_falls_back_when_fts_is_unavailable` |
+| L008 | preserves_content_when_native_update_fails | Error | FTS update fails | source and durable passage commit; LIKE finds new name | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_preserves_content_when_native_update_fails` |
+| L009 | repairs_native_index_in_bounded_pages | Edge | missing index over existing passages | cursor advances; queries work after rebuild | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_repairs_native_index_in_bounded_pages` |
+| L010 | ranks_postgres_with_real_bm25 | Happy | controlled corpus on PostgreSQL | reference ranking using term statistics | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_ranks_postgres_with_real_bm25` |
+| L011 | maintains_postgres_statistics_after_delete | Edge | indexed passage deleted | df, corpus length and document count updated | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_maintains_postgres_statistics_after_delete` |
+| L012 | searches_all_public_subject_types | Happy | Model, Collection, Multipart Model, Document | discriminated authorized results | E2E | ✅ `e2e/test_search_passages.py::TestSearchPassageLifecycle::test_searches_all_public_subject_types` |
+| L013 | rejects_unauthenticated_search | Error | no credentials | 401 before retrieval | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_rejects_unauthenticated_search` |
+| L014 | rejects_share_context_search | Error | share token | denied before retrieval | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_rejects_share_context_search` |
+| L015 | hides_unauthorized_member_segments | Error | aggregate readable; member private | private member terms yield no aggregate result | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_hides_unauthorized_member_segments` |
+| L016 | applies_permission_revocation_immediately | Edge | access revoked after indexing | no restricted result or highlight | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_applies_permission_revocation_immediately` |
+| L017 | escapes_like_wildcards | Edge | literal percent and underscore query | no wildcard widening | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_escapes_like_wildcards` |
+| L018 | returns_bounded_plain_text_evidence | Edge | hostile HTML in indexed content | escaped-by-consumer text plus match ranges; no raw HTML | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_returns_bounded_plain_text_evidence` |
+| L019 | ranks_library_browse_through_read_port | Happy | exact title and body matches | Model browse order agrees with lexical relevance | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_ranks_library_browse_through_read_port` |
+| L020 | detects_unmanaged_schema_drift | Error | unrelated table resembling a shadow | autogenerate reports it | Integration | ✅ `integration/db/derived_objects/test_search_fts.py::TestSearchDerivedObjects::test_detects_unmanaged_schema_drift` |
+| L021 | excludes_only_registered_fts_objects_from_autogenerate | Edge | populated native FTS index | no derivative drift | Integration | ✅ `integration/db/derived_objects/test_search_fts.py::TestSearchDerivedObjects::test_excludes_only_registered_fts_objects_from_autogenerate` |
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| P094 | removes_an_orphan_dependency_without_a_passage | Edge | source and passage removed outside owner | dependency inventory removed by bounded repair | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_removes_an_orphan_dependency_without_a_passage` |
+| L022 | hides_private_member_context_on_postgres | Error | readable aggregate with unreadable member on PostgreSQL | no private term match | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_hides_private_member_context_on_postgres` |
+| L023 | paginates_ranked_library_browse | Happy | multiple ranked Model matches | no repeats, exact total, terminal cursor | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_paginates_ranked_library_browse` |
+| L024 | rejects_a_cursor_from_another_query | Error | signed cursor reused with different query | stable invalid-cursor error | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_rejects_a_cursor_from_another_query` |
+| L025 | paginates_without_repeating_a_subject | Happy | more Subjects than page size | each Subject once across pages | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_paginates_without_repeating_a_subject` |
+| L026 | browse_falls_back_after_native_table_loss | Error | native FTS table removed after initialization | ranked browse still returns current Model | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_browse_falls_back_after_native_table_loss` |

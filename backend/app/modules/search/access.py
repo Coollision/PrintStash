@@ -1,0 +1,75 @@
+"""SQL visibility for Subjects and every contributor before retrieval is scored."""
+
+from sqlalchemy import Integer, and_, cast, false, func, literal, select, union_all
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlmodel import Session
+
+from app.db.models import Collection, Document, MultipartModel, SearchPassage, User
+from app.db.scopes import live
+from app.modules.identity.rbac import accessible_collection_ids
+from app.modules.library.model_views.access import accessible_live_model_ids_stmt
+
+
+def visible_subjects(session: Session, user: User):
+    collections = accessible_collection_ids(session, user) if user.is_active else set()
+    models = accessible_live_model_ids_stmt(session, user)
+    if not user.is_active:
+        models = models.where(false())
+    statements = [
+        models.with_only_columns(
+            literal("model").label("kind"), *models.selected_columns
+        )
+    ]
+    for kind, table in (
+        ("collection", Collection),
+        ("document", Document),
+        ("multipart_model", MultipartModel),
+    ):
+        statement = select(literal(kind).label("kind"), table.id)
+        if table is not MultipartModel:
+            statement = statement.where(live(table))
+        if not user.is_active:
+            statement = statement.where(false())
+        elif not user.is_superuser:
+            owner_collection = table.id if table is Collection else table.collection_id
+            statement = statement.where(owner_collection.in_(collections))
+        statements.append(statement)
+    return union_all(*statements).cte()
+
+
+def visible_passage_ids(session: Session, user: User):
+    visible = visible_subjects(session, user)
+    owner_visible = (
+        select(visible.c.id)
+        .where(
+            visible.c.kind == SearchPassage.subject_type,
+            visible.c.id == SearchPassage.subject_id,
+        )
+        .exists()
+    )
+    if session.get_bind().dialect.name == "postgresql":
+        dependencies = func.jsonb_array_elements(
+            cast(SearchPassage.access_dependencies_json, JSONB)
+        ).table_valued("value")
+        kind = dependencies.c.value.op("->>")(0)
+        id = cast(dependencies.c.value.op("->>")(1), Integer)
+    else:
+        dependencies = func.json_each(
+            SearchPassage.access_dependencies_json
+        ).table_valued("value")
+        kind = func.json_extract(dependencies.c.value, "$[0]")
+        id = func.json_extract(dependencies.c.value, "$[1]")
+    dependency_visible = (
+        select(visible.c.id)
+        .where(visible.c.kind == kind, visible.c.id == id)
+        .correlate(dependencies)
+        .exists()
+    )
+    hidden_dependency = (
+        select(literal(1))
+        .select_from(dependencies)
+        .where(~dependency_visible)
+        .correlate(SearchPassage)
+        .exists()
+    )
+    return select(SearchPassage.id).where(and_(owner_visible, ~hidden_dependency))

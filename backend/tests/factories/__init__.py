@@ -152,7 +152,20 @@ from tests.factories.scenarios import (
     a_member_who_can_see_one_collection,
     a_printer_with_a_queue,
 )
+from tests.factories.search import build_search_dependency as build_search_dependency
+from tests.factories.search import (
+    build_search_lexical_posting as build_search_lexical_posting,
+)
+from tests.factories.search import (
+    build_search_lexical_state as build_search_lexical_state,
+)
+from tests.factories.search import (
+    build_search_lexical_term as build_search_lexical_term,
+)
 from tests.factories.search import build_search_passage as build_search_passage
+from tests.factories.search import (
+    build_search_reconciliation_state as build_search_reconciliation_state,
+)
 from tests.factories.similarity import (
     build_embedding_space,
     build_geometry_fingerprint,
@@ -283,8 +296,16 @@ __all__ += [
     "build_index_generation",
     "build_passage_vector",
     "build_search_passage",
+    "build_search_dependency",
+    "build_search_reconciliation_state",
     "build_similarity_candidate",
     "build_similarity_decision",
     "build_similarity_observation",
     "build_similarity_run",
+]
+
+__all__ += [
+    "build_search_lexical_state",
+    "build_search_lexical_term",
+    "build_search_lexical_posting",
 ]

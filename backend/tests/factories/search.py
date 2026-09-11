@@ -6,13 +6,20 @@ from printstash_core.search.passages import (
     RECIPE_VERSION,
     PassageContent,
     SearchSubject,
+    SubjectType,
     access_identity,
     render_passages,
 )
 from sqlmodel import Session
 
 from app.core.time import utcnow
-from app.db.models.search import SearchPassage
+from app.db.models import SearchLexicalPosting, SearchLexicalState, SearchLexicalTerm
+from app.db.models.search import (
+    SearchDependency,
+    SearchPassage,
+    SearchReconciliationState,
+)
+from app.db.projections import ContentSource
 from tests.factories._support import save
 
 
@@ -30,6 +37,47 @@ def build_search_passage(
         "recipe_version": RECIPE_VERSION,
         "content_hash": passage.content_hash,
         "text": passage.text,
+        "title": "Stored passage",
         "source_updated_at": utcnow(),
     }
     return save(session, SearchPassage(**(defaults | overrides)))
+
+
+def build_search_dependency(
+    session: Session, subject: SearchSubject, source: ContentSource, **overrides: Any
+) -> SearchDependency:
+    defaults = {
+        "subject_type": subject.subject_type.value,
+        "subject_id": subject.subject_id,
+        "source_kind": source.kind,
+        "source_id": source.id,
+    }
+    return save(session, SearchDependency(**(defaults | overrides)))
+
+
+def build_search_reconciliation_state(
+    session: Session, kind: SubjectType, **overrides: Any
+) -> SearchReconciliationState:
+    return save(
+        session, SearchReconciliationState(subject_type=kind.value, **overrides)
+    )
+
+
+def build_search_lexical_state(
+    session: Session, **overrides: Any
+) -> SearchLexicalState:
+    return save(session, SearchLexicalState(**overrides))
+
+
+def build_search_lexical_term(
+    session: Session, term: str = "bracket", **overrides: Any
+) -> SearchLexicalTerm:
+    defaults = {"term": term, "document_frequency": 1}
+    return save(session, SearchLexicalTerm(**(defaults | overrides)))
+
+
+def build_search_lexical_posting(
+    session: Session, passage: SearchPassage, term: str = "bracket", **overrides: Any
+) -> SearchLexicalPosting:
+    defaults = {"passage_id": passage.id, "term": term, "frequency": 1.0}
+    return save(session, SearchLexicalPosting(**(defaults | overrides)))

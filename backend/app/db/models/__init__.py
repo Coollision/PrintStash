@@ -216,7 +216,12 @@ from .provenance import (
 from .provenance import (
     ProvenanceCapture as ProvenanceCapture,
 )
+from .search import SearchDependency as SearchDependency
+from .search import SearchLexicalPosting as SearchLexicalPosting
+from .search import SearchLexicalState as SearchLexicalState
+from .search import SearchLexicalTerm as SearchLexicalTerm
 from .search import SearchPassage as SearchPassage
+from .search import SearchReconciliationState as SearchReconciliationState
 from .similarity import GeometryFingerprint as GeometryFingerprint
 from .similarity import SimilarityCandidate as SimilarityCandidate
 from .similarity import SimilarityCandidateObservation as SimilarityCandidateObservation

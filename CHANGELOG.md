@@ -4,9 +4,11 @@
 
 ### Added
 
-- AI Search groundwork adds durable, versioned text passages for library Subjects,
-  including separate access requirements for Multipart member text. Automatic
-  indexing and the new search experience remain in development under #166.
+- AI Search groundwork adds automatic, transactional text indexing for library
+  Subjects, authorized lexical results with match evidence, and ranked browse.
+  SQLite FTS5 and PostgreSQL BM25 share durable passages with a ranked fallback;
+  background repair is bounded. The remaining AI Search stages are in development
+  under #166.
 - Model Families preserve independent Models and Revisions while recording human
   variant roles, an explicit canonical selection and relative measurements.
   Membership moves and Family restoration are atomic; Model trash reserves its

@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from app.db.content_search import ranked_model_matches
 from app.db.models import (
     SENTINEL_MODEL_HASH,
     Collection,
@@ -104,7 +105,7 @@ def _apply_structured_filters(stmt, filters: ModelFilters):
     return stmt
 
 
-def _filtered_stmt(session: Session, user: User, filters: ModelFilters):
+def filtered_with_rank(session: Session, user: User, filters: ModelFilters):
     stmt = select(Model).where(live(Model), Model.hash != SENTINEL_MODEL_HASH)
     stmt = _apply_model_access(stmt, session, user)
     if (
@@ -159,10 +160,15 @@ def _filtered_stmt(session: Session, user: User, filters: ModelFilters):
             (Collection.path == cat_path) | (Collection.path.startswith(cat_path + "/"))
         )
         stmt = stmt.where(Model.collection_id.in_(matching))  # type: ignore[union-attr]
+    matches = (
+        ranked_model_matches(session, filters.q, stmt.with_only_columns(Model.id).correlate(None))
+        if filters.q and filters.q.strip() else None
+    )
     stmt = library_search.apply_library_search(
         stmt,
         query=filters.q,
         tag_slugs=filters.tag,
+        matches=matches,
     )
     stmt = _apply_structured_filters(stmt, filters)
     present_model_ids = (
@@ -186,4 +192,12 @@ def _filtered_stmt(session: Session, user: User, filters: ModelFilters):
         stmt = stmt.where(Model.id.in_(present_model_ids))  # type: ignore[union-attr]
     elif filters.printer_presence == "none":
         stmt = stmt.where(Model.id.not_in(present_model_ids))  # type: ignore[attr-defined]
-    return stmt
+    rank = (
+        select(matches.c.score).where(matches.c.model_id == Model.id).correlate(Model).scalar_subquery()
+        if matches is not None else None
+    )
+    return stmt, rank
+
+
+def _filtered_stmt(session: Session, user: User, filters: ModelFilters):
+    return filtered_with_rank(session, user, filters)[0]
