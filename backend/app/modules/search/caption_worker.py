@@ -16,7 +16,7 @@ from app.core.errors import OperationError
 from app.core.time import utcnow
 from app.db.models import BackgroundJob, File, Model, SubjectCaption, SystemConfig, User
 from app.modules.inference.configuration import chat_provider
-from app.modules.search import captions
+from app.modules.search import caption_source, captions
 from app.modules.search.passages import sync_subject
 from app.modules.search.visual_index import render
 from app.modules.search.visual_sources import eligible
@@ -29,7 +29,7 @@ def render_image(sessions, file, context):
     views = render(
         sessions,
         file,
-        VisualRecipe("0" * 64, captions.RENDER_SIZE, "thumbnail"),
+        VisualRecipe("0" * 64, caption_source.RENDER_SIZE, "thumbnail"),
         context,
     )
     frame = views.thumbnail
@@ -37,7 +37,7 @@ def render_image(sessions, file, context):
         raise EmbeddingError("caption_preview_unavailable")
     image = Image.frombytes("RGB", (frame.width, frame.height), frame.rgb)
     encoded = BytesIO()
-    image.save(encoded, format="JPEG", quality=captions.JPEG_QUALITY)
+    image.save(encoded, format="JPEG", quality=caption_source.JPEG_QUALITY)
     return encoded.getvalue()
 
 
@@ -57,7 +57,7 @@ def sweep(session):
                     SubjectCaption.input_hash != File.sha256,
                     SubjectCaption.source_file_id != File.id,
                     SubjectCaption.provider_identity != provider.config_hash,
-                    SubjectCaption.recipe != captions.RECIPE,
+                    SubjectCaption.recipe != caption_source.RECIPE,
                 ),
             ),
         )
@@ -186,7 +186,7 @@ class CaptionProcessor:
                 row.job_id,
             )
             subject = SearchSubject(SubjectType(row.subject_type), row.subject_id)
-            file = captions.source(session, subject)
+            file = caption_source.source(session, subject)
             if (
                 file is None
                 or file.id != row.source_file_id
@@ -220,9 +220,9 @@ class CaptionProcessor:
                     return True
             result = provider_instance.complete(
                 ChatInput(
-                    captions.INSTRUCTION,
+                    caption_source.INSTRUCTION,
                     "Describe this object.",
-                    captions.CAPTION_SCHEMA,
+                    caption_source.CAPTION_SCHEMA,
                     image_jpegs=(image,),
                     max_output_tokens=512,
                 ),
@@ -322,7 +322,7 @@ class CaptionProcessor:
         ).first()
         row = captions.lookup(session, subject, lock=True)
         provider, _ = captions.endpoint(session)
-        file = captions.source(session, subject)
+        file = caption_source.source(session, subject)
         if (
             owner is None
             or row is None
@@ -333,7 +333,7 @@ class CaptionProcessor:
             or row.input_hash != input_hash
             or provider is None
             or provider.config_hash != row.provider_identity
-            or row.recipe != captions.RECIPE
+            or row.recipe != caption_source.RECIPE
             or file is None
             or file.id != row.source_file_id
             or file.sha256 != input_hash

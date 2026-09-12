@@ -55,6 +55,25 @@ LEASE_SECONDS = 180
 READER_SECONDS = 180  # Greater than the hard 120-second inference deadline.
 
 
+def owned(generation_id: int, token: str):
+    return (
+        IndexGeneration.id == generation_id,
+        IndexGeneration.lease_token == token,
+        IndexGeneration.lease_expires_at > utcnow(),
+        col(IndexGeneration.cancel_requested).is_(False),
+        col(IndexGeneration.state).in_(("active", "building")),
+    )
+
+
+def lock_owned(session: Session, generation_id: int, token: str) -> bool:
+    result = session.connection().execute(
+        update(IndexGeneration)
+        .where(*owned(generation_id, token))
+        .values(last_activity_at=utcnow())
+    )
+    return result.rowcount == 1
+
+
 def contract(session: Session, generation: IndexGeneration) -> Space:
     row = session.get(EmbeddingSpace, generation.space_id)
     if row is None:

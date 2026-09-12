@@ -268,10 +268,9 @@ def publish(
     *,
     copied=False,
 ) -> bool:
-    from app.modules.search.indexing import _owned, lock_owned
 
     if (
-        not lock_owned(session, generation_id, token)
+        not generations.lock_owned(session, generation_id, token)
         or not configuration.settings(session).enabled
     ):
         return False
@@ -306,7 +305,9 @@ def publish(
         File.sha256 == item.input_hash,
         File.model_id == item.model_id,
         File.id.in_(visual_sources.eligible(session)),
-        select(IndexGeneration.id).where(*_owned(generation_id, token)).exists(),
+        select(IndexGeneration.id)
+        .where(*generations.owned(generation_id, token))
+        .exists(),
     )
     units = (
         [("point_cloud", "point", views[0])]
@@ -349,9 +350,8 @@ def publish(
 
 
 def record_failure(session, generation_id, token, item, code):
-    from app.modules.search.indexing import lock_owned
 
-    if not lock_owned(session, generation_id, token):
+    if not generations.lock_owned(session, generation_id, token):
         return
     file = session.get(File, item.file_id, populate_existing=True)
     if file is None or file.sha256 != item.input_hash:
@@ -387,7 +387,6 @@ def record_failure(session, generation_id, token, item, code):
 def process(
     sessions: SessionFactory, generation_id: int, token: str, context: InferenceContext
 ):
-    from app.modules.search.indexing import lock_owned
     from app.modules.storage.capacity import CapacityManager, CapacityReservationHandle
 
     with sessions.scoped_session() as session:
@@ -396,7 +395,7 @@ def process(
         recipe = visual_sources.recipe_for(space)
         item = pending(session, generation)
         if item is None:
-            if not lock_owned(session, generation_id, token):
+            if not generations.lock_owned(session, generation_id, token):
                 return
             total, indexed, quarantine = visual_sources.counts(
                 session, generation_id, space
@@ -417,7 +416,7 @@ def process(
                 provider = embedding_provider(session, space)
                 session.rollback()
                 provider.validate(context=context)
-                if not lock_owned(session, generation_id, token):
+                if not generations.lock_owned(session, generation_id, token):
                     return
                 generation = session.get(
                     IndexGeneration, generation_id, populate_existing=True

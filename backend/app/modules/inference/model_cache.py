@@ -153,7 +153,7 @@ def for_space(space: Space) -> CachedModel:
 
 def referenced(session: Session, model: CachedModel) -> bool:
     if isinstance(model.manifest, SparseModelManifest):
-        from app.modules.search.configuration import settings as search_settings
+        from app.modules.search.settings import settings as search_settings
 
         config = search_settings(session)
         return config.sparse_expansion_enabled and config.sparse_model_id == model.id

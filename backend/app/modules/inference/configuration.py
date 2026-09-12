@@ -187,7 +187,7 @@ def embedding_provider(
         from app.core.config import settings
         from app.db.session import get_session_factory
         from app.modules.inference.model_cache import for_space
-        from app.modules.search.configuration import settings as search_settings
+        from app.modules.search.settings import settings as search_settings
 
         if not search_settings(session).local_models_enabled:
             raise EmbeddingError("embedding_local_disabled")

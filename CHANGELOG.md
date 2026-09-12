@@ -4,36 +4,23 @@
 
 ### Added
 
-- AI Search groundwork adds automatic, transactional text indexing for library
-  Subjects, authorized lexical results with match evidence, and ranked browse.
-  SQLite FTS5 and PostgreSQL BM25 share durable passages with a ranked fallback;
-  background repair is bounded. Search adopts existing native vectors, adds
-  optional SQLite/PostgreSQL vector indexes with a portable float fallback, and
-  preserves them through database migration and restore. Encrypted remote
-  endpoints add bounded embedding and structured-chat protocols for compatible
-  services, with independent opt-ins and administrator disclosures. Durable
-  generation rebuilds resume after interruption, reject stale results, retain the
-  serving index during replacement, and reuse floats for backend changes.
-  Versioned int8/binary indexes and approved MRL prefixes keep native floats for
-  rescoring and rebuilds, including database migration and restore. Hybrid text
-  queries add bounded inference, memory-only vector caching, rank fusion and
-  fresh permission checks with lexical fallback. Pinned, opt-in local BGE
-  acquisition adds verified offline models, bounded ONNX workers, cancellation,
-  generation-aware cache pruning and real-model regression vectors. The search UI
-  adds lexical suggestions, hybrid result pages, accessible evidence, and admin
-  controls for endpoint secrets, model acquisition and index lifecycles. The
-  remaining AI Search stages are in development under #166. Separate generated
-  captions add explicit render consent, editable/dismissible Model UI, durable
-  human-decision protections and caption-aware lexical/semantic passages.
-  Print-history filters use finished jobs and actual duration. Optional personal
-  NL consent enables validated, editable filters with timezone-aware calendar
-  bounds and reusable Saved Views; query text stays out of request/error logs.
-  Optional local SPLADE expansion stores bounded continuous term weights apart
-  from original text, with atomic disable, durable retries and measured index cost.
-  After a restart, active local models warm in the background while lexical
-  search remains available; cold queries do not repeatedly terminate model loads.
-  The AI Search master switch also disables captions and natural-language
-  parsing, including requests waiting on a render or provider response.
+- AI Search adds transactional text indexing for Models, Collections, Multipart
+  Models and Documents, authorized lexical suggestions, hybrid results with match
+  evidence, and local image/geometry search. Image queries support file selection,
+  drag-and-drop and device camera capture. Pinned BGE, CLIP and OpenShape models
+  use one bounded CPU runtime; acquisition and activation require explicit action.
+- AI Search settings manage encrypted compatible endpoints, model provenance,
+  capacity estimates and resumable index rebuilds. Serving generations remain
+  available during replacement; float, int8/binary and approved MRL transforms
+  preserve native vectors. SQLite/PostgreSQL derivatives can fall back to portable
+  retrieval and rebuild after restore. Local models warm after restart while
+  lexical search remains available.
+- Separate captions preserve human descriptions and require explicit render
+  consent. Editable print-history filters use actual duration and timezone-aware
+  calendar bounds; optional personal natural-language consent enables parsing and
+  Saved Views. Optional local SPLADE expansion stores bounded weighted terms
+  separately from original text. The AI master disables these inference consumers;
+  query text and images stay out of durable search data and request/error logs.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
   cyclic library references and native vector bytes without re-embedding.

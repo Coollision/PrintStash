@@ -19,7 +19,7 @@ from pathlib import Path
 from printstash_core.inference import EmbeddingError, EmbeddingInput, EmbeddingSpace
 from printstash_core.inference.context import InferenceContext
 from printstash_core.inference.vectors import normalize
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 from sqlmodel import Session
 
 from app import __file__ as application_file
@@ -32,8 +32,13 @@ from app.modules.inference.manifest import (
     validate_space,
 )
 from app.modules.inference.model_cache import pin, safe_directory
-from app.modules.inference.worker import MAX_INPUT_BYTES, MAX_OUTPUT_BYTES
 from app.modules.inference.worker_pool import pool
+from app.modules.inference.worker_protocol import (
+    MAX_INPUT_BYTES,
+    MAX_OUTPUT_BYTES,
+    WorkerError,
+    WorkerResult,
+)
 from app.modules.media import compute_slots
 
 _admission_lock = threading.Lock()
@@ -67,18 +72,6 @@ def acquire_slot(session: Session, token: str, context: InferenceContext):
         if interactive:
             with _admission_lock:
                 _waiting_queries -= 1
-
-
-class WorkerResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    config_hash: str
-    vectors: list[list[float]] = Field(max_length=8)
-    truncated: list[bool] = Field(default_factory=list, max_length=8)
-
-
-class WorkerError(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    code: str = Field(pattern=r"^embedding_[a-z_]{1,64}$")
 
 
 class LocalEmbeddingProvider:

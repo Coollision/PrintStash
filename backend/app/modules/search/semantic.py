@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-from dataclasses import dataclass
 
 from printstash_core.inference import EmbeddingError, EmbeddingInput
 from printstash_core.inference import EmbeddingSpace as Space
@@ -17,21 +15,23 @@ from app.db.models import (
     EmbeddingSpace,
     IndexGeneration,
     PassageVector,
-    SearchPassage,
     User,
 )
-from app.modules.identity.rbac import accessible_collection_ids
 from app.modules.inference.configuration import embedding_provider
 from app.modules.inference.query import runner
 from app.modules.search import (
     configuration,
     generations,
     model_query,
-    structured,
     vector_store,
     visual_sources,
 )
-from app.modules.search.access import visible_passage_ids
+from app.modules.search.query_context import (
+    LegResult,
+    SemanticLeg,
+    allowed_vectors,
+    authorization_context,
+)
 from app.modules.search.text_inputs import TextRecipe
 from app.schemas.inference import SearchSettings
 
@@ -51,43 +51,6 @@ def score_floor(space: Space, settings: SearchSettings) -> float:
         else settings.semantic_floor
     )
     return settings.semantic_floors.get(space.config_hash, default)
-
-
-@dataclass(frozen=True)
-class SemanticLeg:
-    name: str
-    generation_id: int
-    space: Space
-    floor: float
-    weight: float
-    timeout: float
-    candidate_limit: int = 100
-    scan_limit: int = 100_000
-
-
-@dataclass(frozen=True)
-class LegResult:
-    leg: SemanticLeg
-    passages: tuple[int, ...] = ()
-    degraded: str | None = None
-    truncated: bool = False
-    available: bool = True
-    weak_matches: bool = False
-    error_code: str | None = None
-    visual_matches: tuple[
-        tuple[int, int, str], ...
-    ] = ()  # Model, Artifact, source hash
-
-
-def authorization_context(session: Session, user: User) -> str:
-    value = [
-        user.id,
-        user.auth_version,
-        user.is_active,
-        user.is_superuser,
-        sorted(accessible_collection_ids(session, user)),
-    ]
-    return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
 
 
 def registry(session: Session, settings: SearchSettings) -> tuple[SemanticLeg, ...]:
@@ -113,35 +76,6 @@ def registry(session: Session, settings: SearchSettings) -> tuple[SemanticLeg, .
             settings.query_timeout_seconds,
         )
         for generation, space in rows
-    )
-
-
-def allowed_vectors(
-    session: Session,
-    user: User,
-    leg: SemanticLeg,
-    types: tuple[SubjectType, ...],
-    filters=None,
-):
-    recipe = TextRecipe.for_space(leg.space)
-    return structured.vectors(
-        (
-            select(PassageVector.id)
-            .join(SearchPassage, SearchPassage.id == PassageVector.passage_id)
-            .where(
-                PassageVector.generation_id == leg.generation_id,
-                PassageVector.unit_kind == "passage",
-                PassageVector.input_hash == SearchPassage.content_hash,
-                PassageVector.subject_type == SearchPassage.subject_type,
-                PassageVector.subject_id == SearchPassage.subject_id,
-                SearchPassage.recipe_version == recipe.passage_version,
-                SearchPassage.id.in_(visible_passage_ids(session, user)),
-                SearchPassage.subject_type.in_([kind.value for kind in types]),
-            )
-        ),
-        session,
-        user,
-        filters,
     )
 
 

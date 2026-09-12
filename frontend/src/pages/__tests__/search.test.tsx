@@ -3,7 +3,14 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SearchPage from "@/pages/search";
-import { json, renderApp, type RenderAppOptions } from "@/test-support/render";
+import { AuthContext } from "@/lib/auth-context";
+import {
+  adminSession,
+  json,
+  memberSession,
+  renderApp,
+  type RenderAppOptions,
+} from "@/test-support/render";
 import { aSearchResult, searchResponse, searchStatus } from "@/test-support/search";
 
 function results(options: RenderAppOptions = {}) {
@@ -19,6 +26,35 @@ function results(options: RenderAppOptions = {}) {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("Search results", () => {
+  it("discards private image queries after an identity change", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:private-query");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const app = renderApp(
+      <AuthContext.Provider value={adminSession()}>
+        <SearchPage />
+      </AuthContext.Provider>,
+      {
+        at: "/search?image=1",
+        routes: {
+          "GET /api/v1/search/status": json(searchStatus({ legs: ["thumbnail"] })),
+          "POST /api/v1/search/image?": json(searchResponse({ items: [aSearchResult()] })),
+        },
+      },
+    );
+    const input = screen.getByLabelText("Choose image", { selector: "input" });
+    await waitFor(() => expect(input).toBeEnabled());
+    await user.upload(input, new File(["private image"], "query.png", { type: "image/png" }));
+    expect(await screen.findByRole("link", { name: "Desk bracket" })).toBeVisible();
+    app.rerender(
+      <AuthContext.Provider value={memberSession()}>
+        <SearchPage />
+      </AuthContext.Provider>,
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(revoke).toHaveBeenCalledWith("blob:private-query");
+    expect(app.requestsWithMethod("POST")).toHaveLength(1);
+  });
   it("uses the Model query endpoint without sending a name or image", async () => {
     const app = results({
       at: "/search?model=17",

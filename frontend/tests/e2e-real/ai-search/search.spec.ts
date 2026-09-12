@@ -47,7 +47,13 @@ test.describe("AI Search", () => {
       const catalog: InferenceModel[] = await (
         await page.request.get(`${API}/api/v1/inference/models`)
       ).json();
-      const model = catalog.find((entry) => entry.installed && entry.modality === "text_image");
+      const requestedModel = process.env.PLAYWRIGHT_AI_SEARCH_VISUAL_MODEL;
+      const model = catalog.find(
+        (entry) =>
+          entry.installed &&
+          entry.modality === "text_image" &&
+          (!requestedModel || entry.key === requestedModel),
+      );
       expect(model).toBeDefined();
       await page.getByRole("combobox", { name: "Search index" }).selectOption("multiview");
       await page
@@ -63,9 +69,18 @@ test.describe("AI Search", () => {
       await page.goto("/");
       await page.getByRole("button", { name: "Search by image" }).click();
       await expect(page).toHaveURL(/\/search\?image=1$/);
-      await page
-        .locator('input[type="file"][aria-label="Choose image"]')
-        .setInputFiles({ name: "private-query", mimeType, buffer: queryImage });
+      const transfer = await page.evaluateHandle(
+        ({ bytes, mimeType }) => {
+          const data = new DataTransfer();
+          data.items.add(new File([new Uint8Array(bytes)], "private-query", { type: mimeType }));
+          return data;
+        },
+        { bytes: Array.from(queryImage), mimeType },
+      );
+      await page.getByRole("region", { name: "Image search" }).dispatchEvent("drop", {
+        dataTransfer: transfer,
+      });
+      await transfer.dispose();
       const result = page.getByRole("link", { name: names[0], exact: true });
       await expect(result).toBeVisible();
       await expect(
@@ -90,6 +105,16 @@ test.describe("AI Search", () => {
       await page.getByRole("button", { name: "Clear image" }).click();
       await expect(result).toHaveCount(0);
       await expect(page.getByRole("img", { name: "Image used for this search" })).toHaveCount(0);
+      await expect(page.getByLabel("Take photo", { exact: true })).toHaveAttribute(
+        "capture",
+        "environment",
+      );
+      const capture = page.waitForEvent("filechooser");
+      await page.getByRole("button", { name: "Take photo" }).focus();
+      await page.keyboard.press("Enter");
+      await (await capture).setFiles({ name: "camera-query", mimeType, buffer: queryImage });
+      await expect(result).toBeVisible();
+      await page.getByRole("button", { name: "Clear image" }).click();
       await page.goto(`/models/${ids[0]}`);
       await page.getByRole("button", { name: "Model actions" }).click();
       await page.getByRole("menuitem", { name: "Find related Models" }).click();

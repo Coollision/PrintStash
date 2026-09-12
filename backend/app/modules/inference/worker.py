@@ -7,10 +7,9 @@ import json
 import struct
 import sys
 from pathlib import Path
-from typing import BinaryIO, Literal
+from typing import BinaryIO
 
 from printstash_core.inference import EmbeddingError, EmbeddingInput, EmbeddingSpace
-from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.inference.manifest import (
     SparseModelManifest,
@@ -18,27 +17,11 @@ from app.modules.inference.manifest import (
     read_manifest,
     validate_space,
 )
-
-MAX_INPUT_BYTES = 34 * 1024**2
-MAX_OUTPUT_BYTES = 1024**2
-
-
-class WorkerInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    modality: Literal["text", "image", "point_cloud"]
-    text: str | None = Field(default=None, max_length=16384)
-    rgb_base64: str | None = Field(default=None, max_length=4 * 1024**2)
-    width: int = Field(default=0, ge=0, le=1024, strict=True)
-    height: int = Field(default=0, ge=0, le=1024, strict=True)
-    points_base64: str | None = Field(default=None, max_length=320000)
-
-
-class WorkerRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    config_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    space_json: str | None = Field(default=None, max_length=32768)
-    inputs: list[WorkerInput] = Field(default_factory=list, max_length=8)
-    sparse_text: str | None = Field(default=None, min_length=1, max_length=16384)
+from app.modules.inference.worker_protocol import (
+    MAX_INPUT_BYTES,
+    MAX_OUTPUT_BYTES,
+    WorkerRequest,
+)
 
 
 class NativeWorker:

@@ -3,21 +3,15 @@
 from sqlmodel import Session
 
 from app.core.errors import ErrorKind, OperationError
-from app.db.models import InferenceEndpoint, SystemConfig
+from app.db.models import InferenceEndpoint
 from app.modules.administration import audit
 from app.modules.administration.config_repository import get_or_create
 from app.modules.inference.configuration import list_endpoints
 from app.modules.inference.environment import configured
+from app.modules.search.settings import settings
 from app.schemas.inference import SearchSettings, SearchSettingsRead
 
-
-def settings(session: Session) -> SearchSettings:
-    row = session.get(SystemConfig, 1)
-    return (
-        SearchSettings.model_validate_json(row.ai_search_settings_json)
-        if row and row.ai_search_settings_json
-        else SearchSettings()
-    )
+__all__ = ["settings", "read", "update"]
 
 
 def read(session: Session) -> SearchSettingsRead:

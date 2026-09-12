@@ -18,7 +18,7 @@ from app.modules.search import (
     vector_store,
     visual_sources,
 )
-from app.modules.search.semantic import LegResult, authorization_context
+from app.modules.search.query_context import LegResult, authorization_context
 
 
 def retrieve(session, user_id, auth_version, query, leg, *, types, filters=None):

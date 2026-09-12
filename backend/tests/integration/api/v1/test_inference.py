@@ -270,6 +270,9 @@ class TestReadSettings:
                 "download_enabled": False,
                 "send_rendered_images": False,
                 "send_query_images": False,
+                "timezone": "UTC",
+                "sparse_expansion_enabled": False,
+                "sparse_model_id": None,
                 "chat_endpoint_id": None,
                 "rollback_retention_hours": 24,
                 "max_index_bytes": 2147483648,
@@ -460,8 +463,15 @@ class TestProposeGeneration:
             json={"endpoint_id": endpoint.id, "passage_recipe_version": 999},
         )
 
-        assert response.status_code == 400, response.text
-        assert response.json()["detail"] == "search_recipe_unavailable"
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"] == "request_validation_failed"
+        assert response.json()["errors"][0]["loc"] == ["body", "passage_recipe_version"]
+        assert (
+            client.get(
+                "/api/v1/config/ai-search/generations", headers=auth_headers
+            ).json()
+            == []
+        )
 
     def test_requires_admin_generation_proposals(
         self, client, user_headers, db_session

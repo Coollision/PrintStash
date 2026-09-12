@@ -38,7 +38,12 @@ const subjectTypes: SearchSubjectType[] = ["model", "collection", "multipart_mod
 
 export default function SearchPage() {
   const params = useSearchParams();
-  return <SearchContent key={params.get("image") === "1" ? "image" : "text"} />;
+  const { user } = useAuth();
+  return (
+    <SearchContent
+      key={`${user?.id ?? "anonymous"}:${params.get("image") === "1" ? "image" : "text"}`}
+    />
+  );
 }
 
 function SearchContent() {

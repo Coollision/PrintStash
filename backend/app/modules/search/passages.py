@@ -91,14 +91,14 @@ def sync_subject(session: Session, subject: SearchSubject) -> PassageChanges:
     ).first()
     caption_text = caption.text if caption and caption.state != "dismissed" else ""
     if caption and caption.state == "generated" and caption.text:
-        from app.modules.search import captions
+        from app.modules.search import caption_source
 
-        file = captions.source(session, subject)
+        file = caption_source.source(session, subject)
         if (
             file is None
             or file.id != caption.source_file_id
             or file.sha256 != caption.input_hash
-            or caption.recipe != captions.RECIPE
+            or caption.recipe != caption_source.RECIPE
         ):
             # Source edits remove obsolete generated claims in the same content
             # transaction, before the bounded sweep schedules replacement work.

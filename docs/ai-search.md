@@ -1,6 +1,7 @@
 # AI Search implementation status
 
-AI Search (#166) is in development. This branch implements the passage, lexical, vector and hybrid-query foundations of the
+AI Search (#166) is in development. This branch implements lexical and hybrid text search, local visual and point-cloud retrieval,
+separate captions, editable natural-language filters, and optional lexical expansion from the
 [independent implementation plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c),
 including the passage requirements from
 [jorgehermo9's plan](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c).
@@ -11,7 +12,7 @@ read on 2026-09-11. The comment’s historical download revision `c3875dac` no
 longer resolves through GitHub; the linked current gist supplies the independent
 plan and its 142 acceptance rows.
 
-## Implemented foundation
+## Text projection and lexical search
 
 - A pure, versioned text recipe in `printstash-core.search.passages`.
 - Source extraction for Models, Collections, Multipart Models and Documents in
@@ -38,8 +39,7 @@ plan and its 142 acceptance rows.
 
 The base search is usable without AI. A missing or failed FTS index falls back
 on escaped, ranked LIKE over durable passages. Its rebuild visits bounded pages;
-content mutations continue while the native index is unavailable. No inference
-model is selected or acquired at this stage.
+content mutations continue while the native index is unavailable. Lexical search needs no inference model or network connection.
 
 The lexical recipe weights title 5, tags 3 and full text 1. BM25 uses k1=1.2,
 b=0.75 and FTS5's positive IDF floor. Query syntax is literal Unicode words,
@@ -70,7 +70,7 @@ contribute their name and filename only.
 | Characters per complete Passage | 16,384 |
 
 These are deterministic **recipe units**, not an inference model's tokenizer.
-W4/W7 must enforce and report their provider's token limits separately. Metadata
+Inference providers enforce and report their own token limits separately. Metadata
 is repeated in every window, with a separate body budget. Exceeding a text,
 window or cardinality cap sets `truncated`; it never silently claims a complete
 projection. Changing the field list, normalization or limits requires a new
@@ -118,8 +118,8 @@ over an unfiltered HNSW scan. See the
 
 The worker repairs one bounded native partition at a time. Reads continue through
 NumPy while a derivative is absent or rebuilding. A retired generation can drop
-its derivative independently of its native floats; W5 adds verified activation,
-reader draining and retention before retirement is exposed operationally.
+its derivative independently of its native floats. Verified activation, reader
+draining and rollback retention govern retirement.
 
 ## Database portability and backups
 
@@ -173,8 +173,8 @@ locally validated JSON.
 `GET/PUT /api/v1/config/ai-search` exposes administrator disclosures and independent,
 default-off opt-ins for retrieval, captions, natural-language filters, local model
 acquisition, rendered images and query images. A capable chat endpoint and image
-consent are required before captions can be enabled. UI and consumers are connected
-in their later work stages. These protocols support compatible self-hosted services;
+consent are required before captions can be enabled. The master switch also
+disables caption generation and natural-language parsing. These protocols support compatible self-hosted services;
 using them does not require an OpenAI account or a hosted OpenAI model.
 
 ## Durable index generations
@@ -246,7 +246,7 @@ with the [publisher's MRL dimensions](https://www.mixedbread.com/blog/binary-mrl
 An administrator declares this identity for a remote endpoint; a canary cannot
 prove which weights a remote server runs. Model aliases alone never enable MRL.
 Omitted prefixes use reviewed model defaults; explicit empty prefixes remain
-possible. This entry describes capabilities; local acquisition is a later stage.
+possible. This capability entry does not itself admit a new downloadable model.
 
 A deterministic numeric benchmark (seed 166, 256 vectors of 64 dimensions,
 16 independent queries, top 10 with 8× candidate overfetch) measured recall
@@ -256,52 +256,23 @@ a float derivative. The authoritative floats remain: combined vector payload
 was 81,920 and 67,584 bytes, before database/index overhead. These numeric
 checks do not measure natural-language relevance or ARM performance.
 
-## Remaining implementation
+## Acceptance evidence
 
-The W1/W2 stage gate passed 3,264 repository, integration and end-to-end tests.
-Separate PostgreSQL checks passed seven migration, BM25 and authorization tests;
-the native-table-loss browse regression passed with its 18-test focused gate.
-These results cover the text foundation, not the unimplemented AI stages below.
+The [coverage matrix](ai-search-coverage.md) retains all 142 original acceptance
+behaviors and the detailed feature contracts. The text, visual, point-cloud and
+sparse studies use pinned real weights and frozen engineering fixtures; they do
+not establish quality on independently labelled user libraries or photographs
+of printed parts. Contract VLM tests establish protocol and lifecycle behavior,
+not the quality of a particular caption or query-parsing model.
 
-The W3 stage gate passed 3,291 tests, with separate gates for core inference
-(59), backup regressions (431), schema/extension parity (10), database transfer
-(4), native PostgreSQL transfer/fallback (4), and the full PostgreSQL backup API
-flow. The remaining stages still require their own acceptance evidence.
+Release acceptance remains open for the complete final test/coverage/security
+gates, large-library end-to-end latency and concurrent-ingest measurements,
+physical ARM/Raspberry Pi runs, and the independent human/photo evaluation.
+Native vector acceleration stays opt-in while the 500,000-unit feasibility gate
+is being measured. A passing small fixture is not evidence for these scale or
+hardware targets.
 
-W4/W4b add remote embedding and chat contracts with real-loopback and full API
-checks. The schema/repository gate passed 3,208 tests, core inference passed 79,
-and local inference/lifecycle regressions passed 82. These are stage checks; the
-completed feature still needs the full final coverage and security gates.
-
-The W5 regression gate passed 395 tests; the repository hygiene gate passed
-3,351. Separate checks cover PostgreSQL concurrency and schema parity, a real
-NumPy-to-sqlite-vec switch, and recovery after killing the worker mid-batch.
-
-W14 passed 219 search/provider/end-to-end regressions, 25 core transform and
-capability checks, 14 PostgreSQL/transfer regressions and two compressed
-SQLite-to-PostgreSQL transfer checks. Repository hygiene passed 3,175 tests;
-OpenAPI and type checking passed.
-
-W6 passed 264 search/API/lifecycle regressions, four PostgreSQL authorization
-checks, a real HTTP hybrid query, two continuous-reader transform switches,
-and a deterministic admission/cutover race. Query/cache checks passed 23 tests;
-core rank fusion passed 12. Repository hygiene passed 3,203 tests. The local BGE engineering regression corpus now clears the numeric recall
-targets; the separate human-labelled evaluation is still pending.
-
-W5 connects transactional content invalidation to durable embedding work and
-maintains distinct active/building text-prefix recipes. Coexistence of different
-passage-template versions is implemented by the caption v2 recipe below.
-The local text acquisition/runtime path is implemented. Candidate benchmarks,
-UI, visual profiles, captions, sparse expansion and natural-language filters
-remain in progress.
-
-The [coverage matrix](ai-search-coverage.md) retains all 142 original planned
-behaviors and the independently verified passage/lexical subcontracts. Full
-feature readiness also requires the remaining stages, feasibility evidence and
-a security diff scan of the completed branch.
-
-
-## Local text models (W7)
+## Local text models
 
 The `ai` and `full` extras include CPU ONNX Runtime, ONNX graph inspection and
 Hugging Face tokenizers. The curated text baseline is
@@ -387,15 +358,11 @@ On this x86_64 development machine, ten short warm BGE embeddings took
 seconds. The separately executed native test measured 0.055-second warm
 queries. These are embedding-only observations with one ONNX thread, not the
 100,000-passage end-to-end p95 or physical Raspberry Pi acceptance benchmarks.
-Physical ARM measurements, the human-labelled set and broader candidate/visual
-quality studies remain outstanding.
+Physical ARM measurements and the independent human-labelled set remain
+outstanding. The broader candidate measurements are in the
+[model study](ai-search-model-study.md).
 
-The W7 stage suite passed 439 tests, followed by 35 contract/quality/end-to-end
-checks, 14 model-admin API checks, 11 core recipe checks and the actual preplaced
-BGE test. The hygiene pass covered 3,255 tests. These are checkpoint results;
-full final coverage and security gates remain required for the completed branch.
-
-## Search and operational UI (W8)
+## Search and operational UI
 
 The top bar previews lexical matches while typing. Enter opens `/search?q=…`
 for bounded hybrid retrieval. The AI affordance requires a usable active
@@ -437,11 +404,39 @@ The dedicated real-backend Playwright lane provisions an original tiny ONNX
 contract fixture in CI, with no downloads. The same flow was also executed with
 the pinned BGE weights locally. Tiny fixtures establish wiring and lifecycle
 behavior; real-model quality measurements are recorded separately in
-[the model study](ai-search-model-study.md). Visual retrieval, captions, structured
-NL filters and lexical expansion are still subsequent stages.
+[the model study](ai-search-model-study.md).
 
 
-## Separate captions (W11)
+## Image and geometry search
+
+The camera control opens image search. Drop one image, choose a file, or use the
+camera picker on a device that supports capture. PNG, JPEG and WebP still images
+up to 8 MiB are accepted. The server checks the decoded image, applies EXIF
+orientation, removes metadata and limits it to 1,024 pixels. Query images and
+previews stay in memory for the request/session; clearing the query or changing
+accounts releases the preview. Browser capture support depends on the device.
+
+A ready local CLIP generation compares the query with previews of authorized,
+live mesh Models. The curated B/32 text and image towers share an immutable
+alignment identity. Thumbnail search is the measured default. Optional canonical
+multi-view indexes reuse compatible rendered views and expose their aggregation
+recipe; their measured quality is not uniformly better than thumbnails. The
+[visual study](ai-search-visual-study.md) records this tradeoff and corpus limits.
+Missing reusable multi-view output can use the bounded thumbnail fallback.
+
+The reviewed OpenShape PointBERT profile embeds a deterministic 10,000-point
+sample from supported mesh geometry. Text/image queries use its aligned CLIP
+towers; Model-as-query uses the current authorized native vectors and excludes
+the source Model from results. Missing vectors request bounded background work.
+The [point-cloud study](ai-search-point-study.md) records the export provenance,
+canary agreement, sampling recipe, CPU measurements and physical ARM gap.
+
+Visual work shares the same inference owner, cache, compute slots and generation
+lifecycle as text. Image admission is bounded before reading the request body;
+private query images never enter upload staging or model storage. Remote image
+embedding is not enabled merely because an endpoint accepts text embeddings.
+
+## Separate captions
 
 Captions use an independently enabled image-capable chat endpoint and explicit
 permission to send rendered previews. A bounded background lane renders one
@@ -481,7 +476,7 @@ workflow uses a local contract VLM server, so it validates payloads and lifecycl
 not generated-caption quality.
 
 
-## Independent consumers (W12)
+## Independent consumers
 
 The existing Similar Models consumer uses `search.vector_store` through its own
 `similarity.vector_sources` adapter. The shared store knows no SimilarityRun,
@@ -506,7 +501,7 @@ columns are typed centrally, so consumers can omit Model/File/Passage owners
 without relying on SQLite's permissive NULL typing.
 
 
-### Editable natural-language filters (W15)
+## Editable natural-language filters
 
 Print history filters are ordinary library filters and work without any inference
 provider. `printed_after` includes its `PrintJob.finished_at` boundary;
@@ -525,7 +520,7 @@ candidates. Search cursors bind both normalized filters and sort. Structured
 filters select Models; other Subject types retain their ordinary text-search flow.
 
 Natural-language interpretation is a separate, optional ChatProvider consumer.
-The instance switch and each user's personal switch both default off. Both must
+The instance switch and each user's personal switch both default off. Both and the AI master must
 be enabled, with a configured chat endpoint, before `POST /search/parse` can send
 anything. The personal control discloses the endpoint host and that submitted
 text plus authorized filter choices are sent there. An OpenAI-compatible endpoint
@@ -571,7 +566,7 @@ actual print-history search and Saved View APIs, PostgreSQL joint predicates,
 and a real browser on desktop/mobile. These verify integration and consent,
 not natural-language quality of a specific LLM.
 
-## Optional lexical expansion (W13)
+## Optional lexical expansion
 
 The separate SPLADE opt-in expands indexed text locally using a pinned English
 model. It stores up to 64 continuous weighted terms per Passage without changing

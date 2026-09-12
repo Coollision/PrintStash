@@ -60,6 +60,7 @@ function setup(options: RenderAppOptions = {}) {
 describe("Natural-language search filters", () => {
   it("turns a submitted sentence into canonical editable filters", async () => {
     const app = setup();
+    await waitFor(() => expect(app.requestsWithMethod("POST")).toHaveLength(1));
     expect(await screen.findByRole("button", { name: "Remove Successful print" })).toBeVisible();
     expect(screen.getByTestId("location")).toHaveTextContent("q=bracket");
     expect(screen.getByTestId("location")).not.toHaveTextContent("parse=1");
@@ -79,6 +80,7 @@ describe("Natural-language search filters", () => {
   it("removes only the chosen filter without parsing again", async () => {
     const app = setup();
     const user = userEvent.setup();
+    await waitFor(() => expect(app.requestsWithMethod("POST")).toHaveLength(1));
     await user.click(await screen.findByRole("button", { name: "Remove Successful print" }));
     expect(screen.queryByRole("button", { name: "Remove Successful print" })).toBeNull();
     expect(screen.getByTestId("location")).toHaveTextContent("print_duration_max_s=10800");

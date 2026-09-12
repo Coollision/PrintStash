@@ -47,25 +47,6 @@ class WorkInput:
     copied_blob: bytes | None = None
 
 
-def _owned(generation_id: int, token: str):
-    return (
-        IndexGeneration.id == generation_id,
-        IndexGeneration.lease_token == token,
-        IndexGeneration.lease_expires_at > utcnow(),
-        col(IndexGeneration.cancel_requested).is_(False),
-        col(IndexGeneration.state).in_(("active", "building")),
-    )
-
-
-def lock_owned(session: Session, generation_id: int, token: str) -> bool:
-    result = session.connection().execute(
-        update(IndexGeneration)
-        .where(*_owned(generation_id, token))
-        .values(last_activity_at=utcnow())
-    )
-    return result.rowcount == 1
-
-
 def claim(session: Session) -> tuple[int, str] | None:
     if not configuration.settings(session).enabled:
         return None
@@ -189,10 +170,10 @@ def publish(
     *,
     copied: bool = False,
 ) -> bool:
-    if not lock_owned(session, generation_id, token):
+    if not generations.lock_owned(session, generation_id, token):
         return False
     generation = session.exec(
-        select(IndexGeneration).where(*_owned(generation_id, token))
+        select(IndexGeneration).where(*generations.owned(generation_id, token))
     ).first()
     if generation is None or not configuration.settings(session).enabled:
         return False
@@ -220,7 +201,9 @@ def publish(
         SearchPassage.id == item.passage_id,
         SearchPassage.content_hash == item.content_hash,
         SearchPassage.id.in_(generations.eligible(session, space)),
-        select(IndexGeneration.id).where(*_owned(generation_id, token)).exists(),
+        select(IndexGeneration.id)
+        .where(*generations.owned(generation_id, token))
+        .exists(),
     )
     written = vector_store.publish(
         session,
@@ -255,10 +238,10 @@ def publish(
 def record_failure(
     session: Session, generation_id: int, token: str, item: WorkInput, code: str
 ) -> None:
-    if not lock_owned(session, generation_id, token):
+    if not generations.lock_owned(session, generation_id, token):
         return
     generation = session.exec(
-        select(IndexGeneration).where(*_owned(generation_id, token))
+        select(IndexGeneration).where(*generations.owned(generation_id, token))
     ).first()
     passage = session.get(SearchPassage, item.passage_id, populate_existing=True)
     if (
@@ -321,7 +304,7 @@ class IndexProcessor:
                         not configuration.settings(session).enabled
                         or session.exec(
                             select(IndexGeneration.id).where(
-                                *_owned(generation_id, token)
+                                *generations.owned(generation_id, token)
                             )
                         ).first()
                         is None
@@ -375,11 +358,11 @@ class IndexProcessor:
                 context=context,
             )
         with self.sessions.scoped_session() as session:
-            if not lock_owned(session, generation_id, token):
+            if not generations.lock_owned(session, generation_id, token):
                 return
             generations._lock_cutover(session)
             generation = session.exec(
-                select(IndexGeneration).where(*_owned(generation_id, token))
+                select(IndexGeneration).where(*generations.owned(generation_id, token))
             ).first()
             if generation is None or not configuration.settings(session).enabled:
                 return
@@ -446,7 +429,7 @@ class IndexProcessor:
             with self.sessions.scoped_session() as session:
                 generation = session.get(IndexGeneration, generation_id)
                 if generation.phase in {"reconcile", "final_reconcile"}:
-                    if not lock_owned(session, generation_id, token):
+                    if not generations.lock_owned(session, generation_id, token):
                         return True
                     session.refresh(generation)
                     self._reconcile(session, generation)
@@ -573,7 +556,9 @@ class IndexProcessor:
         except (EmbeddingError, OperationError) as exc:
             with self.sessions.scoped_session() as session:
                 generation = session.exec(
-                    select(IndexGeneration).where(*_owned(generation_id, token))
+                    select(IndexGeneration).where(
+                        *generations.owned(generation_id, token)
+                    )
                 ).first()
                 if generation is not None:
                     generation.error_code = exc.code

@@ -897,3 +897,30 @@ fixing the URL-object and unexpected-debug-exception paths.
 | CI001 | hides cached captions after an identity change | Error | another tab changes the authenticated user | previous user's private text disappears before the new read completes | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx::Subject caption::hides cached captions after an identity change` |
 | CI002 | discards a caption draft after an identity change | Error | another user replaces the editor's session | previous user's unsaved draft disappears | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx::Subject caption::discards a caption draft after an identity change` |
 | CI003 | avoids caption reads without an authenticated user | Error | no authenticated user | no caption request or private text rendered | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx::Subject caption::avoids caption reads without an authenticated user` |
+| CI004 | discards private image queries after an identity change | Error | image search belongs to the previous user | preview released; no image submitted as the new user | Frontend unit | ✅ `frontend/src/pages/__tests__/search.test.tsx::Search page::discards private image queries after an identity change` |
+
+## Image input acceptance audit
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| IM001 | searches with one dropped image | Happy | ready visual index, one static image dropped | selected image rendered and supplied to the query | Frontend unit | ✅ `frontend/src/components/__tests__/search-image-input.test.tsx::Search image input::searches with one dropped image` |
+| IM002 | refuses dropped images without visual capability | Error | no ready visual index | no selection; controls unavailable | Frontend unit | ✅ `frontend/src/components/__tests__/search-image-input.test.tsx::Search image input::refuses dropped images without visual capability` |
+| IM003 | rejects invalid dropped images | Error | empty, oversized or unsupported image | accessible error; no query input accepted | Frontend unit | ✅ `frontend/src/components/__tests__/search-image-input.test.tsx::Search image input::rejects invalid dropped images` |
+| IM004 | rejects multiple dropped images | Error | two images dropped at once | one-image error; no partial query | Frontend unit | ✅ `frontend/src/components/__tests__/search-image-input.test.tsx::Search image input::rejects multiple dropped images` |
+| IM005 | accepts a camera image through the same private input | Happy | camera capture on a supported device | environment-camera hint, validated image selected | Frontend unit | ✅ `frontend/src/components/__tests__/search-image-input.test.tsx::Search image input::accepts a camera image through the same private input` |
+| IM006 | preserves a selection when the picker is cancelled | Edge | selected image, no replacement file | preview and query remain unchanged | Frontend unit | ✅ `frontend/src/components/__tests__/search-image-input.test.tsx::Search image input::preserves a selection when the picker is cancelled` |
+| IM007 | exposes image controls in Spanish | Edge | Spanish locale | localized camera and drop instructions | Frontend unit | ✅ `frontend/src/components/__tests__/search-image-input.test.tsx::Search image input::exposes image controls in Spanish` |
+| IM008 | retrieves the source Model from a dropped image | Happy | real local CLIP index, browser file drop | source Model found with visual evidence | E2E | ✅ `frontend/tests/e2e-real/ai-search/search.spec.ts::AI Search::retrieves related geometry through local visual indexes` |
+
+### Final architecture gate
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|----------------------|----------|----------------------|-----------------------------|------|--------|
+| AR001 | keeps application dependencies acyclic | Edge | all AI Search providers and consumers installed | no deferred import cycles, private cross-owner imports or framework dependency inversions | Repo | ✅ `backend/tests/repo/test_architecture.py::TestArchitecture::test_application_respects_its_recorded_boundaries` |
+
+Final repair evidence: 236 backend owner/API/architecture checks passed; 26 image/page
+checks passed after hiding duplicate native picker controls. The real local CLIP
+browser flow passed drag-and-drop, camera-picker submission, clearing, related
+Models, and desktop/mobile overflow assertions. Both viewport screenshots were
+inspected. Filter controls passed 9 tests in an isolated run; earlier contention
+caused timeout failures, so the complete frontend lane remains to be rerun.

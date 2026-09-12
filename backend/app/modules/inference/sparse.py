@@ -7,7 +7,7 @@ from pathlib import Path
 from printstash_core.inference import EmbeddingError, InferenceContext
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.modules.inference.local import LocalEmbeddingProvider, WorkerError
+from app.modules.inference.local import LocalEmbeddingProvider
 from app.modules.inference.manifest import (
     SparseModelManifest,
     SparseTerm,
@@ -16,6 +16,7 @@ from app.modules.inference.manifest import (
     verify_assets,
 )
 from app.modules.inference.model_cache import safe_directory
+from app.modules.inference.worker_protocol import WorkerError
 
 
 class SparseResult(BaseModel):

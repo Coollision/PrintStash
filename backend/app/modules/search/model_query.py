@@ -70,7 +70,7 @@ def existing(session, user, query: ModelQuery, leg, allowed):
 
 
 def fingerprint(session, user, model_id, legs, types):
-    from app.modules.search import semantic, visual_sources
+    from app.modules.search import query_context, visual_sources
 
     require_visible(session, user, model_id)
     state = []
@@ -78,7 +78,7 @@ def fingerprint(session, user, model_id, legs, types):
         allowed = (
             visual_sources.current_vectors(session, leg.generation_id, leg.space, user)
             if leg.space.profile in visual_sources.PROFILES
-            else semantic.allowed_vectors(session, user, leg, types)
+            else query_context.allowed_vectors(session, user, leg, types)
         )
         rows = session.exec(
             select(PassageVector.id, PassageVector.input_hash)
