@@ -32,6 +32,8 @@
   from original text, with atomic disable, durable retries and measured index cost.
   After a restart, active local models warm in the background while lexical
   search remains available; cold queries do not repeatedly terminate model loads.
+  The AI Search master switch also disables captions and natural-language
+  parsing, including requests waiting on a render or provider response.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
   cyclic library references and native vector bytes without re-embedding.

@@ -22,6 +22,7 @@ def parser_setup(
     configuration.update(
         db_session,
         SearchSettings(
+            enabled=True,
             nl_filters_enabled=True,
             chat_endpoint_id=endpoint.id,
             timezone="Europe/Madrid",
@@ -32,6 +33,44 @@ def parser_setup(
 
 
 class TestParse:
+    def test_discards_parsed_output_after_master_revocation(
+        self, db_session, parser_setup
+    ):
+        user, _ = parser_setup
+
+        def revoke():
+            configuration.update(
+                db_session,
+                configuration.settings(db_session).model_copy(
+                    update={"enabled": False}
+                ),
+            )
+            db_session.commit()
+
+        provider = ParseProvider(before_reply=revoke)
+        result = parsing.parse(
+            db_session, user, "private original", provider_factory=lambda *_: provider
+        )
+        assert len(provider.requests) == 1
+        assert not result.parsed
+        assert result.residual_query == "private original"
+        assert result.reason == "search_parse_unavailable"
+
+    def test_suppresses_parsing_with_the_master_off(self, db_session, parser_setup):
+        user, _ = parser_setup
+        configuration.update(
+            db_session,
+            configuration.settings(db_session).model_copy(update={"enabled": False}),
+        )
+        db_session.commit()
+        provider = ParseProvider()
+        result = parsing.parse(
+            db_session, user, "private original", provider_factory=lambda *_: provider
+        )
+        assert not result.parsed
+        assert result.residual_query == "private original"
+        assert provider.requests == []
+
     def test_normalizes_real_duration_with_absolute_calendar_bounds(
         self, db_session, parser_setup
     ):

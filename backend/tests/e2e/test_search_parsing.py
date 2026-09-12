@@ -55,6 +55,7 @@ class TestNaturalLanguageSearch:
                 "/api/v1/config/ai-search",
                 headers=superuser_headers,
                 json={
+                    "enabled": True,
                     "nl_filters_enabled": True,
                     "chat_endpoint_id": endpoint_id,
                     "timezone": "Europe/Madrid",

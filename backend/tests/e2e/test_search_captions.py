@@ -56,6 +56,7 @@ class TestCaptionWorkflow:
                 "/api/v1/config/ai-search",
                 headers=superuser_headers,
                 json={
+                    "enabled": True,
                     "captions_enabled": True,
                     "send_rendered_images": True,
                     "chat_endpoint_id": endpoint["id"],

@@ -18,7 +18,10 @@ def read(session, user):
         else None
     )
     available = (
-        config.nl_filters_enabled and endpoint is not None and endpoint.kind == "chat"
+        config.enabled
+        and config.nl_filters_enabled
+        and endpoint is not None
+        and endpoint.kind == "chat"
     )
     return SearchPreferencesRead(
         nl_filters_enabled=row.nl_filters_enabled if row else False,

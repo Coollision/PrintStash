@@ -113,7 +113,7 @@ def require(session: Session, actor: User, subject: SearchSubject, *, edit=False
 
 def endpoint(session: Session):
     config = settings(session)
-    if not config.captions_enabled:
+    if not config.enabled or not config.captions_enabled:
         return None, "caption_disabled"
     row = (
         session.get(InferenceEndpoint, config.chat_endpoint_id)

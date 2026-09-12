@@ -3844,6 +3844,7 @@
   "aiSearch.parsing": "Interpreting search…",
   "aiSearch.parseFailed": "Could not interpret the filters. Searching your original text.",
   "aiSearch.seconds": "Seconds",
+  "aiSearch.dateExample": "e.g. 2026-09-01T00:00:00Z",
   "aiSearch.filter.collection": "Collection",
   "aiSearch.filter.direct": "Direct children only",
   "aiSearch.filter.tag": "Tag",

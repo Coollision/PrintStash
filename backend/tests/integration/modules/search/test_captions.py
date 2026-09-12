@@ -38,6 +38,7 @@ def caption_setup(
     configuration.update(
         db_session,
         SearchSettings(
+            enabled=True,
             captions_enabled=True,
             send_rendered_images=True,
             chat_endpoint_id=endpoint.id,
@@ -48,6 +49,50 @@ def caption_setup(
 
 
 class TestCaptions:
+    def test_fences_caption_egress_after_actor_loss(self, db_session, caption_setup):
+        from app.db.models import User
+
+        actor, subject, _, _ = caption_setup
+        revocations = []
+
+        def revoke(*_args):
+            with get_session_factory().scoped_session() as session:
+                current = session.get(User, actor.id)
+                current.is_active = False
+                session.add(current)
+                session.commit()
+                revocations.append(current.is_active)
+            return rendered_preview()
+
+        provider = CaptionProvider()
+        assert CaptionProcessor(
+            get_session_factory(),
+            provider_factory=lambda *_: provider,
+            image_renderer=revoke,
+        ).work_one()
+        assert revocations == [False]
+        assert provider.requests == []
+        db_session.expire_all()
+        assert captions.lookup(db_session, subject).text == ""
+
+    def test_suppresses_caption_egress_with_the_master_off(
+        self, db_session, caption_setup
+    ):
+        configuration.update(
+            db_session,
+            configuration.settings(db_session).model_copy(update={"enabled": False}),
+        )
+        db_session.commit()
+        provider = CaptionProvider()
+        processor = CaptionProcessor(
+            get_session_factory(),
+            provider_factory=lambda *_: provider,
+            image_renderer=rendered_preview,
+        )
+        assert not processor.work_one()
+        assert provider.requests == []
+        assert db_session.exec(select(SubjectCaption)).all() == []
+
     def test_keeps_generated_text_separate_from_human_description(
         self, db_session, caption_setup
     ):
@@ -157,13 +202,17 @@ class TestCaptions:
         assert result.error_code == "caption_output_invalid"
         assert len(provider.requests) == 3
 
-    def test_rechecks_consent_after_rendering(self, db_session, caption_setup):
+    @pytest.mark.parametrize("switch", ["captions_enabled", "enabled"])
+    def test_rechecks_consent_after_rendering(self, db_session, caption_setup, switch):
         actor, subject, _, _ = caption_setup
         provider = CaptionProvider()
 
         def revoke(*args):
             with get_session_factory().scoped_session() as session:
-                configuration.update(session, SearchSettings())
+                configuration.update(
+                    session,
+                    configuration.settings(session).model_copy(update={switch: False}),
+                )
             return rendered_preview()
 
         assert CaptionProcessor(
@@ -463,6 +512,7 @@ class TestCaptions:
         configuration.update(
             db_session,
             SearchSettings(
+                enabled=True,
                 captions_enabled=True,
                 send_rendered_images=True,
                 chat_endpoint_id=endpoint.id,

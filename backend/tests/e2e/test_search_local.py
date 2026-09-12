@@ -66,7 +66,7 @@ class TestLocalSearch:
             response = await api.get(
                 "/api/v1/search",
                 headers=superuser_headers,
-                params={"q": "red", "legs": "lexical,semantic_text"},
+                params={"q": "red", "legs[]": ["lexical", "semantic_text"]},
             )
             assert response.status_code == 200, response.text
             result = response.json()
@@ -76,12 +76,18 @@ class TestLocalSearch:
             response = await api.get(
                 "/api/v1/search",
                 headers=superuser_headers,
-                params={"q": "red", "legs": "semantic_text"},
+                params={"q": "red", "legs[]": "semantic_text"},
             )
             assert response.status_code == 200, response.text
             result = response.json()
             assert result["leg_errors"] == {}
             assert any(item["subject_id"] == document_id for item in result["items"])
+            assert any(
+                evidence["leg"] == "semantic_text"
+                for item in result["items"]
+                if item["subject_id"] == document_id
+                for evidence in item["evidence"]
+            )
         finally:
             processor.stop()
             close_queries()
@@ -147,7 +153,7 @@ class TestLocalSearch:
             response = await api.get(
                 "/api/v1/search",
                 headers=superuser_headers,
-                params={"q": "red", "legs": "semantic_text"},
+                params={"q": "red", "legs[]": "semantic_text"},
             )
             assert response.status_code == 200, response.text
             result = response.json()

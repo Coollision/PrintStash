@@ -17,6 +17,7 @@ import {
   saveSearchSettings,
 } from "@/lib/api/search";
 import { useI18n } from "@/lib/i18n";
+import { formatBytes } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import type { SearchSettingsRead } from "@/types/search";
 
@@ -118,7 +119,7 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
           {sparse && (
             <p className="break-all text-xs text-muted-foreground">
               {sparse.repository}@{sparse.revision} · {sparse.license} ·{" "}
-              {(sparse.size_bytes / 1048576).toFixed(1)} MiB
+              {formatBytes(sparse.size_bytes)}
             </p>
           )}
           {sparse && !sparse.installed && (
