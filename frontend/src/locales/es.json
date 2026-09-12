@@ -3877,5 +3877,10 @@
   "aiSearch.sort.success-desc": "Tasa de éxito",
   "aiSearch.sort.duration-asc": "Menor duración",
   "aiSearch.sort.filament-asc": "Menor filamento",
-  "aiSearch.sort.cost-asc": "Menor coste"
+  "aiSearch.sort.cost-asc": "Menor coste",
+  "aiSearch.sparseTitle": "Expansión léxica (SPLADE)",
+  "aiSearch.sparseHelp": "Expansión opcional de palabras en inglés, procesada localmente al indexar. Añade hasta 64 términos ponderados por pasaje y utiliza espacio adicional. Tu texto no cambia y las búsquedas no hacen otra llamada de IA. Al desactivarla se recupera inmediatamente la clasificación léxica habitual.",
+  "aiSearch.sparseModel": "Modelo de expansión",
+  "aiSearch.sparseEnable": "Activar expansión léxica",
+  "aiSearch.sparseMissing": "Instala el modelo de expansión antes de activarlo. Las descargas usan los permisos guardados para modelos locales."
 }

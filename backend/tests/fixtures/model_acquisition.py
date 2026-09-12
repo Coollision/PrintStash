@@ -8,15 +8,20 @@ import pytest
 from app.core.config import _overlay
 from app.modules.inference import model_registry
 from app.runtime.model_acquisition import close
-from tests.factories.embeddings import text_embedding_assets
+from tests.factories.embeddings import sparse_embedding_assets, text_embedding_assets
 from tests.fakes.model_host import ModelHost
 from tests.fakes.server import start_server
 from tests.fakes.tls_storage import tls_storage
 
 
 @pytest.fixture(name="model_host")
-def model_host(tmp_path, monkeypatch):
-    fake = ModelHost.from_directory(text_embedding_assets(tmp_path / "source"))
+def model_host(tmp_path, monkeypatch, request):
+    builder = (
+        sparse_embedding_assets
+        if getattr(request, "param", "text") == "sparse"
+        else text_embedding_assets
+    )
+    fake = ModelHost.from_directory(builder(tmp_path / "source"))
     server = start_server(fake.app())
     cache = tmp_path / "cache"
     monkeypatch.setitem(_overlay, "embedding_cache_dir", cache)

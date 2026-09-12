@@ -50,7 +50,7 @@ def ranked_like(query: str, allowed_ids):
     )
 
 
-def ranked_statement(
+def _original_statement(
     session: Session, query: str, allowed_ids, *, force_like: bool = False
 ):
     allowed_ids = select(SearchPassage.id).where(
@@ -100,6 +100,22 @@ def ranked_statement(
             SearchPassage.lexemes.op("@@")(func.to_tsquery("simple", tsquery)),
         )
         .group_by(SearchPassage.id)
+    )
+
+
+def ranked_statement(
+    session: Session, query: str, allowed_ids, *, force_like: bool = False
+):
+    from app.modules.search.expansion import with_expansion
+
+    allowed = select(SearchPassage.id).where(
+        SearchPassage.id.in_(allowed_ids), canonical_passage()
+    )
+    return with_expansion(
+        session,
+        query,
+        allowed,
+        _original_statement(session, query, allowed, force_like=force_like),
     )
 
 

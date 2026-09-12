@@ -140,3 +140,53 @@ class TestInferenceModels:
     def test_rejects_unauthenticated_model_management(self, client, method, path):
         response = getattr(client, method)("/api/v1" + path)
         assert response.status_code in {401, 403}
+
+    def test_discloses_the_pinned_sparse_catalog(self, client, auth_headers):
+        response = client.get("/api/v1/inference/models", headers=auth_headers)
+        assert response.status_code == 200
+        sparse = next(row for row in response.json() if row["key"] == "splade-pp-en-v1")
+        assert sparse["modality"] == "sparse"
+        assert sparse["license"] == "Apache-2.0"
+        assert sparse["languages"] == ["en"]
+        assert sparse["native_dimension"] == 30522
+        assert sparse["mrl_dimensions"] == []
+        assert sparse["curated"]
+
+    def test_refuses_a_sparse_model_as_a_dense_generation(
+        self, client, auth_headers, tmp_path, monkeypatch
+    ):
+        from tests.factories.embeddings import sparse_embedding_assets
+
+        root = tmp_path / "cache"
+        directory = sparse_embedding_assets(root / "sparse")
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", root)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        model = model_cache.inspect(directory)
+        response = client.put(
+            "/api/v1/config/ai-search",
+            headers=auth_headers,
+            json={"enabled": True, "local_models_enabled": True},
+        )
+        assert response.status_code == 200
+        response = client.post(
+            "/api/v1/config/ai-search/generations",
+            headers=auth_headers,
+            json={"local_model_id": model.id},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "embedding_text_unavailable"
+
+    def test_requires_local_sparse_prerequisites(self, client, auth_headers):
+        response = client.put(
+            "/api/v1/config/ai-search",
+            headers=auth_headers,
+            json={"sparse_expansion_enabled": True},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "search_sparse_model_required"
+
+    def test_keeps_sparse_expansion_off_by_default(self, client, auth_headers):
+        response = client.get("/api/v1/config/ai-search", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["settings"]["sparse_expansion_enabled"] is False
+        assert response.json()["settings"]["sparse_model_id"] is None

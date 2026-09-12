@@ -250,3 +250,81 @@ def point_embedding_assets(directory: Path) -> Path:
     )
     (directory / "manifest.json").write_text(manifest.model_dump_json())
     return directory
+
+
+def sparse_embedding_assets(directory: Path) -> Path:
+    """Original CC0 token-to-logit contract; not a pretrained quality fixture."""
+    import numpy as np
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
+    from tokenizers import Tokenizer, models, pre_tokenizers
+
+    from app.modules.inference.manifest import SparseModelManifest
+
+    directory.mkdir(parents=True, exist_ok=True)
+    vocabulary = {
+        "[PAD]": 0,
+        "[UNK]": 1,
+        "bicycle": 2,
+        "bike": 3,
+        "bracket": 4,
+        "mount": 5,
+        "lamp": 6,
+        "the": 7,
+    }
+    logits = np.zeros((8, 8), np.float32)
+    logits[2, 2], logits[2, 3] = 3, 2
+    logits[4, 4], logits[4, 5] = 3, 2
+    logits[6, 6] = 3
+    graph = helper.make_model(
+        helper.make_graph(
+            [helper.make_node("Gather", ["logits", "input_ids"], ["output"])],
+            "original-sparse-contract",
+            [
+                helper.make_tensor_value_info(name, TensorProto.INT64, [1, "sequence"])
+                for name in ("input_ids", "input_mask", "segment_ids")
+            ],
+            [
+                helper.make_tensor_value_info(
+                    "output", TensorProto.FLOAT, [1, "sequence", 8]
+                )
+            ],
+            [numpy_helper.from_array(logits, name="logits")],
+        ),
+        opset_imports=[helper.make_opsetid("", 17)],
+        ir_version=9,
+    )
+    onnx.save(graph, directory / "model.onnx")
+    tokenizer = Tokenizer(models.WordLevel(vocabulary, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer.save(str(directory / "tokenizer.json"))
+    manifest = SparseModelManifest(
+        model_key="sparse-contract",
+        model_revision="4" * 40,
+        repository="printstash/original-cc0",
+        license="CC0-1.0",
+        language=("en",),
+        graph={
+            "filename": "model.onnx",
+            "sha256": hashlib.sha256(
+                (directory / "model.onnx").read_bytes()
+            ).hexdigest(),
+        },
+        tokenizer={
+            "filename": "tokenizer.json",
+            "sha256": hashlib.sha256(
+                (directory / "tokenizer.json").read_bytes()
+            ).hexdigest(),
+        },
+        vocabulary_size=8,
+        opset=17,
+        max_tokens=8,
+        max_terms=4,
+        canary_text="bicycle",
+        canary=(
+            {"term": "bicycle", "weight": math.log(4)},
+            {"term": "bike", "weight": math.log(3)},
+        ),
+    )
+    (directory / "manifest.json").write_text(manifest.model_dump_json())
+    return directory

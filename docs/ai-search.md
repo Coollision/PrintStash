@@ -570,3 +570,14 @@ Validation includes a real local HTTP contract server through the ChatProvider,
 actual print-history search and Saved View APIs, PostgreSQL joint predicates,
 and a real browser on desktop/mobile. These verify integration and consent,
 not natural-language quality of a specific LLM.
+
+## Optional lexical expansion (W13)
+
+The separate SPLADE opt-in expands indexed text locally using a pinned English
+model. It stores up to 64 continuous weighted terms per Passage without changing
+original text. Queries need no additional AI call, and switching it off removes
+its contribution immediately while ordinary search keeps serving. Install the
+model and enable expansion in Advanced settings. The
+[sparse study](ai-search-sparse-study.md) records the immutable export, ranking
+cap, measured 2.09× lexical footprint and unchanged 87.5% recall@5 on the current
+engineering corpus.

@@ -156,6 +156,10 @@ from tests.factories.scenarios import (
     a_printer_with_a_queue,
 )
 from tests.factories.search import build_search_dependency as build_search_dependency
+from tests.factories.search import build_search_expansion as build_search_expansion
+from tests.factories.search import (
+    build_search_expansion_term as build_search_expansion_term,
+)
 from tests.factories.search import (
     build_search_generation_lease as build_search_generation_lease,
 )
@@ -309,6 +313,8 @@ __all__ += [
     "build_index_generation",
     "build_passage_vector",
     "build_search_passage",
+    "build_search_expansion",
+    "build_search_expansion_term",
     "build_subject_caption",
     "build_user_search_preferences",
     "build_inference_endpoint",

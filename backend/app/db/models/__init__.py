@@ -226,6 +226,8 @@ from .search import SearchLexicalState as SearchLexicalState
 from .search import SearchLexicalTerm as SearchLexicalTerm
 from .search import SearchPassage as SearchPassage
 from .search import SearchReconciliationState as SearchReconciliationState
+from .search_expansion import SearchExpansion as SearchExpansion
+from .search_expansion import SearchExpansionTerm as SearchExpansionTerm
 from .search_preferences import UserSearchPreferences as UserSearchPreferences
 from .similarity import GeometryFingerprint as GeometryFingerprint
 from .similarity import SimilarityCandidate as SimilarityCandidate

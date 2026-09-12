@@ -17,6 +17,8 @@ from sqlmodel import Session
 from app.core.time import utcnow
 from app.db.models import (
     IndexGeneration,
+    SearchExpansion,
+    SearchExpansionTerm,
     SearchGenerationLease,
     SearchIndexFailure,
     SearchLexicalPosting,
@@ -141,3 +143,24 @@ def build_user_search_preferences(session: Session, user, **overrides: Any):
     from app.db.models import UserSearchPreferences
 
     return save(session, UserSearchPreferences(user_id=user.id, **overrides))
+
+
+def build_search_expansion(
+    session: Session, passage: SearchPassage, **overrides: Any
+) -> SearchExpansion:
+
+    defaults = {
+        "passage_id": passage.id,
+        "input_hash": passage.content_hash,
+        "recipe": "4" * 64,
+        "phase": "ready",
+    }
+    return save(session, SearchExpansion(**(defaults | overrides)))
+
+
+def build_search_expansion_term(
+    session: Session, expansion: SearchExpansion, term: str = "bike", **overrides: Any
+) -> SearchExpansionTerm:
+
+    defaults = {"passage_id": expansion.passage_id, "term": term, "weight": 1.0}
+    return save(session, SearchExpansionTerm(**(defaults | overrides)))

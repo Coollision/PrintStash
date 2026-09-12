@@ -153,6 +153,9 @@ def search(
         settings.rrf_k,
         settings.lexical_weight,
         settings.lexical_backend,
+        settings.sparse_expansion_enabled,
+        settings.sparse_model_id,
+        settings.local_models_enabled,
         json.dumps(filters.model_dump(mode="json"), sort_keys=True)
         if filters is not None
         else None,

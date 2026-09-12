@@ -235,7 +235,69 @@ class PointModelManifest(FrozenContract):
         return (*self.paired.assets(), self.point.graph)
 
 
-ModelManifest = LocalModelManifest | TextModelManifest | PointModelManifest
+class SparseTerm(FrozenContract):
+    term: str = Field(min_length=1, max_length=128, pattern=r"^[\w]+$")
+    weight: float = Field(gt=0, le=10, allow_inf_nan=False)
+
+
+class SparseModelManifest(FrozenContract):
+    """Index-time MLM expansion; vocabulary coordinates are not a dense Space."""
+
+    schema_version: Literal[4] = 4
+    model_key: SafeName
+    model_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    license: str = Field(min_length=1, max_length=128)
+    language: tuple[str, ...] = Field(min_length=1, max_length=16)
+    family: Literal["splade"] = "splade"
+    graph: ModelAsset
+    tokenizer: ModelAsset
+    vocabulary_size: int = Field(ge=2, le=65536, strict=True)
+    input_name: SafeName = "input_ids"
+    attention_mask_name: SafeName = "input_mask"
+    token_type_ids_name: SafeName = "segment_ids"
+    output_name: SafeName = "output"
+    opset: int = Field(ge=7, le=25, strict=True)
+    max_tokens: int = Field(default=512, ge=2, le=512, strict=True)
+    max_terms: int = Field(default=64, ge=1, le=128, strict=True)
+    pooling: Literal["max-log1p-relu-attention-v1"] = "max-log1p-relu-attention-v1"
+    term_recipe: Literal["whole-unicode-words-top-weight-v1"] = (
+        "whole-unicode-words-top-weight-v1"
+    )
+    canary_text: str = Field(min_length=1, max_length=256)
+    canary: tuple[SparseTerm, ...] = Field(min_length=1, max_length=128)
+    canary_tolerance: float = Field(default=0.0001, gt=0, le=0.001, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def compatible_assets(self):
+        if self.graph.filename == self.tokenizer.filename:
+            raise ValueError("embedding_asset_name_collision")
+        if len(self.canary) > self.max_terms or len(
+            {term.term for term in self.canary}
+        ) != len(self.canary):
+            raise ValueError("embedding_sparse_canary_invalid")
+        return self
+
+    @property
+    def native_dimension(self) -> int:
+        return self.vocabulary_size
+
+    def assets(self) -> tuple[ModelAsset, ...]:
+        return (self.graph, self.tokenizer)
+
+    def space(self) -> EmbeddingSpace:
+        raise EmbeddingError("embedding_sparse_not_dense")
+
+
+ModelManifest = (
+    LocalModelManifest | TextModelManifest | PointModelManifest | SparseModelManifest
+)
+
+
+def manifest_identity(manifest: ModelManifest) -> str:
+    if isinstance(manifest, SparseModelManifest):
+        return hashlib.sha256(manifest.model_dump_json().encode()).hexdigest()
+    return manifest.space().config_hash
 
 
 def validate_space(manifest: ModelManifest, space: EmbeddingSpace) -> None:
@@ -280,6 +342,7 @@ def read_manifest(directory: Path, model_key: str) -> ModelManifest:
             1: LocalModelManifest,
             2: TextModelManifest,
             3: PointModelManifest,
+            4: SparseModelManifest,
         }.get(kind)
         if manifest_type is None:
             raise EmbeddingError("embedding_manifest_invalid")

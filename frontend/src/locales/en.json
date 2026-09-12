@@ -3877,5 +3877,10 @@
   "aiSearch.sort.success-desc": "Success rate",
   "aiSearch.sort.duration-asc": "Shortest duration",
   "aiSearch.sort.filament-asc": "Least filament",
-  "aiSearch.sort.cost-asc": "Lowest cost"
+  "aiSearch.sort.cost-asc": "Lowest cost",
+  "aiSearch.sparseTitle": "Lexical expansion (SPLADE)",
+  "aiSearch.sparseHelp": "Optional English word expansion, processed locally when indexing. Adds up to 64 weighted terms per passage and uses additional disk space. Your text stays unchanged; searches need no extra AI call. Switching this off immediately restores ordinary lexical ranking.",
+  "aiSearch.sparseModel": "Expansion model",
+  "aiSearch.sparseEnable": "Enable lexical expansion",
+  "aiSearch.sparseMissing": "Install the expansion model before enabling it. Downloads use your saved local-model permissions."
 }

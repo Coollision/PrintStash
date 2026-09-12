@@ -94,6 +94,7 @@ from app.db.models.search import (
     SearchPassage,
     SearchReconciliationState,
 )
+from app.db.models.search_expansion import SearchExpansion, SearchExpansionTerm
 from app.db.projections import ContentSource
 
 
@@ -568,6 +569,16 @@ class MakeInferenceEndpoint(Protocol):
 
 class MakeSearchPassage(Protocol):
     def __call__(self, subject: SearchSubject, **overrides: Any) -> SearchPassage: ...
+
+
+class MakeSearchExpansion(Protocol):
+    def __call__(self, passage: SearchPassage, **overrides: Any) -> SearchExpansion: ...
+
+
+class MakeSearchExpansionTerm(Protocol):
+    def __call__(
+        self, expansion: SearchExpansion, term: str = "bike", **overrides: Any
+    ) -> SearchExpansionTerm: ...
 
 
 class MakeSubjectCaption(Protocol):

@@ -197,13 +197,18 @@ def work_seconds(generation: IndexGeneration, remaining: int) -> int | None:
 
 
 def occupied_bytes(session: Session) -> int:
-    return session.exec(
-        select(
-            func.coalesce(
-                func.sum(func.length(PassageVector.vector_blob) * 3 + 1024), 0
+    from app.modules.search.expansion import occupied_bytes as sparse_bytes
+
+    return (
+        sparse_bytes(session)
+        + session.exec(
+            select(
+                func.coalesce(
+                    func.sum(func.length(PassageVector.vector_blob) * 3 + 1024), 0
+                )
             )
-        )
-    ).one()
+        ).one()
+    )
 
 
 def estimate_bytes(passages: int, dimension: int) -> int:
@@ -820,13 +825,14 @@ def ensure_caption_recipe(session: Session) -> bool:
         if not configuration.settings(session).local_models_enabled:
             return False
         from app.modules.inference import model_cache
+        from app.modules.inference.manifest import TextModelManifest
 
         recipe = TextRecipe.for_space(space)
         model = next(
             (
                 entry
                 for entry in model_cache.inventory()
-                if entry.manifest.space().modality == "text"
+                if isinstance(entry.manifest, TextModelManifest)
                 and TextRecipe.for_space(entry.manifest.space()).encoder_manifest_sha256
                 == recipe.encoder_manifest_sha256
             ),

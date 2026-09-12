@@ -391,3 +391,58 @@ describe("AI Search settings", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
   });
 });
+
+describe("Sparse expansion settings", () => {
+  it("saves independent local expansion consent", async () => {
+    const user = userEvent.setup();
+    const sparse = anInferenceModel({
+      id: "4".repeat(64),
+      key: "splade-pp-en-v1",
+      modality: "sparse",
+      native_dimension: 30522,
+    });
+    const app = settingsPanel({
+      routes: { "GET /api/v1/inference/models": json([anInferenceModel(), sparse]) },
+    });
+    await user.click(await screen.findByText("Advanced settings"));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Expansion model" }), sparse.id);
+    await user.click(screen.getByRole("checkbox", { name: "Enable lexical expansion" }));
+    await user.click(screen.getByRole("button", { name: "Save search settings" }));
+    await waitFor(() => expect(app.requestsWithMethod("PUT")).toHaveLength(1));
+    expect(JSON.parse(app.requestsWithMethod("PUT")[0].body)).toMatchObject({
+      sparse_model_id: sparse.id,
+      sparse_expansion_enabled: true,
+    });
+    expect(
+      within(screen.getByRole("combobox", { name: "Model" })).queryByRole("option", {
+        name: /splade/,
+      }),
+    ).toBeNull();
+  });
+
+  it("requires an installed sparse model before enabling expansion", async () => {
+    const user = userEvent.setup();
+    const sparse = anInferenceModel({
+      id: "4".repeat(64),
+      key: "splade-pp-en-v1",
+      modality: "sparse",
+      installed: false,
+    });
+    const app = settingsPanel({
+      routes: {
+        "GET /api/v1/inference/models": json([anInferenceModel(), sparse]),
+        "POST /api/v1/inference/models/splade-pp-en-v1/download": json({
+          job_id: "sparse-download",
+        }),
+      },
+    });
+    await user.click(await screen.findByText("Advanced settings"));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Expansion model" }), sparse.id);
+    expect(screen.getByRole("checkbox", { name: "Enable lexical expansion" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Download model" }));
+    await waitFor(() => expect(app.requestsWithMethod("POST")).toHaveLength(1));
+    expect(app.requestsWithMethod("POST")[0].url).toContain(
+      "/inference/models/splade-pp-en-v1/download",
+    );
+  });
+});

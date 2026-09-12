@@ -53,6 +53,8 @@ export function searchSettings(overrides: Partial<SearchSettings> = {}): SearchS
     lexical_backend: "auto",
     captions_enabled: false,
     nl_filters_enabled: false,
+    sparse_expansion_enabled: false,
+    sparse_model_id: null,
     local_models_enabled: false,
     download_enabled: false,
     send_rendered_images: false,

@@ -1,12 +1,13 @@
 """Pinned model-file protocol over a real TLS socket, with controlled faults."""
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse, Response
 
-from app.modules.inference.manifest import TextModelManifest
+from app.modules.inference.manifest import read_manifest
 from app.modules.inference.model_registry import DownloadAsset, RegistryEntry
 
 
@@ -19,9 +20,8 @@ class ModelHost:
 
     @classmethod
     def from_directory(cls, directory: Path):
-        manifest = TextModelManifest.model_validate_json(
-            (directory / "manifest.json").read_bytes()
-        )
+        key = json.loads((directory / "manifest.json").read_text())["model_key"]
+        manifest = read_manifest(directory, key)
         files = tuple(
             DownloadAsset(
                 asset.filename,

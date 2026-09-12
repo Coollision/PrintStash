@@ -48,6 +48,21 @@ def update(
         raise OperationError(
             "inference_caption_consent_required", kind=ErrorKind.INVALID
         )
+    if value.sparse_expansion_enabled:
+        from printstash_core.inference import EmbeddingError
+
+        from app.modules.inference import model_cache, model_registry
+        from app.modules.inference.manifest import SparseModelManifest
+
+        if not value.local_models_enabled or not value.sparse_model_id:
+            raise OperationError("search_sparse_model_required", kind=ErrorKind.INVALID)
+        try:
+            entry = model_registry.require(value.sparse_model_id)
+            model = model_cache.resolve(entry.id)
+            if not isinstance(model.manifest, SparseModelManifest):
+                raise EmbeddingError("embedding_sparse_required")
+        except EmbeddingError as exc:
+            raise OperationError(exc.code, kind=ErrorKind.INVALID) from None
     row = get_or_create(session, commit=False)
     row.ai_search_settings_json = value.model_dump_json()
     if actor_id is not None:

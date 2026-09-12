@@ -42,6 +42,8 @@ export interface SearchSettings {
   captions_enabled: boolean;
   nl_filters_enabled: boolean;
   local_models_enabled: boolean;
+  sparse_expansion_enabled: boolean;
+  sparse_model_id: string | null;
   download_enabled: boolean;
   send_rendered_images: boolean;
   send_query_images: boolean;

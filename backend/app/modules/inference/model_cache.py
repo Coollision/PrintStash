@@ -21,6 +21,8 @@ from app.core.config import settings
 from app.db.models import EmbeddingSpace, IndexGeneration
 from app.modules.inference.manifest import (
     ModelManifest,
+    SparseModelManifest,
+    manifest_identity,
     read_manifest,
     validate_space,
     verify_assets,
@@ -36,7 +38,7 @@ class CachedModel:
 
     @property
     def id(self) -> str:
-        return self.manifest.space().config_hash
+        return manifest_identity(self.manifest)
 
 
 def safe_directory(directory: Path, *, create: bool = False) -> Path:
@@ -150,6 +152,11 @@ def for_space(space: Space) -> CachedModel:
 
 
 def referenced(session: Session, model: CachedModel) -> bool:
+    if isinstance(model.manifest, SparseModelManifest):
+        from app.modules.search.configuration import settings as search_settings
+
+        config = search_settings(session)
+        return config.sparse_expansion_enabled and config.sparse_model_id == model.id
     rows = session.exec(
         select(EmbeddingSpace.config_json)
         .join(IndexGeneration, IndexGeneration.space_id == EmbeddingSpace.id)

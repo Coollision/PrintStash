@@ -14,7 +14,12 @@ from app.db.models import User
 from app.db.session import get_session, get_session_factory
 from app.modules.inference import model_cache, model_registry
 from app.modules.inference.local import LocalEmbeddingProvider
-from app.modules.inference.manifest import PointModelManifest, TextModelManifest
+from app.modules.inference.manifest import (
+    PointModelManifest,
+    SparseModelManifest,
+    TextModelManifest,
+)
+from app.modules.inference.sparse import LocalSparseProvider
 from app.runtime import model_acquisition
 from app.schemas.inference_models import (
     DownloadRead,
@@ -41,7 +46,11 @@ def list_models(session: Session = Depends(get_session)):
     for identity in sorted(set(installed) | set(curated)):
         model, entry = installed.get(identity), curated.get(identity)
         manifest = model.manifest if model else entry.manifest
-        capabilities = capabilities_for(manifest.space())
+        capabilities = (
+            None
+            if isinstance(manifest, SparseModelManifest)
+            else capabilities_for(manifest.space())
+        )
         result.append(
             InferenceModelRead(
                 id=identity,
@@ -50,19 +59,27 @@ def list_models(session: Session = Depends(get_session)):
                 repository=entry.repository
                 if entry
                 else manifest.repository
-                if isinstance(manifest, (TextModelManifest, PointModelManifest))
+                if isinstance(
+                    manifest,
+                    (TextModelManifest, PointModelManifest, SparseModelManifest),
+                )
                 else None,
                 languages=list(entry.languages)
                 if entry
                 else list(manifest.language)
-                if isinstance(manifest, TextModelManifest)
+                if isinstance(manifest, (TextModelManifest, SparseModelManifest))
                 else [],
                 license=entry.license
                 if entry
                 else manifest.license
-                if isinstance(manifest, (TextModelManifest, PointModelManifest))
+                if isinstance(
+                    manifest,
+                    (TextModelManifest, PointModelManifest, SparseModelManifest),
+                )
                 else None,
-                modality=manifest.space().modality,
+                modality="sparse"
+                if isinstance(manifest, SparseModelManifest)
+                else manifest.space().modality,
                 native_dimension=manifest.native_dimension,
                 size_bytes=model.size if model else entry.size,
                 installed=model is not None,
@@ -99,7 +116,11 @@ def cancel_download(job_id: str):
 def validate_model(identity: str):
     try:
         model = model_cache.resolve(identity)
-        LocalEmbeddingProvider(
+        (
+            LocalSparseProvider
+            if isinstance(model.manifest, SparseModelManifest)
+            else LocalEmbeddingProvider
+        )(
             get_session_factory(),
             model.directory,
             model.manifest.model_key,

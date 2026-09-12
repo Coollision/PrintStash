@@ -9,7 +9,9 @@ from printstash_core.inference import EmbeddingError
 from app.modules.inference.manifest import (
     LocalModelManifest,
     ModelManifest,
+    SparseModelManifest,
     TextModelManifest,
+    manifest_identity,
 )
 
 
@@ -34,7 +36,7 @@ class RegistryEntry:
     def repository(self) -> str:
         value = (
             self.manifest.repository
-            if isinstance(self.manifest, TextModelManifest)
+            if isinstance(self.manifest, (TextModelManifest, SparseModelManifest))
             else self.visual_repository
         )
         if value is None:
@@ -45,7 +47,7 @@ class RegistryEntry:
     def revision(self) -> str:
         value = (
             self.manifest.model_revision
-            if isinstance(self.manifest, TextModelManifest)
+            if isinstance(self.manifest, (TextModelManifest, SparseModelManifest))
             else self.visual_revision
         )
         if value is None:
@@ -56,7 +58,7 @@ class RegistryEntry:
     def license(self) -> str | None:
         return (
             self.manifest.license
-            if isinstance(self.manifest, TextModelManifest)
+            if isinstance(self.manifest, (TextModelManifest, SparseModelManifest))
             else self.visual_license
         )
 
@@ -64,13 +66,13 @@ class RegistryEntry:
     def languages(self) -> tuple[str, ...]:
         return (
             self.manifest.language
-            if isinstance(self.manifest, TextModelManifest)
+            if isinstance(self.manifest, (TextModelManifest, SparseModelManifest))
             else self.visual_languages
         )
 
     @property
     def id(self) -> str:
-        return self.manifest.space().config_hash
+        return manifest_identity(self.manifest)
 
     @property
     def size(self) -> int:
@@ -89,7 +91,21 @@ def entries() -> tuple[RegistryEntry, ...]:
             Path(__file__).parent / "registry" / "clip-vit-base-patch32-fp32.json"
         ).read_bytes()
     )
+    sparse = SparseModelManifest.model_validate_json(
+        (Path(__file__).parent / "registry" / "splade-pp-en-v1.json").read_bytes()
+    )
     return (
+        RegistryEntry(
+            sparse,
+            (
+                DownloadAsset(
+                    "model.onnx", "onnx/model.onnx", 532126852, sparse.graph.sha256
+                ),
+                DownloadAsset(
+                    "tokenizer.json", "tokenizer.json", 711649, sparse.tokenizer.sha256
+                ),
+            ),
+        ),
         RegistryEntry(
             manifest,
             (

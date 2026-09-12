@@ -318,3 +318,54 @@ class TestStructuredHistory:
             assert [(item.value, item.count) for item in result.print_outcome] == [
                 ("completed", 1)
             ]
+
+    def test_ranks_separate_sparse_postings_on_postgres(self, passage_engine):
+        from app.modules.search import configuration
+        from app.modules.search.lexical_query import ordered_passages
+        from app.schemas.inference import SearchSettings
+        from tests.factories import (
+            build_search_expansion,
+            build_search_expansion_term,
+            build_system_config,
+        )
+
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            model = build_model(session, "bicycle")
+            sync_subject(session, SearchSubject(SubjectType.MODEL, model.id))
+            passage = session.exec(
+                select(SearchPassage).where(SearchPassage.subject_type == "model")
+            ).one()
+            recipe = "4" * 64
+            build_system_config(
+                session,
+                ai_search_settings_json=SearchSettings(
+                    enabled=True,
+                    local_models_enabled=True,
+                    sparse_expansion_enabled=True,
+                    sparse_model_id=recipe,
+                ).model_dump_json(),
+            )
+            row = build_search_expansion(session, passage, recipe=recipe)
+            build_search_expansion_term(session, row, term="bike", weight=1.6)
+            session.commit()
+            ranks = session.exec(
+                ordered_passages(session, "bike", select(SearchPassage.id))
+            ).all()
+            assert ranks[0][0] == passage.id
+            assert 0 < ranks[0][1] <= 0.25 / 61
+            configuration.update(session, SearchSettings())
+            session.commit()
+            assert (
+                session.exec(
+                    ordered_passages(session, "bike", select(SearchPassage.id))
+                ).all()
+                == []
+            )
+            assert (
+                session.exec(
+                    ordered_passages(session, "bicycle", select(SearchPassage.id))
+                ).all()[0][0]
+                == passage.id
+            )

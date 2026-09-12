@@ -23,8 +23,9 @@ from app.db.session import SessionFactory
 from app.modules.inference import model_cache, model_registry
 from app.modules.inference.http_runtime import private_http
 from app.modules.inference.local import LocalEmbeddingProvider
-from app.modules.inference.manifest import verify_assets
+from app.modules.inference.manifest import SparseModelManifest, verify_assets
 from app.modules.inference.model_registry import DownloadAsset, RegistryEntry
+from app.modules.inference.sparse import LocalSparseProvider
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 
 _HOSTS = {
@@ -224,7 +225,11 @@ class Acquisition:
                     )
             (staging / "manifest.json").write_text(entry.manifest.model_dump_json())
             verify_assets(staging, entry.manifest)
-            LocalEmbeddingProvider(
+            (
+                LocalSparseProvider
+                if isinstance(entry.manifest, SparseModelManifest)
+                else LocalEmbeddingProvider
+            )(
                 self.sessions,
                 staging,
                 entry.manifest.model_key,

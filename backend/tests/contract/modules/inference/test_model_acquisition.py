@@ -110,3 +110,18 @@ class TestAcquisition:
                 fake.entry.id, enabled=lambda: True
             )
         assert "test-signed-secret" not in caplog.text
+
+    @pytest.mark.parametrize("model_host", ["sparse"], indirect=True)
+    def test_acquires_a_sparse_export_through_the_shared_cache(
+        self, db_session, model_host
+    ):
+        fake, cache = model_host
+        installed = Acquisition(get_session_factory()).install(
+            fake.entry.id, enabled=lambda: True
+        )
+        assert installed.id == fake.entry.id
+        assert installed.manifest.family == "splade"
+        assert set(fake.calls) == {"model.onnx", "tokenizer.json"}
+        assert (cache / fake.entry.id / "model.onnx").read_bytes() == (
+            fake.directory / "model.onnx"
+        ).read_bytes()

@@ -62,6 +62,8 @@ from tests.factories.protocols import (
     MakePrintJob,
     MakeProvenanceSource,
     MakeSearchDependency,
+    MakeSearchExpansion,
+    MakeSearchExpansionTerm,
     MakeSearchGenerationLease,
     MakeSearchIndexFailure,
     MakeSearchLexicalPosting,
@@ -625,6 +627,16 @@ def make_passage_vector(db_session: Session) -> MakePassageVector:
 
 
 @pytest.fixture
+def make_search_expansion(db_session: Session) -> MakeSearchExpansion:
+    return _bound(factories.build_search_expansion, db_session)
+
+
+@pytest.fixture
+def make_search_expansion_term(db_session: Session) -> MakeSearchExpansionTerm:
+    return _bound(factories.build_search_expansion_term, db_session)
+
+
+@pytest.fixture
 def make_search_passage(db_session: Session) -> MakeSearchPassage:
     return _bound(factories.build_search_passage, db_session)
 
@@ -659,6 +671,8 @@ __all__ += [
     "make_index_generation",
     "make_passage_vector",
     "make_search_passage",
+    "make_search_expansion",
+    "make_search_expansion_term",
     "make_subject_caption",
     "make_user_search_preferences",
 ]

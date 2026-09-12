@@ -16413,6 +16413,23 @@
             "title": "Send Rendered Images",
             "type": "boolean"
           },
+          "sparse_expansion_enabled": {
+            "default": false,
+            "title": "Sparse Expansion Enabled",
+            "type": "boolean"
+          },
+          "sparse_model_id": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sparse Model Id"
+          },
           "timezone": {
             "default": "UTC",
             "description": "Instance calendar timezone; personal preference takes precedence.",

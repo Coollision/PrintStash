@@ -6,6 +6,7 @@ const api = `http://127.0.0.1:${apiPort}`;
 
 export default defineConfig({
   testDir: "./tests/e2e-real/ai-search",
+  testMatch: process.env.PLAYWRIGHT_AI_SEARCH_SPARSE_STUDY ? "**/sparse.preplaced.ts" : undefined,
   timeout: 120000,
   expect: { timeout: 15000 },
   workers: 1,

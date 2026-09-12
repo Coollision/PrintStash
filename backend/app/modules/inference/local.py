@@ -25,7 +25,12 @@ from sqlmodel import Session
 from app import __file__ as application_file
 from app.core.config import settings
 from app.db.session import SessionFactory
-from app.modules.inference.manifest import ModelManifest, read_manifest, validate_space
+from app.modules.inference.manifest import (
+    ModelManifest,
+    manifest_identity,
+    read_manifest,
+    validate_space,
+)
 from app.modules.inference.model_cache import pin, safe_directory
 from app.modules.inference.worker import MAX_INPUT_BYTES, MAX_OUTPUT_BYTES
 from app.modules.inference.worker_pool import pool
@@ -133,6 +138,51 @@ class LocalEmbeddingProvider:
         *,
         context: InferenceContext | None = None,
     ) -> tuple[tuple[float, ...], ...]:
+        request_inputs = [
+            {
+                "modality": item.modality,
+                "text": item.text,
+                "width": item.width,
+                "height": item.height,
+                "rgb_base64": base64.b64encode(item.rgb).decode("ascii")
+                if item.rgb is not None
+                else None,
+                "points_base64": base64.b64encode(item.points).decode("ascii")
+                if item.points is not None
+                else None,
+            }
+            for item in inputs
+        ]
+        payload = json.dumps(
+            {
+                "config_hash": self.space.config_hash,
+                "space_json": json.dumps(self.space.__dict__),
+                "inputs": request_inputs,
+            }
+        ).encode()
+        output = self._request(payload, context=context)
+        try:
+            result = WorkerResult.model_validate_json(output)
+        except ValidationError:
+            try:
+                error = WorkerError.model_validate_json(output)
+            except ValidationError:
+                raise EmbeddingError("embedding_output_invalid") from None
+            raise EmbeddingError(error.code) from None
+        if result.config_hash != self.space.config_hash or len(result.vectors) != len(
+            inputs
+        ):
+            raise EmbeddingError("embedding_output_mismatch")
+        if len(result.truncated) != len(inputs):
+            raise EmbeddingError("embedding_output_mismatch")
+        self._last_batch.truncations = tuple(result.truncated)
+        for vector in result.vectors:
+            normalize(vector, self.space.dimension)
+        return tuple(tuple(vector) for vector in result.vectors)
+
+    def _request(
+        self, payload: bytes, *, context: InferenceContext | None = None
+    ) -> bytes:
         if context is not None:
             context.remaining()
         if importlib.util.find_spec("onnxruntime") is None:
@@ -146,28 +196,6 @@ class LocalEmbeddingProvider:
             )
             slot = acquire_slot(session, token, admission_context)
             cleanup.callback(self._release_slot, session, slot.id, token)
-            request_inputs = [
-                {
-                    "modality": item.modality,
-                    "text": item.text,
-                    "width": item.width,
-                    "height": item.height,
-                    "rgb_base64": base64.b64encode(item.rgb).decode("ascii")
-                    if item.rgb is not None
-                    else None,
-                    "points_base64": base64.b64encode(item.points).decode("ascii")
-                    if item.points is not None
-                    else None,
-                }
-                for item in inputs
-            ]
-            payload = json.dumps(
-                {
-                    "config_hash": self.space.config_hash,
-                    "space_json": json.dumps(self.space.__dict__),
-                    "inputs": request_inputs,
-                }
-            ).encode()
             if len(payload) > MAX_INPUT_BYTES:
                 raise EmbeddingError("embedding_input_budget")
             try:
@@ -184,7 +212,7 @@ class LocalEmbeddingProvider:
                 raise EmbeddingError("embedding_asset_unavailable") from None
             key = (
                 str(self.directory),
-                self.manifest.space().config_hash,
+                manifest_identity(self.manifest),
                 self.threads,
                 fingerprints,
             )
@@ -197,29 +225,12 @@ class LocalEmbeddingProvider:
                     raise
                 except (OSError, ValueError):
                     raise EmbeddingError("embedding_inference_failed") from None
-                try:
-                    result = WorkerResult.model_validate_json(output)
-                except ValidationError:
-                    try:
-                        error = WorkerError.model_validate_json(output)
-                    except ValidationError:
-                        raise EmbeddingError("embedding_output_invalid") from None
-                    raise EmbeddingError(error.code) from None
-                if result.config_hash != self.space.config_hash or len(
-                    result.vectors
-                ) != len(inputs):
-                    raise EmbeddingError("embedding_output_mismatch")
-                if len(result.truncated) != len(inputs):
-                    raise EmbeddingError("embedding_output_mismatch")
-                self._last_batch.truncations = tuple(result.truncated)
-                for vector in result.vectors:
-                    normalize(vector, self.space.dimension)
                 if self.directory.parent == settings.embedding_cache_dir.absolute():
                     try:
                         os.utime(self.directory, None)
                     except OSError:
                         pass  # Read-only offline mounts still support inference.
-                return tuple(tuple(vector) for vector in result.vectors)
+                return output
 
     def _spawn(self) -> subprocess.Popen:
         env = os.environ.copy()

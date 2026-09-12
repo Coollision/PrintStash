@@ -28,6 +28,8 @@
   Print-history filters use finished jobs and actual duration. Optional personal
   NL consent enables validated, editable filters with timezone-aware calendar
   bounds and reusable Saved Views; query text stays out of request/error logs.
+  Optional local SPLADE expansion stores bounded continuous term weights apart
+  from original text, with atomic disable, durable retries and measured index cost.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
   cyclic library references and native vector bytes without re-embedding.

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 
 import { InferenceEndpointForm } from "@/components/inference-endpoint-form";
@@ -9,7 +9,13 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
-import { getSearchSettings, importEnvironmentEndpoint, saveSearchSettings } from "@/lib/api/search";
+import {
+  downloadInferenceModel,
+  getSearchSettings,
+  importEnvironmentEndpoint,
+  listInferenceModels,
+  saveSearchSettings,
+} from "@/lib/api/search";
 import { useI18n } from "@/lib/i18n";
 import { toast } from "@/lib/toast";
 import type { SearchSettingsRead } from "@/types/search";
@@ -17,6 +23,18 @@ import type { SearchSettingsRead } from "@/types/search";
 function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSaved: () => void }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState(initial.settings);
+  const queryClient = useQueryClient();
+  const models = useQuery({ queryKey: ["ai-search", "models"], queryFn: listInferenceModels });
+  const sparse = models.data?.find(
+    (model) => model.id === draft.sparse_model_id && model.modality === "sparse",
+  );
+  const downloadSparse = useMutation({
+    mutationFn: downloadInferenceModel,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ai-search", "downloads"] });
+    },
+    onError: toast.error,
+  });
   const chat = initial.endpoints.find(
     (endpoint) => endpoint.id === draft.chat_endpoint_id && endpoint.kind === "chat",
   );
@@ -48,7 +66,16 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
             <Checkbox
               ariaLabel={t(label)}
               checked={draft[field]}
-              onChange={(value) => setDraft({ ...draft, [field]: value })}
+              onChange={(value) =>
+                setDraft({
+                  ...draft,
+                  [field]: value,
+                  sparse_expansion_enabled:
+                    field === "local_models_enabled" && !value
+                      ? false
+                      : draft.sparse_expansion_enabled,
+                })
+              }
             />
             {t(label)}
           </label>
@@ -59,6 +86,73 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
       </p>
       <details className="border-t border-border pt-3">
         <summary className="cursor-pointer text-sm font-medium">{t("aiSearch.advanced")}</summary>
+        <fieldset className="mt-3 space-y-3 rounded-md border border-border p-3">
+          <legend className="px-1 text-sm font-medium">{t("aiSearch.sparseTitle")}</legend>
+          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
+            {t("aiSearch.sparseHelp")}
+          </p>
+          <label className="block space-y-1 text-sm">
+            {t("aiSearch.sparseModel")}
+            <select
+              className="block w-full rounded-md border border-input bg-background p-2"
+              value={draft.sparse_model_id ?? ""}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  sparse_model_id: event.target.value || null,
+                  sparse_expansion_enabled: false,
+                })
+              }
+            >
+              <option value="">{t("aiSearch.chooseModel")}</option>
+              {models.data
+                ?.filter((model) => model.modality === "sparse" && model.curated)
+                .map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.key} ·{" "}
+                    {t(model.installed ? "aiSearch.installed" : "aiSearch.downloadRequired")}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {sparse && (
+            <p className="break-all text-xs text-muted-foreground">
+              {sparse.repository}@{sparse.revision} · {sparse.license} ·{" "}
+              {(sparse.size_bytes / 1048576).toFixed(1)} MiB
+            </p>
+          )}
+          {sparse && !sparse.installed && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              loading={downloadSparse.isPending}
+              disabled={
+                !initial.settings.enabled ||
+                !initial.settings.local_models_enabled ||
+                !initial.settings.download_enabled ||
+                !sparse.runtime_available
+              }
+              onClick={() => downloadSparse.mutate(sparse.key)}
+            >
+              {t("aiSearch.downloadModel")}
+            </Button>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              ariaLabel={t("aiSearch.sparseEnable")}
+              checked={draft.sparse_expansion_enabled}
+              disabled={
+                !draft.local_models_enabled || !sparse?.installed || !sparse.runtime_available
+              }
+              onChange={(value) => setDraft({ ...draft, sparse_expansion_enabled: value })}
+            />
+            {t("aiSearch.sparseEnable")}
+          </label>
+          {!sparse?.installed && (
+            <p className="text-xs text-muted-foreground">{t("aiSearch.sparseMissing")}</p>
+          )}
+        </fieldset>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
             {t("aiSearch.lexicalBackend")}

@@ -82,3 +82,34 @@ def advance_indexing():
         )
 
     return advance
+
+
+@pytest.fixture
+def sparse_setup(db_session, tmp_path, monkeypatch, make_user):
+    from app.core.config import _overlay
+    from app.modules.inference import model_cache, model_registry
+    from tests.factories.embeddings import sparse_embedding_assets
+
+    root = tmp_path / "sparse-cache"
+    directory = sparse_embedding_assets(root / "contract")
+    monkeypatch.setitem(_overlay, "embedding_cache_dir", root)
+    monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+    model = model_cache.inspect(directory)
+    registry = (
+        *model_registry.entries(),
+        model_registry.RegistryEntry(model.manifest, ()),
+    )
+    monkeypatch.setattr(model_registry, "entries", lambda: registry)
+    actor = make_user(superuser=True)
+    configuration.update(
+        db_session,
+        SearchSettings(
+            enabled=True,
+            local_models_enabled=True,
+            sparse_expansion_enabled=True,
+            sparse_model_id=model.id,
+        ),
+        actor_id=actor.id,
+    )
+    db_session.commit()
+    return actor, model

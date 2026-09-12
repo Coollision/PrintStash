@@ -84,6 +84,8 @@ class SearchSettings(BaseModel):
     def validate_timezone(cls, value):
         return timezone_name(value)
 
+    sparse_expansion_enabled: bool = False
+    sparse_model_id: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
     chat_endpoint_id: int | None = Field(default=None, ge=1)
     rollback_retention_hours: int = Field(default=24, ge=1, le=720)
     max_index_bytes: int = Field(default=2147483648, ge=1048576, le=1099511627776)

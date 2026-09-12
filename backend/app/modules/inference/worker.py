@@ -12,7 +12,12 @@ from typing import BinaryIO, Literal
 from printstash_core.inference import EmbeddingError, EmbeddingInput, EmbeddingSpace
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.inference.manifest import read_manifest, validate_space
+from app.modules.inference.manifest import (
+    SparseModelManifest,
+    manifest_identity,
+    read_manifest,
+    validate_space,
+)
 
 MAX_INPUT_BYTES = 34 * 1024**2
 MAX_OUTPUT_BYTES = 1024**2
@@ -33,6 +38,7 @@ class WorkerRequest(BaseModel):
     config_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     space_json: str | None = Field(default=None, max_length=32768)
     inputs: list[WorkerInput] = Field(default_factory=list, max_length=8)
+    sparse_text: str | None = Field(default=None, min_length=1, max_length=16384)
 
 
 class NativeWorker:
@@ -47,6 +53,22 @@ class NativeWorker:
         if len(payload) > MAX_INPUT_BYTES:
             raise EmbeddingError("embedding_input_budget")
         request = WorkerRequest.model_validate_json(payload)
+        if isinstance(self.manifest, SparseModelManifest):
+            from app.modules.inference.sparse import SparseNativeProvider
+
+            if (
+                request.config_hash != manifest_identity(self.manifest)
+                or request.inputs
+                or request.space_json
+            ):
+                raise EmbeddingError("embedding_space_mismatch")
+            if self.provider is None:
+                self.provider = SparseNativeProvider(
+                    self.directory, self.manifest, self.threads
+                )
+            return self.provider.expand(request.sparse_text).model_dump_json().encode()
+        if request.sparse_text is not None:
+            raise EmbeddingError("embedding_sparse_required")
         space = (
             EmbeddingSpace(**json.loads(request.space_json))
             if request.space_json
