@@ -239,3 +239,35 @@ class TestPostgresVectorIndex:
             session.execute(text(f'DROP OWNED BY "{role}"'))
             session.execute(text(f'DROP ROLE "{role}"'))
             session.commit()
+
+    def test_publishes_nullable_owner_columns_from_a_consumer(self, native_database):
+        from sqlalchemy import literal
+
+        from app.db.models import File
+
+        session, generation, contract, first, _, _ = native_database
+        file = session.get(File, first.file_id)
+        source = select(
+            literal("model").label("subject_type"),
+            File.model_id.label("subject_id"),
+            File.model_id,
+            File.id.label("file_id"),
+            literal(None).label("passage_id"),
+        ).where(File.id == file.id, File.sha256 == file.sha256)
+        assert vector_store.publish(
+            session,
+            generation_id=generation.id,
+            space=contract,
+            unit_kind="consumer_mesh",
+            unit_key=f"consumer:{file.id}",
+            input_hash=file.sha256,
+            vector=[1, 0, 0],
+            source=source,
+        )
+        session.commit()
+        stored = session.exec(
+            select(PassageVector).where(PassageVector.unit_kind == "consumer_mesh")
+        ).one()
+        assert stored.model_id == file.model_id
+        assert stored.passage_id is None
+        assert len(stored.vector_blob) == 12

@@ -277,3 +277,17 @@ class TestLocalProvider:
         )
         with pytest.raises(EmbeddingError, match="embedding_timeout"):
             provider.validate()
+
+    def test_reports_configured_capability(self, db_session, assets, monkeypatch):
+        from app.core.config import _overlay
+        from app.modules.inference.local import configured_provider
+
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        monkeypatch.setitem(_overlay, "embedding_model_key", "two-tower-contract")
+        with pytest.raises(EmbeddingError, match="embedding_not_configured"):
+            configured_provider(get_session_factory())
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", str(assets))
+        provider = configured_provider(get_session_factory())
+        validated = provider.validate()
+        assert validated.space() == provider.space
+        assert provider.space.dimension == 3

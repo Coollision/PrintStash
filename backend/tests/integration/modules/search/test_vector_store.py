@@ -106,3 +106,71 @@ class TestVectorStore:
         )
         db_session.rollback()
         assert db_session.exec(select(PassageVector)).all() == []
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("profile", "wrong_profile"),
+            ("provider", "wrong_provider"),
+            ("recipe_json", "wrong_recipe"),
+            ("model_key", "wrong_model"),
+            ("prefixes_json", '{"query":"different","document":""}'),
+        ],
+    )
+    def test_refuses_corrupt_immutable_metadata(
+        self, db_session, document_unit, field, value
+    ):
+        from printstash_core.inference import EmbeddingError
+
+        from app.db.models import EmbeddingSpace
+
+        _, _, _, contract, generation = document_unit
+        row = db_session.get(EmbeddingSpace, generation.space_id)
+        setattr(row, field, value)
+        db_session.add(row)
+        db_session.commit()
+        with pytest.raises(EmbeddingError, match="embedding_space_corrupt"):
+            vector_store.register_space(db_session, contract)
+
+    def test_scopes_an_independent_consumer_to_view_permissions(
+        self, db_session, document_unit, make_user
+    ):
+        _, _, passage, contract, generation = document_unit
+        outsider = make_user()
+        assert not vector_store.publish(
+            db_session,
+            generation_id=generation.id,
+            space=contract,
+            unit_kind="text_passage",
+            unit_key=f"passage:{passage.id}",
+            input_hash=passage.content_hash,
+            vector=[1, 0, 0],
+            source=source(db_session, outsider, passage.id, passage.content_hash),
+        )
+        assert db_session.exec(select(PassageVector)).all() == []
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"vector": [1, 0]},
+            {"unit_kind": "bad-kind"},
+            {"unit_key": "x" * 129},
+            {"input_hash": "not-a-sha256"},
+        ],
+    )
+    def test_rejects_invalid_consumer_units(self, db_session, document_unit, changes):
+        from printstash_core.inference import EmbeddingError
+
+        actor, _, passage, contract, generation = document_unit
+        values = dict(
+            generation_id=generation.id,
+            space=contract,
+            unit_kind="text_passage",
+            unit_key=f"passage:{passage.id}",
+            input_hash=passage.content_hash,
+            vector=[1, 0, 0],
+            source=source(db_session, actor, passage.id, passage.content_hash),
+        )
+        with pytest.raises(EmbeddingError):
+            vector_store.publish(db_session, **(values | changes))
+        assert db_session.exec(select(PassageVector)).all() == []

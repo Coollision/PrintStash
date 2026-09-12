@@ -53,3 +53,23 @@ class TestOptionalFeatures:
         finally:
             annotations.bind_annotations(provider)
             ingestion.bind_derivatives(derivatives)
+
+    @pytest.mark.parametrize("missing", ["similarity", "inference"])
+    def test_installs_search_independently(self, monkeypatch, missing):
+        from fastapi import FastAPI
+
+        original = optional_features.find_spec
+        monkeypatch.setattr(
+            optional_features,
+            "find_spec",
+            lambda package: (
+                None if package == f"app.modules.{missing}" else original(package)
+            ),
+        )
+        router = APIRouter()
+        optional_features.install_search_routes(router)
+        application = FastAPI()
+        application.include_router(router)
+        paths = application.openapi()["paths"]
+        assert ("/search" in paths) == (missing != "inference")
+        assert "/similarity/search" not in paths

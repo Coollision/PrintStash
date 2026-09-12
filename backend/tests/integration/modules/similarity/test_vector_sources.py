@@ -293,3 +293,12 @@ class TestGenerationLifecycle:
                 vector=[1, 0, 0],
             )
 
+    def test_refuses_adoption_of_corrupt_space(self, db_session, index):
+        provider, generation_id, *_ = index
+        generation = db_session.get(IndexGeneration, generation_id)
+        row = db_session.get(EmbeddingSpace, generation.space_id)
+        row.model_key = "corrupt-model"
+        db_session.add(row)
+        db_session.commit()
+        with pytest.raises(EmbeddingError, match="embedding_space_corrupt"):
+            store.initialize(get_session_factory(), provider)

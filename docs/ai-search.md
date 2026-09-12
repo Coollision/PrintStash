@@ -479,3 +479,28 @@ when captions exist or are enabled. There is no duplicate caption vector profile
 Stage evidence is in [the coverage matrix](ai-search-coverage.md). The real HTTP
 workflow uses a local contract VLM server, so it validates payloads and lifecycle,
 not generated-caption quality.
+
+
+## Independent consumers (W12)
+
+The existing Similar Models consumer uses `search.vector_store` through its own
+`similarity.vector_sources` adapter. The shared store knows no SimilarityRun,
+Family or candidate lifecycle. Consumers supply fresh SQL that fences their
+source identity/hash, liveness, permissions and work lease; the store validates
+Space identity, vector dimensions, typed unit keys and active generation state.
+It commits no source mutation or inference implicitly. `initialize` is the
+explicit canary-validation transaction for first adoption; later writes join
+the caller's transaction. External `algorithm_version` belongs to the consumer
+and never changes the inference Space hash.
+
+An installed-app test physically removes Similar Models, exercises public
+Search, and embeds/publishes/queries a Document through a preplaced ONNX provider
+and the shared store. Another installation test removes inference too and keeps
+manual library/Family work usable. Optional composition omits unavailable AI
+routes and tasks; the Model-query shortcut returns a capability error.
+
+Compatible v1 rows retain IDs, keys, hashes, dimensions and exact BLOB bytes
+through the additive vector migration. Existing generations are adopted only
+after checking the stored immutable Space metadata. PostgreSQL nullable owner
+columns are typed centrally, so consumers can omit Model/File/Passage owners
+without relying on SQLite's permissive NULL typing.

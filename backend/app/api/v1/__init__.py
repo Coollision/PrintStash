@@ -8,7 +8,6 @@ from app.api.v1 import (
     artifact_uploads,
     auth,
     backup,
-    captions,
     config,
     documents,
     external_libraries,
@@ -18,8 +17,6 @@ from app.api.v1 import (
     fleet,
     health,
     inbox,
-    inference,
-    inference_models,
     ingest,
     maintenance,
     models,
@@ -30,7 +27,6 @@ from app.api.v1 import (
     printers,
     provider_connections,
     saved_views,
-    search,
     setup,
     share,
     spoolman,
@@ -40,7 +36,10 @@ from app.api.v1 import (
     taxonomy,
     vault_migration,
 )
-from app.bootstrap.optional_features import install_optional_routes
+from app.bootstrap.optional_features import (
+    install_optional_routes,
+    install_search_routes,
+)
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
@@ -63,11 +62,7 @@ install_optional_routes(api_router)
 api_router.include_router(multipart_models.router)
 api_router.include_router(multipart_builds.router)
 api_router.include_router(saved_views.router)
-api_router.include_router(search.router)
-api_router.include_router(captions.router)
-api_router.include_router(inference.router)
-api_router.include_router(inference.search_router)
-api_router.include_router(inference_models.router)
+install_search_routes(api_router)
 api_router.include_router(files.router)
 api_router.include_router(filaments.router)
 api_router.include_router(printer_profiles.router)

@@ -70,23 +70,29 @@ async def _close_outbound_clients() -> None:
     """Close pooled outbound clients while preserving the first close error."""
 
     from app.core.provider_redaction import redact_exception
-    from app.modules.inference.query import close_queries
-    from app.modules.inference.transport import close_client as close_inference_client
-    from app.modules.inference.worker_pool import pool as model_workers
     from app.modules.ingestion.capture_provider_transport import (
         close_provider_transport,
     )
     from app.modules.printing.moonraker import close_http_client
-    from app.runtime.model_acquisition import close as close_model_downloads
 
     try:
         await close_http_client()
     finally:
         try:
-            await asyncio.to_thread(close_model_downloads)
-            await asyncio.to_thread(close_queries)
-            await asyncio.to_thread(model_workers.close)
-            await asyncio.to_thread(close_inference_client)
+            from app.bootstrap.optional_features import inference_available
+
+            if inference_available():
+                from app.modules.inference.query import close_queries
+                from app.modules.inference.transport import (
+                    close_client as close_inference_client,
+                )
+                from app.modules.inference.worker_pool import pool as model_workers
+                from app.runtime.model_acquisition import close as close_model_downloads
+
+                await asyncio.to_thread(close_model_downloads)
+                await asyncio.to_thread(close_queries)
+                await asyncio.to_thread(model_workers.close)
+                await asyncio.to_thread(close_inference_client)
         except Exception:
             logger.error("failed to close inference transport")
         try:
@@ -349,17 +355,23 @@ async def lifespan(app: FastAPI):
         _safe_db_url(settings.db_url),
     )
     install_audit_listeners()
+    from app.bootstrap.optional_features import inference_available
     from app.db.content_search import bind_content_search
     from app.db.projections import bind_content_projection
-    from app.modules.search.lexical_query import LibrarySearch
-    from app.modules.search.projection import LibraryProjection
-    from app.runtime.captions import run_captions
-    from app.runtime.search import run_search
 
-    previous_search = bind_content_search(LibrarySearch())
-    previous_projection = bind_content_projection(LibraryProjection())
-    app.state.search_task = asyncio.create_task(run_search())
-    app.state.captions_task = asyncio.create_task(run_captions())
+    app.state.search_task = app.state.captions_task = None
+    previous_search = bind_content_search(None)
+    previous_projection = bind_content_projection(None)
+    if inference_available():
+        from app.modules.search.lexical_query import LibrarySearch
+        from app.modules.search.projection import LibraryProjection
+        from app.runtime.captions import run_captions
+        from app.runtime.search import run_search
+
+        bind_content_search(LibrarySearch())
+        bind_content_projection(LibraryProjection())
+        app.state.search_task = asyncio.create_task(run_search())
+        app.state.captions_task = asyncio.create_task(run_captions())
     printer_provider_registry = build_provider_registry()
     app.state.printer_provider_registry = printer_provider_registry
     provider_builder = partial(get_provider_client, registry=printer_provider_registry)

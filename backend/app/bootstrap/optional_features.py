@@ -27,3 +27,20 @@ def install_optional_routes(router: APIRouter) -> None:
     bind_annotations(projections)
     bind_derivatives(ingestion)
     router.include_router(similarity_router)
+
+
+def inference_available() -> bool:
+    return find_spec("app.modules.inference") is not None
+
+
+def install_search_routes(router: APIRouter) -> None:
+    """Search does not depend on Similar Models; stripped installs keep library work."""
+    if not inference_available():
+        return
+    from app.api.v1 import captions, inference, inference_models, search
+
+    router.include_router(search.router)
+    router.include_router(captions.router)
+    router.include_router(inference.router)
+    router.include_router(inference.search_router)
+    router.include_router(inference_models.router)

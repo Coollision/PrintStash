@@ -146,6 +146,10 @@ def search_using_model(
     user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ):
+    from app.bootstrap.optional_features import inference_available
+
+    if not inference_available():
+        raise HTTPException(status_code=503, detail="inference_unavailable")
     from app.modules.search.retrieval import search
 
     response.headers["Cache-Control"] = "no-store"

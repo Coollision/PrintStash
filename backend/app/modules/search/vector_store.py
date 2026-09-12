@@ -21,7 +21,7 @@ from printstash_core.inference.vectors import (
     cosine_neighbors,
     normalize,
 )
-from sqlalchemy import Select, literal
+from sqlalchemy import Integer, Select, cast, literal
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -70,12 +70,30 @@ def register_space(session: Session, contract: SpaceContract) -> EmbeddingSpace:
     row = session.exec(
         select(EmbeddingSpace).where(EmbeddingSpace.config_hash == contract.config_hash)
     ).one()
-    if (
-        SpaceContract(**json.loads(row.config_json)) != contract
-        or row.native_dimension != contract.dimension
-    ):
-        raise EmbeddingError("embedding_space_corrupt")
+    _validate_stored_space(row, contract)
     return row
+
+
+def _validate_stored_space(row: EmbeddingSpace, contract: SpaceContract) -> None:
+    try:
+        consistent = (
+            SpaceContract(**json.loads(row.config_json)) == contract
+            and json.loads(row.prefixes_json)
+            == {"query": contract.query_prefix, "document": contract.document_prefix}
+            and row.config_hash == contract.config_hash
+            and row.native_dimension == contract.dimension
+            and row.modality == contract.modality
+            and row.profile == contract.profile
+            and row.provider == contract.provider
+            and row.model_key == contract.model_key
+            and row.model_revision == contract.model_revision
+            and row.normalization == contract.normalization
+            and row.recipe_json == contract.render_recipe
+        )
+    except (ValueError, TypeError, EmbeddingError):
+        consistent = False
+    if not consistent:
+        raise EmbeddingError("embedding_space_corrupt")
 
 
 def active_generation(session: Session, space: SpaceContract) -> IndexGeneration | None:
@@ -116,12 +134,12 @@ def initialize(sessions: SessionFactory, provider: ValidatedProvider) -> int:
     provider.validate()
     contract = provider.space
     with sessions.scoped_session() as session:
+        space = register_space(session, contract)
         existing = active_generation(session, contract)
         if existing is not None:
             assert existing.id is not None
             return existing.id
         try:
-            space = register_space(session, contract)
             assert space.id is not None
             generation = IndexGeneration(
                 space_id=space.id,
@@ -195,9 +213,9 @@ def publish(
         literal(unit_key),
         current.c.subject_type,
         current.c.subject_id,
-        current.c.model_id,
-        current.c.file_id,
-        current.c.passage_id,
+        cast(current.c.model_id, Integer),
+        cast(current.c.file_id, Integer),
+        cast(current.c.passage_id, Integer),
         literal(input_hash),
         literal(space.dimension),
         literal(truncated),

@@ -704,7 +704,6 @@ and narrowing errors; it is not reported as a passing gate.
 | CAP022 | coalesces duplicate generation requests | Edge | Same Subject/input/recipe requested twice | One row and unchanged version/lease | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_one_task_for_repeated_generation_requests` |
 | CAP023 | removes generated claims in the source transaction | Edge | Geometry hash changes | Caption text and lexical match disappear before regeneration | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_invalidates_generated_claims_when_geometry_changes` |
 | CAP024 | preserves PostgreSQL BM25 statistics across caption dismissal | Edge | Real PostgreSQL, v1+v2 passages | One document; caption match disappears; human match retained | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_indexes_one_caption_recipe_with_bm25` |
-
 | CAP025 | terminates a final expired lease after restart | Error | Third attempt interrupted | Failed status, no fourth inference call | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_finishes_an_exhausted_lease_after_restart` |
 
 W11 evidence: 70 backend regression tests passed together, with four additional
@@ -715,3 +714,23 @@ mobile screenshots inspected). PostgreSQL caption check: 1 passed. Repository
 hygiene/migration checks: 3,484 passed. These are stage checks; full branch gates
 remain for final closure. The VLM end-to-end test uses a contract server and makes
 no claim about caption quality from an actual language model.
+
+### W12 — independent consumers and compatible adoption
+
+| ID | Behaviour | Case | Setup | Observable expectation | Tier | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| IC001 | runs Search without the Similar Models package | Happy | Isolated installed app, package removed, preplaced ONNX | Public Search works; native provider/store consumer works; no similarity imports | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_the_similarity_package` |
+| IC002 | keeps external algorithm versions outside Space identity | Edge | Consumer changes ranking version | Same Space, generation, IDs and native bytes reused | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_the_similarity_package` |
+| IC003 | publishes portable nullable owner columns | Error | PostgreSQL consumer source with SQL NULL passage ID | Successful native upsert, no text-to-integer failure | Integration | ✅ `integration/postgres/test_vector_index.py::TestPostgresVectorIndex::test_publishes_nullable_owner_columns_from_a_consumer` |
+| IC004 | rejects mismatched immutable metadata during adoption | Error | Corrupt mirrored Space profile/provider/model/recipe/prefix | Stable corruption error; no adoption | Integration | ✅ `integration/modules/search/test_vector_store.py::TestVectorStore::test_refuses_corrupt_immutable_metadata; integration/modules/similarity/test_vector_sources.py::TestGenerationLifecycle::test_refuses_adoption_of_corrupt_space` |
+| IC005 | rejects unauthorized independent consumer publication | Error | Source filtered by an outsider's VIEW scope | No vector written | Integration | ✅ `integration/modules/search/test_vector_store.py::TestVectorStore::test_scopes_an_independent_consumer_to_view_permissions` |
+| IC006 | rejects incompatible units before persistence | Error | Wrong dimension, invalid key/kind/hash | No vector written | Integration | ✅ `integration/modules/search/test_vector_store.py::TestVectorStore::test_rejects_invalid_consumer_units` |
+| IC007 | declares configured and unavailable inference capability | Edge | Missing configuration, then preplaced validated local model | Explicit unavailable error; validated native provider when configured | Integration | ✅ `integration/modules/inference/test_local.py::TestLocalProvider::test_reports_configured_capability` |
+| IC008 | keeps existing Similar Models bytes and identities compatible | Happy | Existing v1 rows migrate and consumer resumes | Exact IDs, keys, hashes and BLOBs; no re-embedding for compatible rows | Integration | ✅ `integration/db/migrations/test_search_vectors_migration.py::TestSearchVectorsMigration::test_preserves_legacy_vectors_on_upgrade; integration/modules/similarity/test_vector_sources.py` |
+| IC009 | preserves manual library work without inference installed | Edge | Packages physically removed | App boots; Families work; model-query shortcut reports unavailable | E2E | ✅ `e2e/test_family_independence.py::TestFamilyIndependence::test_manual_family_flow_without_related_feature_packages` |
+
+W12 evidence: independent-consumer/provider/adoption regression suite 49 passed;
+PostgreSQL nullable-owner regression passed after reproducing the failure;
+optional-install and OpenAPI checks 5 passed, followed by the final optional
+assembly/Family run (5 passed). Shared-store adoption validates every mirrored
+immutable Space field before reusing an active generation.
