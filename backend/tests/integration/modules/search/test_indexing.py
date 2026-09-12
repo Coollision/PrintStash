@@ -136,6 +136,41 @@ class TestPublicationWork:
 
 
 class TestIndexProcessor:
+    def test_retries_a_transient_provider_outage(
+        self, db_session, generation_setup, healthy_embeddings, advance_indexing
+    ):
+        from app.modules.inference.transport import EndpointError
+
+        actor, endpoint = generation_setup
+        generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+        advance_indexing(4)
+
+        def disconnected():
+            raise EndpointError("inference_network_unavailable")
+
+        healthy_embeddings.before_reply = disconnected
+        advance_indexing(1)
+        db_session.expire_all()
+        failure = db_session.exec(select(SearchIndexFailure)).one()
+        assert (failure.attempts, failure.state, failure.error_code) == (
+            1,
+            "retry",
+            "inference_network_unavailable",
+        )
+        assert db_session.exec(select(PassageVector)).all() == []
+        failure.retry_after = datetime(2000, 1, 1)
+        db_session.add(failure)
+        db_session.commit()
+
+        advance_indexing(1)
+        db_session.expire_all()
+        assert db_session.exec(select(SearchIndexFailure)).all() == []
+        assert len(db_session.exec(select(PassageVector)).all()) == 1
+
     def test_reports_idle_for_a_settled_active_generation(
         self, db_session, generation_setup, healthy_embeddings, advance_generation
     ):

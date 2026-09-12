@@ -159,7 +159,8 @@ HTTP latency benchmark, whose 300 ms budget remains unchanged.
 
 Before the final vector-store correlation change, a complete 32-query native
 run measured p50 **4.059 s**, p95 **4.479 s** and first-request **5.557 s**. That
-failed run remains in the task's measurement output.
+run remains in the task's measurement output. Like the other early native runs
+below, it used the incomplete native fixture and is not native-scale acceptance evidence.
 
 ## Earlier HTTP measurements and native-fixture correction
 
@@ -237,3 +238,33 @@ records every payload hash, observation, process sample and production-source
 digest. This follow-up measures ingestion during resumed backfill; it does not
 repeat fresh-install preparation, establish physical ARM performance, or erase
 the earlier failures. AI remains optional and disabled by default.
+
+The first populated native rerun verified 100,000 rows before its query loop
+and completed all 32 HTTP queries, but its final report writer accessed an ORM
+object after the seeding session had expired it. No p95 result is accepted from
+that interrupted report. A separate read of the stopped database verified
+100,000 durable and 100,000 native rows. The harness now retains observations
+before final validation and re-reads the generation by its stable ID in a fresh
+session; the new regression covers that session boundary.
+
+## Populated native 100,000-vector HTTP result
+
+The corrected run used production `a92720eb` and verified **100,000 durable
+and 100,000 native vectors before and after all 32 uncached queries**. Every
+request returned HTTP 200 with no leg errors and real local BGE embedding.
+On the same four-vCPU QEMU/KVM host, warm p50 was **1.462 s**, warm p95
+**2.136 s** and the initial HTTP request **3.620 s**. Fixture preparation took
+72.05 seconds; the complete run took 131.25 seconds. The unchanged **300 ms
+p95 gate fails**. This valid scale measurement replaces the incomplete native
+fixtures as evidence, while retaining their raw failures and explanations.
+
+[Complete populated-native observations and source/hardware context](../backend/tests/fixtures/search/search-100k-native-populated-x86.json).
+No correctness tests or other benchmarks ran during measured requests. Stopped
+diagnostic databases were removed during preparation, before the first request,
+to recover disk space. This VM result does not establish physical ARM acceptance.
+
+The implementation is available on the feature branch. Full plan acceptance
+remains open for 100k query latency, physical Pi 5 backfill, the physical ARM
+point canary, independent held-out visual recall and a demonstrated quality
+improvement at every offered visual profile. These gaps are explicitly retained
+in the coverage matrix; the feature is not presented as release-accepted.

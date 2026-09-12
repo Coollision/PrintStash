@@ -2,7 +2,7 @@
 
 from printstash_core.search.passages import SearchSubject, SubjectType
 from sqlalchemy import func
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from app.db.models import Model, PassageVector, SearchPassage
 from app.db.models.search import (
@@ -21,10 +21,31 @@ from tests.factories import (
     build_user,
 )
 from tests.factories.search_scale import replicate_models
-from tests.fakes.search_scale import prepare_indexes
+from tests.fakes.search_scale import index_rows, prepare_indexes
 
 
 class TestReplicateModels:
+    def test_checks_native_cardinality_after_seeding_session_expires(
+        self, db_session, monkeypatch
+    ):
+        from app.core.config import _overlay
+
+        monkeypatch.setitem(_overlay, "search_native_vectors_enabled", True)
+        generation = build_index_generation(
+            db_session, build_embedding_space(db_session), index_backend="sqlite_vec"
+        )
+        seed = build_model(db_session, "Assembly bracket")
+        sync_subject(db_session, SearchSubject(SubjectType.MODEL, seed.id))
+        passage = db_session.exec(select(SearchPassage)).one()
+        build_passage_vector(db_session, generation, passage=passage)
+        assert prepare_indexes(db_session, generation, count=1) == 1
+        generation_id = generation.id
+        db_session.commit()
+        db_session.expire(generation)
+        db_session.expunge(generation)
+        with Session(db_session.get_bind()) as fresh:
+            assert index_rows(fresh, generation_id, count=1) == 1
+
     def test_rebuilds_the_complete_native_benchmark_fixture(
         self, db_session, monkeypatch
     ):

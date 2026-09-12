@@ -59,7 +59,7 @@ quality evaluation; implementation alone does not mark them complete.
 | A048 | keeps a machine caption out of the user description field | Edge | caption generated | `description` unchanged; caption in its own row | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_generated_text_separate_from_human_description` |
 | A049 | stops regenerating a dismissed caption | Edge | caption dismissed | not regenerated on the next pass | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_dismissal_when_the_endpoint_changes` |
 | A050 | reaches labelled semantic retrieval quality | Happy | Modelo real preplaced o corpus vectorial real versionado | recall@5 hybrid >=0.9 y lexical >=0.6; critical | Integration | ✅ `integration/modules/search/retrieval/test_text_quality.py::TestTextQuality::test_measures_real_text_retrieval_quality` |
-| A051 | reaches visual recall on stripped descriptions | Happy | Modelo visual real y corpus held-out description-stripped | recall@10 >=0.7; critical | Integration | ❌ missing |
+| A051 | reaches visual recall on stripped descriptions | Happy | Real visual model and independently labelled held-out corpus with stripped descriptions | recall@10 >=0.7; critical | Integration | ❌ external evidence missing — frozen engineering/photo studies do not substitute for independent human labels |
 | A052 | switches the model end to end with no search downtime | Happy | seeded library, model change | search answers throughout; new results after the flip (`critical`) | E2E | ✅ `e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_serves_continuous_readers_during_a_transform_switch[model]` — distinct loopback endpoint/model, 4→8 dimensions; continuous HTTP readers before and after activation |
 | A053 | keeps ingestion latency flat under backfill load | Edge | ingest during resumed backfill over a cloned 10,020-passage library | All 40 ingests complete; same payloads; indexed count 88→104; p95 227→233 ms (1.025× ≤1.25×) | E2E | ✅ measured prepared-fixture comparison; raw observations in `backend/tests/fixtures/search/ingest-backfill-10k-x86-priority.json`; earlier fresh-install failures and protocol limits retained in the performance report |
 | A054 | exposes exactly one provider seam in the tree | Edge | architecture check | no second ONNX session manager, cache or vector store | Repo / E2E | ✅ `repo/test_architecture.py::TestArchitecture::test_keeps_native_sessions_in_the_inference_owner`; shared provider/store consumer: IC001–IC008 |
@@ -142,8 +142,8 @@ quality evaluation; implementation alone does not mark them complete.
 | A131 | avoids_query_text_in_access_logs | Error | Query normal y error por proxy/ASGI | q/prompt ausentes de logs y jobs | E2E | ✅ `backend/tests/e2e/test_search_query_logs.py::TestSearchQueryLogs::test_omits_queries_when_upstream_is_unavailable`; `integration/api/v1/test_search.py` asserts ASGI failure-log redaction |
 | A132 | disables_all_ai_affordances_with_master | Edge | Master off con generations existentes | Lexical utilizable y UI sin controles AI activos | Playwright | ✅ `frontend/tests/e2e-real/ai-search/search.spec.ts` — master disabled after real BGE activation: AI submit hidden, image/camera disabled, natural-language preferences hidden, lexical Document still found |
 | A133 | bounds_query_execution_deadline | Error | ONNX worker ocupado/endpoint lento | Respuesta léxica antes de deadline; event loop responde | Integration | ✅ `integration/modules/search/test_retrieval.py::TestSearch::test_returns_lexical_results_by_query_deadline` — concurrent health and search share one ASGI event loop |
-| A134 | measures_query_p95_on_100k_passages | Happy | 4-core, Space default, corpus etiquetado | p95 end-to-end <300ms; el gate falla si supera objetivo | E2E | ❌ portable measured failure — 100k passages, 32 local BGE HTTP queries, p95 3.024 s on four-vCPU QEMU/KVM; earlier native figures invalidated by incomplete native fixture; 300 ms budget unchanged; corrected native run pending |
-| A135 | measures_pi5_default_backfill_budget | Happy | 100k Passages y default real | Backfill <1h; el gate falla si supera objetivo | E2E | ❌ missing |
+| A134 | measures_query_p95_on_100k_passages | Happy | 4-core, Space default, corpus etiquetado | p95 end-to-end <300ms; el gate falla si supera objetivo | E2E | ❌ measured failure — portable p95 3.024 s; populated native p95 2.136 s with 100,000 durable/native rows verified before and after all 32 real local BGE HTTP queries; four-vCPU QEMU/KVM; 300 ms budget unchanged |
+| A135 | measures_pi5_default_backfill_budget | Happy | Physical Pi 5, 100k Passages and default real encoder | Backfill <1h; gate fails above target | E2E | ❌ external evidence missing — physical Pi 5 unavailable in this workspace |
 | A136 | versions_sparse_expansion_independently | Edge | Toggle/model de expansión cambia | Lexical original sigue disponible durante rebuild | Integration | ✅ `integration/modules/search/test_expansion_worker.py::TestExpansionProcessor::test_retains_original_search_during_backfill`; independent recipe/hash and late-result fences in the same suite |
 | A137 | measures_sparse_expansion_cost | Happy | Corpus con expansión opt-in | Tamaño y recall comparados con lexical base | Integration | ✅ `integration/modules/inference/preplaced_sparse.py::TestPreplacedSparse::test_measures_the_pinned_sparse_profile` |
 | A138 | localizes_ai_search_states | Edge | en/es; pending/degraded/empty/caption/NL | Texto traducido, foco y controles accesibles | Frontend unit | ✅ `frontend/src/pages/__tests__/search.test.tsx`, `frontend/src/components/__tests__/subject-caption.test.tsx`, `frontend/src/components/__tests__/search-preferences.test.tsx` — 31 tests pass; en/es, focus and Escape checked |
@@ -423,6 +423,8 @@ internal persistence subcontracts below now pass. `core/` paths refer to
 | G044 | prunes_vectors_in_bounded_batches | Edge | more than 128 retired vectors | at most 128 deleted per worker unit | Integration | ✅ `integration/modules/search/test_generations.py::TestPruneOne::test_prunes_vectors_in_bounded_batches` |
 | G045 | refreshes_different_passage_template_versions | Edge | active/building templates differ | both templates maintained until drain | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_upgrades_active_text_to_caption_recipe` — edit while v1 active/v2 building refreshes both; only v2 includes the caption, then flips |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | G046 | indexes_content_added_during_backfill | Edge | new Document after first batch | new passage vector present before activation | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_indexes_content_added_during_backfill` |
 
 ## Compressed index transforms
@@ -629,6 +631,8 @@ final full-suite, coverage, security or hardware acceptance gates.
 | VI014 | searches_images_from_accessible_ui | Happy | ready visual profile, desktop/mobile image selection | capability-gated controls, image results, clear/retry and disclosure | Frontend / Playwright | ✅ frontend tests + real-browser image flow; responsive screenshot correction |
 | VI015 | measures_real_visual_recipe_quality | Happy | frozen 32-object engineering corpus, real CLIP B/32 | measured recall/cost and reproducible vector replay, separately labelled limitations | Integration / Benchmark | ✅ real B/32 replay and study; independent human/ARM acceptance remains ❌; the later printed-photo section records the real photo result |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | VI016 | rejects_unadmitted_image_body_before_parsing | Error | anonymous, disabled or saturated image request | stable error without parser/decode invocation | Integration | ✅ API admission tests |
 | VI017 | shares_render_and_resident_encoder_rss_budget | Error | renderer plus idle encoder exceeds ceiling | idle encoder evicted; oversized renderer rejected/reaped | Integration | ✅ worker-pool/native-render tests |
 | VI018 | preserves_passage_failures_across_visual_migration | Edge | seeded pre-upgrade passage retry and Artifact failure | upgrade/downgrade/re-upgrade retains old text data | Migration | ✅ `test_visual_failures_migration.py` |
@@ -962,8 +966,12 @@ section below records the current backend coverage audit.
 | SC001 | compares exact native retrieval against the shipped float scanner | Happy | seeded normalized vectors; unrestricted and restricted SQL scopes | native recall and timing measured against identical authorized floats | Repo | ✅ `repo/test_vector_scale.py::TestVectorScale::test_compares_identical_authorized_neighbors` (256-vector harness check; 500k timing recorded separately) |
 | SC002 | replays the scale snapshot without loading a vector extension | Edge | durable-only snapshot; fresh standard SQLite connection | same row count, digest and neighbors through the float fallback | Repo | ✅ `repo/test_vector_scale.py::TestVectorScale::test_recovers_floats_without_a_vector_extension` (256-vector harness check) |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | SC003 | keeps scale replicas consistent with ordinary content refresh | Edge | frozen Model text/vector pairs replicated with unique identities | vector retained after production refresh; exact lexical statistics and FTS results | Repo | ✅ `repo/test_search_scale.py::TestReplicateModels::test_replicas_retain_searchability_after_maintenance` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | SC004 | seeds backfill without precomputed active vectors | Happy | replicated ordinary Models and lexical passages | all replicas searchable; zero vector rows | Repo | ✅ `repo/test_search_scale.py::TestReplicateModels::test_builds_an_unembedded_backfill_corpus` |
 | SC005 | measures workers spawned from executor threads | Edge | real Python child launched by a background thread | sampler records parent and child RSS/CPU while alive | Repo | ✅ `repo/test_process_metrics.py::TestSampleProcesses::test_samples_workers_owned_by_an_executor_thread` |
 
@@ -1031,6 +1039,8 @@ CPU execution is also visible to the branch-coverage audit.
 | HA006 | rejects validation of a missing local model | Error | Unknown model identity | Stable HTTP 400 | Integration | ✅ `integration/api/v1/test_inference_models.py::TestInferenceModels::test_rejects_validation_of_a_missing_local_model` |
 | RS001 | completes isolated S3 workflows on a small test disk | Edge | Many distinct buckets on the pinned SeaweedFS server | Resource suite completes without exhausting auto-sized volume slots | Contract/E2E | ✅ `contract/modules/storage/test_storage_backend.py` plus complete resource lane: 269 passed in 33m16s; `backend-resources-capacity-fixed.log` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | CB001 | rejects foreign compressed table claims | Error | Generation points at another table | Replacement and shortlist both rejected; original bytes retained | Integration | ✅ `integration/modules/search/test_code_index.py::TestShortlist::test_rejects_foreign_compressed_table_claims` |
 | CB002 | refreshes every member of a large Collection | Edge | More than one projection page of Models | Every passage reflects changed Collection metadata | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_refreshes_every_member_of_a_large_collection` |
 | CB003 | projects a newly attached provenance source | Happy | Source added after initial Model projection | Provenance tag becomes searchable | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_projects_a_newly_attached_provenance_source` |
@@ -1039,6 +1049,8 @@ CPU execution is also visible to the branch-coverage audit.
 | CB006 | refuses cache symlinks during capacity calculation | Error | Unknown file points outside cache | Stable rejection; outside data preserved | Integration | ✅ `integration/modules/inference/test_model_cache.py::TestModelCache::test_refuses_cache_symlinks_during_capacity_calculation` |
 | CB007 | bounds waiting for a pinned model cache | Error | Exclusive lock held past deadline | Compute-busy error; cache remains usable after release | Integration | ✅ `integration/modules/inference/test_model_cache.py::TestModelCache::test_bounds_waiting_for_a_pinned_model_cache` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | NB001 | rejects malformed native worker replies | Error | Real child sends invalid JSON, foreign identity/counts, oversized/trailing frame or exits | Stable error; no invalid vectors escape | Integration | ✅ `integration/modules/inference/test_local.py::TestLocalProvider::test_rejects_malformed_native_worker_replies` |
 | NB002 | refuses invalid local thread budgets | Error | Zero or above-cap worker threads | Stable error before worker startup | Integration | ✅ `integration/modules/inference/test_local.py::TestLocalProvider::test_refuses_invalid_local_thread_budgets` |
 | NB003 | drops semantic output after consent revocation | Error | Master consent revoked while embedding request is in flight | Unavailable leg, no passages, released lease | Integration | ✅ `integration/modules/search/test_retrieval.py::TestSearch::test_drops_semantic_output_after_consent_revocation` |
@@ -1047,6 +1059,8 @@ CPU execution is also visible to the branch-coverage audit.
 | DT001 | refuses unsupported database transfer boundaries | Error | Wrong dialect or invalid batch size | Stable refusal before any writes | Integration | ✅ `integration/modules/administration/test_database_transfer.py::TestDatabaseTransfer::test_refuses_invalid_transfer_batches`; `integration/modules/administration/test_database_transfer.py::TestDatabaseTransfer::test_refuses_unsupported_transfer_dialects` |
 | DT002 | refuses unknown or outdated transfer sources | Error | Source has extra table or old migration stamp | Target remains empty after refusal | Integration | ✅ `integration/modules/administration/test_database_transfer.py::TestDatabaseTransfer::test_refuses_unknown_or_outdated_transfer_sources` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | GR001 | upgrades an active local text generation for captions | Happy | Native v1 generation, edited caption, administrator consent | Exactly one v2 replacement queued; v1 keeps serving | Integration | ✅ `integration/modules/search/test_generations.py::TestEnsureCaptionRecipe::test_upgrades_an_active_local_text_generation_for_captions` |
 | GR002 | defers a local caption upgrade without its prerequisites | Error | Disabled local inference, missing model, inactive actor or no active generation | No replacement queued; prior generation unchanged | Integration | ✅ `integration/modules/search/test_generations.py::TestEnsureCaptionRecipe::test_defers_a_local_caption_upgrade_without_its_prerequisites` |
 | GR003 | rejects incompatible generation modalities | Error | Text model selected for visual or point generation | Stable alignment failure before any generation is created | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_rejects_incompatible_generation_modalities` |
@@ -1054,6 +1068,8 @@ CPU execution is also visible to the branch-coverage audit.
 | VI002 | discards stale visual worker failures | Error | Source changes before failure recording | No stale quarantine entry | Integration | ✅ `integration/modules/search/test_visual_index.py::TestVisualIndex::test_discards_stale_visual_worker_failures` |
 | VI003 | sanitizes visual failure details | Error | Worker error contains a path | Generic persisted error with no path | Integration | ✅ `integration/modules/search/test_visual_index.py::TestVisualIndex::test_sanitizes_visual_failure_details` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | RF001 | rejects an actor revoked during image upload | Error | Actor deactivated after admission but before decode/retrieval | Forbidden failure before inference | Integration | ✅ `integration/api/v1/test_search.py::TestSearch::test_rejects_an_actor_revoked_during_image_upload` |
 | RF002 | reauthorizes retries after vector withdrawal | Edge | Ranked vectors withdrawn before hydration, with/without actor loss | No withdrawn passages; at most one fresh retry | Integration | ✅ `integration/modules/search/test_retrieval.py::TestSearch::test_reauthorizes_retries_after_vector_withdrawal` |
 | RF003 | ignores visual legs for non-Model queries | Edge | Active visual generation and Document-only type filter | No visual candidates or inference | Integration | ✅ `integration/modules/search/test_visual_index.py::TestVisualIndex::test_ignores_visual_legs_for_nonmodel_queries` |
@@ -1061,6 +1077,8 @@ CPU execution is also visible to the branch-coverage audit.
 | RF005 | rejects unavailable source Models | Error | Model query references an unknown Model | Stable not-found response | Integration | ✅ `integration/modules/search/test_retrieval.py::TestSearch::test_rejects_unavailable_source_models` |
 | RF006 | bounds direct search inputs | Error | Invalid result limit or non-image upload input | Stable input refusal before retrieval | Integration | ✅ `integration/modules/search/test_retrieval.py::TestSearch::test_bounds_direct_result_limits`; `integration/modules/search/test_retrieval.py::TestSearch::test_rejects_nonimage_upload_inputs` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | NI001 | refuses foreign native table claims | Error | Corrupt generation table name | Query falls back; removal preserves the real derivative | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_refuses_foreign_native_table_claims` |
 | NI002 | tolerates native table loss during content deletion | Edge | Derived table dropped before cleanup | Cleanup returns without undoing durable content work | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_tolerates_native_table_loss_during_content_deletion` |
 | NI003 | degrades a lost portable index during writes | Error | Compressed derivative disappears | Generation marks unavailable; native floats retained | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_degrades_a_lost_portable_index_during_writes` |
@@ -1068,6 +1086,8 @@ CPU execution is also visible to the branch-coverage audit.
 | NI005 | degrades when SQLite extension loading fails | Error | Extension unavailable during native preparation | Stable fallback state; durable floats preserved | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_degrades_when_sqlite_extension_loading_fails` |
 | DT003 | refuses unknown tables in a transfer destination | Error | Empty unowned target table | Refusal preserves table and source | Integration | ✅ `integration/modules/administration/test_database_transfer.py::TestDatabaseTransfer::test_refuses_unknown_tables_in_a_transfer_destination` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | CR001 | fails queued captions whose source was trashed | Error | Artifact trashed after caption request | Terminal source-changed failure; zero provider requests | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_fails_queued_captions_whose_source_was_trashed` |
 | DT004 | preserves portable date and decimal proof values | Edge | Date and precise decimal values | Stable lossless canonical JSON values | Unit | ✅ `unit/modules/administration/test_database_transfer.py::TestCanonical::test_preserves_portable_scalar_proof_values` |
 | NI006 | recovers from rejected portable index DDL | Error | SQLite denies derivative CREATE TABLE | Fallback state; durable vectors preserved | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_recovers_from_rejected_portable_index_ddl` |
@@ -1141,9 +1161,11 @@ Follow-up publication checks passed **59** owner/PostgreSQL tests and **73**
 visual/caption/cutover/API/E2E tests. The native shortlist correction passed
 **90** shared-store/native/PostgreSQL tests. Their new regressions reproduce
 both removed full-scope scans; affected hygiene, Ruff and Pyright checks pass.
-The refreshed coverage audit and timed load measurements are recorded below
-when complete.
+The foreground-priority coverage audit and timed load measurements are recorded
+below.
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | PS001 | tracks nested foreground writes | Edge | Two admitted request mutations | Priority clears only after both finish | Unit | ✅ `unit/runtime/test_maintenance.py::TestForegroundMutations::test_tracks_nested_foreground_writes` |
 | PS002 | excludes background work from foreground priority | Happy | Ordinary background mutation admission | Foreground count stays clear | Unit | ✅ `unit/runtime/test_maintenance.py::TestForegroundMutations::test_excludes_background_work` |
 | PS003 | releases priority after failed admission | Error | First-write observer raises | Both maintenance counts return to idle | Unit | ✅ `unit/runtime/test_maintenance.py::TestForegroundMutations::test_releases_priority_after_failed_admission` |
@@ -1157,4 +1179,64 @@ when complete.
 | PS011 | rejects mismatched foreground release | Error | Background admission is released as foreground | Counters remain balanced after rejection | Unit | ✅ `unit/runtime/test_maintenance.py::TestForegroundMutations::test_rejects_mismatched_foreground_release` |
 | PS012 | defers direct indexing during foreground writes | Edge | Durable generation is pending; foreground mutation active | No provider call or vector publication | Integration | ✅ `integration/modules/search/test_indexing.py::TestForegroundPriority::test_defers_direct_indexing_during_foreground_writes` |
 
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
 | SC007 | populates the complete native scale fixture after early readiness | Edge | Native generation becomes ready before bulk replica insertion | Native IDs equal all ten durable fixture IDs before measurements | Repo | ✅ `repo/test_search_scale.py::TestReplicateModels::test_rebuilds_the_complete_native_benchmark_fixture`; red reproduced one native row vs ten durable rows; all ten fixture/overlap checks pass |
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| PS013 | retries a transient provider outage without quarantining the input | Error | First embedding request loses connectivity; retry deadline expires | Durable retry record clears after recovery; one vector is published without quarantine | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_retries_a_transient_provider_outage` |
+
+### Verification after foreground-priority correction
+
+The production snapshot is `a92720eb59c2a5626c798b9f3f598a155c07276f`,
+based on `c11db1021afb85d42d7cbc81c2fed490ecd2e216`; remote `main` was
+rechecked on 2026-09-12 and still pointed to that base. AI remains disabled by
+default and independent of ordinary library, upload and printing workflows.
+
+The first focused foreground run passed **88 tests**. The expanded follow-up
+passed **131 of 132**; the failure was a native-restore E2E fixture opening
+SQLite connections without the production extension/configuration hook. It
+reproduced alone, was corrected in the fixture, and the complete generation
+E2E/WebSocket rerun passed **10 tests**. A separate transient-provider outage
+recovery check also passes. The test checks a durable retry followed by one
+successful publication with no quarantine. The two recovery-login checks pass.
+The benchmark-fixture/overlap suite passed **11 checks** and affected hygiene
+passed **28 checks**. After the final retry/session-boundary tests, the affected
+hygiene rerun passed **15 checks**; Ruff and formatting were rechecked and pass.
+Configured Pyright passes for the unchanged final production snapshot.
+
+Coverage is **94.10%**, with **all ten floor checks passing**. Current indexing
+is **91.12%**, generations **91.29%**, runtime search **92.86%**, maintenance
+**95.45%** and request admission **94.37%**. No floor was lowered. Search files
+use fresh focused coverage at their current line positions. The two newly
+changed admission files reuse earlier full-suite evidence only for
+**byte-identical functions**; changed function bodies are excluded from reuse.
+A source-hash/line-map audit records the unchanged functions and translates
+only their executed arcs. New/changed admission behavior is covered by the
+foreground, restore, recovery-login and WebSocket reruns. This is a combined
+audit, not a claim that the entire main/resource suite was rerun after the
+last four-file production correction.
+
+The final security diff scan is
+`666ab570-0e87-4038-b941-81935ace2df4`, sealed against `a92720eb`: **219 source
+files accounted for, zero reportable findings, no deferred security items**.
+It reuses the sealed `49421702` review for 215 identical files and reviews all
+four production deltas. Review was performed by the parent only, as required
+by this repository. Passing this review does not close performance, physical
+ARM or independent human-quality acceptance.
+
+The resumed-backfill comparison passes the unchanged 25% ingestion limit
+(all 40 uploads completed; p95 +2.5%). Raw successful and failed runs, the
+native-fixture correction and scale limits are retained in
+[the performance report](ai-search-performance.md).
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| SC008 | verifies benchmark cardinality from a fresh session | Edge | Seeding session expired its ORM objects | Both durable and native counts are checked from a stable generation ID | Repo | ✅ `repo/test_search_scale.py::TestReplicateModels::test_checks_native_cardinality_after_seeding_session_expires` |
+
+Final assessment: **828 behavior rows — 822 covered, one justified N/A, five
+open acceptance checks** (`A051`, `A134`, `A135`, `A141`, `PT015`). The valid
+populated native run has p95 **2.136 s** and fails the unchanged 300 ms target.
+Implementation, correctness coverage, and security review do not convert those
+explicit performance/hardware/quality gaps into passes.

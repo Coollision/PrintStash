@@ -52,14 +52,16 @@ def environment(directory: Path, model: Path, backend: str):
         os.environ[f"VAULT_{key}"] = str(target)
 
 
-def index_rows(session, generation, *, count):
+def index_rows(session, generation_id, *, count):
     """Reject a scale report whose serving derivative lacks fixture vectors."""
     from sqlalchemy import func, table
     from sqlmodel import select
 
-    from app.db.models import PassageVector
+    from app.db.models import IndexGeneration, PassageVector
     from app.modules.search import vector_index
 
+    generation = session.get(IndexGeneration, generation_id)
+    assert generation is not None
     durable_count = session.exec(
         select(func.count(PassageVector.id)).where(
             PassageVector.generation_id == generation.id
@@ -116,7 +118,7 @@ def prepare_indexes(session, generation, *, count):
         while vector_index.rebuild_partition(session, generation, limit=1024):
             pass
     assert generation.index_state == "ready", generation.index_error
-    return index_rows(session, generation, count=count)
+    return index_rows(session, generation.id, count=count)
 
 
 def measure(directory: Path, *, count: int, backend: str, query_count: int):
@@ -215,6 +217,7 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
             replicas = replicate_models(session, models, generation, count=count)
             indexed_count = prepare_indexes(session, generation, count=count)
             assert vector_index.serving_backend(generation) == backend
+            generation_id = generation.id
             session.commit()
             provider = embedding_provider(session, measured.space)
         seed_seconds = time.perf_counter() - seeded
@@ -308,8 +311,12 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
                         ),
                     }
                 )
+        # Retain actual timings even if final cardinality validation fails.
+        (directory / "observations.json").write_text(
+            json.dumps(observations, indent=2) + "\n"
+        )
         with sessions.scoped_session() as session:
-            final_indexed_count = index_rows(session, generation, count=count)
+            final_indexed_count = index_rows(session, generation_id, count=count)
         durations = [row["seconds"] for row in observations]
         p95 = float(np.percentile(durations, 95))
         result = {
