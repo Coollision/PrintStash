@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from printstash_core.inference import EmbeddingError, EmbeddingInput
 from printstash_core.inference import EmbeddingSpace as Space
 from printstash_core.search.passages import SubjectType
+from sqlalchemy import or_
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import Session, select
 
@@ -22,10 +23,30 @@ from app.db.models import (
 from app.modules.identity.rbac import accessible_collection_ids
 from app.modules.inference.configuration import embedding_provider
 from app.modules.inference.query import runner
-from app.modules.search import configuration, generations, vector_store
+from app.modules.search import (
+    configuration,
+    generations,
+    model_query,
+    vector_store,
+    visual_sources,
+)
 from app.modules.search.access import visible_passage_ids
 from app.modules.search.text_inputs import TextRecipe
 from app.schemas.inference import SearchSettings
+
+# Measured against the pinned B/32 towers and frozen visual corpus. CLIP cosine
+# scores are not on the text encoder's scale. Admin per-Space overrides win.
+_CLIP_B32 = "7f56e23951620776f8a65d4de5441b6ff1eecd1f48c8ddf1eca8a82f1dea2089"
+
+
+def score_floor(space: Space, settings: SearchSettings) -> float:
+    default = (
+        0.2
+        if space.profile in visual_sources.PROFILES
+        and space.alignment_identity == _CLIP_B32
+        else settings.semantic_floor
+    )
+    return settings.semantic_floors.get(space.config_hash, default)
 
 
 @dataclass(frozen=True)
@@ -49,6 +70,9 @@ class LegResult:
     available: bool = True
     weak_matches: bool = False
     error_code: str | None = None
+    visual_matches: tuple[
+        tuple[int, int, str], ...
+    ] = ()  # Model, Artifact, source hash
 
 
 def authorization_context(session: Session, user: User) -> str:
@@ -70,18 +94,17 @@ def registry(session: Session, settings: SearchSettings) -> tuple[SemanticLeg, .
         .join(EmbeddingSpace, EmbeddingSpace.id == IndexGeneration.space_id)
         .where(
             IndexGeneration.state == "active",
-            EmbeddingSpace.modality == "text",
-            EmbeddingSpace.profile == "semantic_text",
+            EmbeddingSpace.profile.in_(("semantic_text", *visual_sources.PROFILES)),
         )
         .order_by(IndexGeneration.id)
         .limit(4)
     ).all()
     return tuple(
         SemanticLeg(
-            "semantic_text",
+            space.profile,
             generation.id,
             Space(**json.loads(space.config_json)),
-            settings.semantic_floors.get(space.config_hash, settings.semantic_floor),
+            score_floor(Space(**json.loads(space.config_json)), settings),
             settings.semantic_weight,
             settings.query_timeout_seconds,
         )
@@ -113,7 +136,7 @@ def retrieve(
     session: Session,
     user_id: int,
     auth_version: int,
-    query: str,
+    query: str | EmbeddingInput | model_query.ModelQuery,
     leg: SemanticLeg,
     *,
     types: tuple[SubjectType, ...],
@@ -123,6 +146,10 @@ def retrieve(
     Authorization gates both egress and scoring. The final materializer repeats
     the same authorization fence so a contributor never leaks through evidence.
     """
+    if leg.space.profile in visual_sources.PROFILES:
+        from app.modules.search.visual_query import retrieve as retrieve_visual
+
+        return retrieve_visual(session, user_id, auth_version, query, leg, types=types)
     lease = None
     try:
         user = session.get(User, user_id, populate_existing=True)
@@ -134,22 +161,38 @@ def retrieve(
         ):
             return LegResult(leg, available=False)
         allowed = allowed_vectors(session, user, leg, types)
-        if session.exec(allowed.limit(1)).first() is None:
+        if (
+            not isinstance(query, model_query.ModelQuery)
+            and session.exec(allowed.limit(1)).first() is None
+        ):
             return LegResult(leg)
         authorization = authorization_context(session, user)
-        provider = embedding_provider(session, leg.space)
-        recipe = TextRecipe.for_space(leg.space)
-        budget = recipe.max_input_characters - len(leg.space.query_prefix)
-        if len(query) > budget:
-            raise EmbeddingError("embedding_input_limit_exceeded")
-        value = EmbeddingInput("text", text=leg.space.query_prefix + query)
+        source_snapshot = None
+        if isinstance(query, model_query.ModelQuery):
+            vector, source_snapshot = model_query.existing(
+                session, user, query, leg, allowed
+            )
+        else:
+            if not isinstance(query, str):
+                raise EmbeddingError("embedding_image_unavailable")
+            provider = embedding_provider(session, leg.space)
+            recipe = TextRecipe.for_space(leg.space)
+            budget = recipe.max_input_characters - len(leg.space.query_prefix)
+            if len(query) > budget:
+                raise EmbeddingError("embedding_input_limit_exceeded")
+            value = EmbeddingInput("text", text=leg.space.query_prefix + query)
         lease = generations.pin(session, leg.generation_id)
         # End even a read transaction before external work; edits/cutover can
         # proceed while this request waits in the bounded inference executor.
         session.rollback()
-        vector = runner().embed(
-            provider, leg.space, value, authorization=authorization, seconds=leg.timeout
-        )
+        if source_snapshot is None:
+            vector = runner().embed(
+                provider,
+                leg.space,
+                value,
+                authorization=authorization,
+                seconds=leg.timeout,
+            )
         session.expire_all()
         user = session.get(User, user_id, populate_existing=True)
         if (
@@ -160,12 +203,24 @@ def retrieve(
         ):
             return LegResult(leg, available=False)
         for attempt in range(2):
+            allowed = allowed_vectors(session, user, leg, types)
+            if isinstance(query, model_query.ModelQuery):
+                if not model_query.unchanged(
+                    session, user, query, source_snapshot, allowed
+                ):
+                    raise EmbeddingError("search_model_index_pending")
+                allowed = allowed.where(
+                    or_(
+                        PassageVector.subject_type != "model",
+                        PassageVector.subject_id != query.model_id,
+                    )
+                )
             result = vector_store.query(
                 session,
                 generation_id=leg.generation_id,
                 space=leg.space,
                 vector=vector,
-                allowed_ids=allowed_vectors(session, user, leg, types),
+                allowed_ids=allowed,
                 limit=leg.candidate_limit,
                 max_scan=leg.scan_limit,
                 states=("active", "retired"),

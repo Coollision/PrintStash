@@ -18,6 +18,39 @@ def projection():
 
 
 class TestSearch:
+    @pytest.mark.parametrize("mode", ["anonymous", "disabled", "busy"])
+    def test_rejects_image_requests_before_reading_the_body(
+        self, client, db_session, make_user, monkeypatch, mode
+    ):
+        import threading
+
+        from app.api.v1 import search as route
+        from app.modules.search import configuration
+        from app.schemas.inference import SearchSettings
+
+        actor = make_user(superuser=True)
+        configuration.update(db_session, SearchSettings(enabled=mode != "disabled"))
+        db_session.commit()
+        slots = threading.BoundedSemaphore(2)
+        if mode == "busy":
+            slots.acquire()
+            slots.acquire()
+        monkeypatch.setattr(route, "_image_slots", slots)
+
+        async def no_body(*args):
+            raise AssertionError("unauthorized or unadmitted body was parsed")
+
+        monkeypatch.setattr(route, "read_image", no_body)
+        response = client.post(
+            "/api/v1/search/image",
+            content=b"untrusted image",
+            headers={} if mode == "anonymous" else bearer(actor),
+        )
+        assert (
+            response.status_code
+            == {"anonymous": 401, "disabled": 409, "busy": 429}[mode]
+        ), response.text
+
     def test_uses_the_configured_ranked_like_backend(
         self, client, db_session, auth_headers, make_model
     ):

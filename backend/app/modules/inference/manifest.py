@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 
 from printstash_core.inference import EmbeddingError, EmbeddingSpace
 from printstash_core.search.text_inputs import TextRecipe
+from printstash_core.search.visual_inputs import VisualRecipe
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -168,7 +169,18 @@ ModelManifest = LocalModelManifest | TextModelManifest
 
 def validate_space(manifest: ModelManifest, space: EmbeddingSpace) -> None:
     expected = manifest.space()
-    if isinstance(manifest, TextModelManifest):
+    if isinstance(manifest, LocalModelManifest) and space.profile in {
+        "thumbnail",
+        "multiview",
+    }:
+        recipe = VisualRecipe.for_space(space)
+        expected = VisualRecipe.space(
+            expected,
+            image_size=manifest.image.image_size,
+            profile=recipe.profile,
+            aggregation=recipe.aggregation,
+        )
+    elif isinstance(manifest, TextModelManifest):
         recipe = TextRecipe.for_space(space)
         original = TextRecipe.for_space(expected)
         if recipe.encoder_manifest_sha256 != original.encoder_manifest_sha256:

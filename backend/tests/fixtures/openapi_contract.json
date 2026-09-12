@@ -6243,6 +6243,15 @@
       "GenerationProposal": {
         "additionalProperties": false,
         "properties": {
+          "aggregation": {
+            "default": "mean",
+            "enum": [
+              "mean",
+              "max"
+            ],
+            "title": "Aggregation",
+            "type": "string"
+          },
           "auto_activate": {
             "default": true,
             "title": "Auto Activate",
@@ -6315,8 +6324,12 @@
             "type": "integer"
           },
           "profile": {
-            "const": "semantic_text",
             "default": "semantic_text",
+            "enum": [
+              "semantic_text",
+              "thumbnail",
+              "multiview"
+            ],
             "title": "Profile",
             "type": "string"
           },
@@ -33595,6 +33608,82 @@
         ]
       }
     },
+    "/api/v1/models/{model_id}/similar-text": {
+      "get": {
+        "operationId": "search_using_model_api_v1_models__model_id__similar_text_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Search Using Model",
+        "tags": [
+          "models"
+        ]
+      }
+    },
     "/api/v1/models/{model_id}/similar/query": {
       "post": {
         "operationId": "query_model_api_v1_models__model_id__similar_query_post",
@@ -37504,11 +37593,13 @@
                   "items": {
                     "enum": [
                       "lexical",
-                      "semantic_text"
+                      "semantic_text",
+                      "thumbnail",
+                      "multiview"
                     ],
                     "type": "string"
                   },
-                  "maxItems": 2,
+                  "maxItems": 4,
                   "type": "array"
                 },
                 {
@@ -37895,6 +37986,114 @@
           }
         ],
         "summary": "Retry Generation",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/image": {
+      "post": {
+        "operationId": "search_image_api_v1_search_image_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "image/jpeg": {
+              "schema": {
+                "format": "binary",
+                "maxLength": 8388608,
+                "type": "string"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "format": "binary",
+                "maxLength": 8388608,
+                "type": "string"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "format": "binary",
+                "maxLength": 8388608,
+                "type": "string"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "image": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "image"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Search Image",
         "tags": [
           "search"
         ]

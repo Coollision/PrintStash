@@ -605,3 +605,42 @@ The OpenAPI snapshot was reviewed and regenerated. The design detector reported
 no deterministic findings; desktop/mobile screenshots were inspected and the
 excerpt/clear-button corrections confirmed. These are stage checks, not the
 final full-suite, coverage, security or hardware acceptance gates.
+
+## W9 visual retrieval and image boundaries
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| V001 | decodes_oriented_metadata_free_query_images | Happy | JPEG with orientation and EXIF metadata | correctly oriented bounded RGB bytes only | Core unit | ✅ `core/tests/inference/test_images.py` |
+| V002 | rejects_invalid_or_excessive_image_inputs | Error | wrong MIME, malformed bytes, animation, pixel/body limits | stable failure before large decode or inference | Core unit / API | ✅ decoder, `test_image_body.py`, real MIME rejection |
+| V003 | runs_image_queries_without_a_retained_cache_entry | Edge | repeated image query in compatible Space | bounded executor runs each time; no image or vector cache retention | Unit | ✅ `test_query.py`; image API cache assertions |
+| V004 | binds_visual_profile_to_exact_paired_towers | Error | same dimension from another encoder | manifest/Space mismatch rejected before inference | Integration | ✅ `test_worker.py` and visual recipe tests |
+| V005 | shares_one_mesh_load_for_visual_views | Happy | six canonical views and thumbnail | one load, fixed renderer recipe and compute budget | Integration | ✅ geometry analysis and native render tests |
+| V006 | aggregates_normalized_view_vectors | Happy | valid views of differing norms | correct normalized mean; deterministic max ranking | Core unit / Integration | ✅ mean-pool tests; real max-ranking replay |
+| V007 | builds_visual_generations_independently | Happy | text active, visual build and flip | text unchanged; visual vectors tied to source hash | Integration | ✅ visual/text independent cutover integration test |
+| V008 | reuses_views_for_aggregation_changes | Edge | only mean/max aggregation changed | existing per-view native floats copied without rendering/inference | Integration | ✅ aggregation-only reuse and fallback-copy tests |
+| V009 | fences_visual_sources_before_and_after_work | Error | trash, permission change or Artifact update during work | no stale publication or unauthorized results | Integration | ✅ late hash/trash, VIEW, cursor and executor-context fences |
+| V010 | quarantines_and_retries_failed_visual_units | Error | a view fails repeatedly | partial coverage reported; bounded retry; no false-ready generation | Integration | ✅ bounded poison retries/quarantine; ready-count verification |
+| V011 | accepts_image_upload_without_disk_spooling | Happy | raw or multipart image through shipped proxy | bounded memory body, no original/thumbnail/query vector persisted | E2E | ✅ real nginx, read-only body directory, raw/chunked multipart |
+| V012 | uses_only_ready_visual_fallbacks | Error | preferred profile unavailable | ready thumbnail leg or truthful text-only degradation | Integration | ✅ actual prepared thumbnail survives multiview failure |
+| V013 | retrieves_models_using_current_vectors | Happy | VIEW-authorized Model-as-query | existing source vectors, self excluded, missing work bounded | Integration / E2E | ✅ current-vector/self-exclusion/missing-work API + browser |
+| V014 | searches_images_from_accessible_ui | Happy | ready visual profile, desktop/mobile image selection | capability-gated controls, image results, clear/retry and disclosure | Frontend / Playwright | ✅ frontend tests + real-browser image flow; responsive screenshot correction |
+| V015 | measures_real_visual_recipe_quality | Happy | frozen 32-object engineering corpus, real CLIP B/32 | measured recall/cost and reproducible vector replay, separately labelled limitations | Integration / Benchmark | ✅ real B/32 replay and study; human/photo/ARM acceptance remains ❌ |
+
+| V016 | rejects_unadmitted_image_body_before_parsing | Error | anonymous, disabled or saturated image request | stable error without parser/decode invocation | Integration | ✅ API admission tests |
+| V017 | shares_render_and_resident_encoder_rss_budget | Error | renderer plus idle encoder exceeds ceiling | idle encoder evicted; oversized renderer rejected/reaped | Integration | ✅ worker-pool/native-render tests |
+| V018 | preserves_passage_failures_across_visual_migration | Edge | seeded pre-upgrade passage retry and Artifact failure | upgrade/downgrade/re-upgrade retains old text data | Migration | ✅ `test_visual_failures_migration.py` |
+| V019 | reuses_only_current_verified_mesh_thumbnail | Error | changed source, recipe, strategy or encoded digest | valid thumbnail reused; stale/corrupt/non-mesh image rejected | Integration | ✅ five cached-media identity/digest cases |
+| V020 | renders_step_without_child_database_access | Happy | real STEP solid | bounded triangle-only tessellation and seven RGB frames | Integration | ✅ real OCP STEP box |
+
+W9's backend replay/source checks passed 45 cases; five newly added cached-media
+cases exposed fixture setup errors and subsequently passed with the corrected
+preplaced-file fixture. Three API admission cases also passed. Prior native memory
+and worker-pool checks passed 40 cases, with a degenerate STEP fixture replaced
+by a real solid and its focused check passing. The nginx contract passes with
+request-body storage read-only. Parallel image tests exposed a lost ContextVar
+at the request executor boundary; the executor now copies request context.
+The browser flow passed with original tiny ONNX models; its mobile image picker
+was corrected after screenshot inspection. The first browser run rejected a
+mislabelled WebP fixture, and one subsequent Vite run stalled while importing
+modules before the app mounted. A later unchanged run passed. These are stage
+checks, not final full-suite, coverage, human/photo, hardware or security gates.

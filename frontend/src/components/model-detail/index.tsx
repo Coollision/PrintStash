@@ -1,6 +1,7 @@
 "use client";
 
 import { ModelFamilyMembership } from "@/components/families/model-membership";
+import { ModelSearchAction } from "@/components/model-search-action";
 
 import { currentLocale } from "@/lib/locale";
 import { uiText } from "@/lib/locale";
@@ -654,6 +655,7 @@ export function ModelDetail({ model: initialModel }: { model: ModelRead }) {
                   }
                   contentClassName="w-48 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
                 >
+                  <ModelSearchAction modelId={model.id} onSelect={() => setActionsOpen(false)} />
                   <button
                     type="button"
                     role="menuitem"

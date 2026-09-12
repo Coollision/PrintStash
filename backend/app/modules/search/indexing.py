@@ -78,7 +78,9 @@ def claim(session: Session) -> tuple[int, str] | None:
         .join(EmbeddingSpace, EmbeddingSpace.id == IndexGeneration.space_id)
         .where(
             col(IndexGeneration.state).in_(("active", "building")),
-            EmbeddingSpace.profile == "semantic_text",
+            col(EmbeddingSpace.profile).in_(
+                ("semantic_text", "thumbnail", "multiview")
+            ),
             IndexGeneration.version_token.is_not(None),
             col(IndexGeneration.cancel_requested).is_(False),
             available,
@@ -430,6 +432,17 @@ class IndexProcessor:
         context = self._context(generation_id, token)
         batch_reservation: CapacityReservationHandle | None = None
         try:
+            from app.modules.search import visual_index, visual_sources
+
+            with self.sessions.scoped_session() as session:
+                claimed = session.get(IndexGeneration, generation_id)
+                visual = (
+                    generations.contract(session, claimed).profile
+                    in visual_sources.PROFILES
+                )
+            if visual:
+                visual_index.process(self.sessions, generation_id, token, context)
+                return True
             with self.sessions.scoped_session() as session:
                 generation = session.get(IndexGeneration, generation_id)
                 if generation.phase in {"reconcile", "final_reconcile"}:

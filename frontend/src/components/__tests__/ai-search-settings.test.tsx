@@ -37,6 +37,46 @@ function settingsPanel(options: RenderAppOptions = {}) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AI Search settings", () => {
+  it("builds a visual profile independently while a text generation is building", async () => {
+    const user = userEvent.setup();
+    const clip = anInferenceModel({
+      id: "d".repeat(64),
+      key: "clip-vit-base-patch32-fp32",
+      modality: "text_image",
+      native_dimension: 512,
+    });
+    const app = settingsPanel({
+      routes: {
+        "GET /api/v1/inference/models": json([anInferenceModel(), clip]),
+        "GET /api/v1/config/ai-search/generations": json([
+          aSearchGeneration({ state: "building", phase: "backfill" }),
+        ]),
+        "POST /api/v1/config/ai-search/generations": json(
+          aSearchGeneration({ profile: "multiview", model: clip.key, state: "building" }),
+        ),
+      },
+    });
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Search index" }),
+      "multiview",
+    );
+    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), `local:${clip.id}`);
+    expect(screen.queryByRole("option", { name: /bge-small/ })).toBeNull();
+    expect(
+      within(screen.getByRole("combobox", { name: "Model" })).queryByRole("option", {
+        name: /server-encoder/,
+      }),
+    ).toBeNull();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Combine views" }), "max");
+    await user.click(screen.getByRole("button", { name: "Build new index" }));
+    await waitFor(() => expect(app.requestsWithMethod("POST")).toHaveLength(1));
+    expect(JSON.parse(app.requestsWithMethod("POST")[0].body)).toMatchObject({
+      local_model_id: clip.id,
+      profile: "multiview",
+      aggregation: "max",
+    });
+    expect(JSON.parse(app.requestsWithMethod("POST")[0].body)).not.toHaveProperty("query_prefix");
+  });
   it("refreshes installed models when a download completes", async () => {
     const user = userEvent.setup();
     const job = anIngestJob({ job_id: "download-2", kind: "model_download", state: "running" });

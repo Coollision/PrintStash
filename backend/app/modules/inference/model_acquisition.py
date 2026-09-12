@@ -76,7 +76,7 @@ class DownloadPolicy:
     def source(self, entry: RegistryEntry, asset: DownloadAsset) -> str:
         base = self.mirror.rstrip("/") if self.mirror else "https://huggingface.co"
         return self.validate(
-            f"{base}/{entry.manifest.repository}/resolve/{entry.manifest.model_revision}/{asset.source}"
+            f"{base}/{entry.repository}/resolve/{entry.revision}/{asset.source}"
         )
 
 

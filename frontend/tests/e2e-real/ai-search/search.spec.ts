@@ -1,7 +1,105 @@
 import { test, expect } from "../helpers";
+import { modelCard, uploadModel } from "../util";
+import { readFileSync } from "node:fs";
 import type { InferenceModel, SearchSettingsRead } from "../../../src/types/search";
+import type { ModelRead } from "../../../src/types/models";
 
 const API = `http://127.0.0.1:${process.env.PLAYWRIGHT_REAL_API_PORT ?? 8410}`;
+
+test("searches an image and reuses a Model through local visual indexes", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180000);
+  const initial: SearchSettingsRead = await (
+    await page.request.get(`${API}/api/v1/config/ai-search`)
+  ).json();
+  const ids: number[] = [];
+  const names = [`Visual source ${Date.now()}`, `Visual relative ${Date.now()}`];
+  try {
+    for (const name of names) {
+      const mesh = readFileSync(
+        new URL("../../../../testdata/Calibration Cube.stl", import.meta.url),
+      );
+      // Binary STL's 80-byte header does not change geometry, but avoids ingest deduplication.
+      mesh.write(name, 0, "utf8");
+      await uploadModel(page, name, {
+        gcode: false,
+        meshFile: { name: `${name}.stl`, mimeType: "model/stl", buffer: mesh },
+      });
+      const href = await modelCard(page, name).getAttribute("href");
+      expect(href).toMatch(/\/models\/\d+$/);
+      ids.push(Number(href!.split("/").at(-1)));
+    }
+    const source: ModelRead = await (
+      await page.request.get(`${API}/api/v1/models/${ids[0]}`)
+    ).json();
+    const thumbnail = source.thumbnail_url;
+    expect(thumbnail).toBeTruthy();
+    const thumbnailResponse = await page.request.get(new URL(thumbnail!, API).href);
+    const queryImage = await thumbnailResponse.body();
+    const mimeType = thumbnailResponse.headers()["content-type"].split(";")[0];
+    await page.goto("/settings?section=ai-search");
+    const form = page.getByRole("form", { name: "AI Search", exact: true });
+    await form.getByRole("checkbox", { name: "Enable AI Search", exact: true }).check();
+    await form.getByRole("checkbox", { name: "Allow local models", exact: true }).check();
+    await form.getByRole("button", { name: "Save search settings" }).click();
+    await expect(page.getByText("AI Search settings saved", { exact: true })).toBeVisible();
+    const catalog: InferenceModel[] = await (
+      await page.request.get(`${API}/api/v1/inference/models`)
+    ).json();
+    const model = catalog.find((entry) => entry.installed && entry.modality === "text_image");
+    expect(model).toBeDefined();
+    await page.getByRole("combobox", { name: "Search index" }).selectOption("multiview");
+    await page
+      .getByRole("combobox", { name: "Model", exact: true })
+      .selectOption(`local:${model!.id}`);
+    await page.getByRole("button", { name: "Build new index" }).click();
+    await expect
+      .poll(
+        async () => (await (await page.request.get(`${API}/api/v1/search/status`)).json()).legs,
+        { timeout: 90000 },
+      )
+      .toEqual(expect.arrayContaining(["thumbnail", "multiview"]));
+    await page.goto("/");
+    await page.getByRole("button", { name: "Search by image" }).click();
+    await expect(page).toHaveURL(/\/search\?image=1$/);
+    await page
+      .locator('input[type="file"][aria-label="Choose image"]')
+      .setInputFiles({ name: "private-query", mimeType, buffer: queryImage });
+    const result = page.getByRole("link", { name: names[0], exact: true });
+    await expect(result).toBeVisible();
+    await expect(
+      result.locator("xpath=ancestor::li").getByText("Shape match", { exact: true }),
+    ).toBeVisible();
+    expect(page.url()).not.toContain("private-query");
+    for (const [label, width, height] of [
+      ["desktop", 1280, 900],
+      ["mobile", 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      expect(
+        await page
+          .getByText("Your image is processed locally for this search and is not saved.")
+          .evaluate((element) => element.clientWidth),
+      ).toBeGreaterThan(180);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: testInfo.outputPath(`visual-${label}.png`), fullPage: true });
+    }
+    await page.getByRole("button", { name: "Clear image" }).click();
+    await expect(result).toHaveCount(0);
+    await expect(page.getByRole("img", { name: "Image used for this search" })).toHaveCount(0);
+    await page.goto(`/models/${ids[0]}`);
+    await page.getByRole("button", { name: "Model actions" }).click();
+    await page.getByRole("menuitem", { name: "Find related Models" }).click();
+    await expect(page.getByRole("link", { name: names[1], exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: names[0], exact: true })).toHaveCount(0);
+  } finally {
+    await page.request.put(`${API}/api/v1/config/ai-search`, { data: initial.settings });
+    for (const id of ids) await page.request.delete(`${API}/api/v1/models/${id}`);
+  }
+});
 
 test("builds a local index and submits a semantic search from the top bar", async ({
   page,

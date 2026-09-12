@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Sparkles, XCircle } from "lucide-react";
+import { Camera, Search, Sparkles, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
@@ -86,6 +86,7 @@ export function LibrarySearch() {
   }
   if (!visible) return <span className="flex-1" />;
   const current = debounced === value.trim();
+  const visualReady = status.data?.legs.some((leg) => leg === "thumbnail" || leg === "multiview");
   return (
     <div ref={wrapper} className="mx-3 min-w-0 max-w-2xl flex-1 sm:mx-8">
       <DropdownMenu
@@ -130,7 +131,7 @@ export function LibrarySearch() {
               aria-label={t("aiSearch.searchLibrary")}
               aria-haspopup="dialog"
               aria-expanded={open && !!value.trim()}
-              className="block w-full rounded-lg border border-border bg-muted py-2 pl-9 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-search-cancel-button]:hidden"
+              className={`block w-full rounded-lg border border-border bg-muted py-2 pl-9 ${visualReady ? "pr-20" : "pr-10"} text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-search-cancel-button]:hidden`}
               placeholder={t("nav.search")}
               value={value}
               onClick={() => setOpen(!!value.trim())}
@@ -148,6 +149,21 @@ export function LibrarySearch() {
               }}
             />
             <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center">
+              {visualReady && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label={t("aiSearch.searchByImage")}
+                  title={t("aiSearch.searchByImage")}
+                  onClick={() => {
+                    setOpen(false);
+                    router.push("/search?image=1");
+                  }}
+                >
+                  <Camera className="h-4 w-4" />
+                </Button>
+              )}
               {value && (
                 <Button
                   variant="ghost"

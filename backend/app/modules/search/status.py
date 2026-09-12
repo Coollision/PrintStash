@@ -5,10 +5,10 @@ import importlib.util
 from printstash_core.inference import EmbeddingError
 from sqlmodel import Session
 
-from app.db.models import SearchPassage, User
+from app.db.models import File, SearchPassage, User
 from app.modules.inference.configuration import embedding_provider
 from app.modules.inference.remote import RemoteEmbeddingProvider
-from app.modules.search import configuration, generations, semantic
+from app.modules.search import configuration, generations, semantic, visual_sources
 from app.modules.search.access import visible_passage_ids
 from app.schemas.search import SearchStatus
 
@@ -47,7 +47,11 @@ def read(session: Session, user: User) -> SearchStatus:
         if (
             session.exec(
                 generations.missing(session, leg.generation_id, leg.space)
-                .where(SearchPassage.id.in_(visible_passage_ids(session, user)))
+                .where(
+                    File.id.in_(visual_sources.eligible(session, user))
+                    if leg.space.profile in visual_sources.PROFILES
+                    else SearchPassage.id.in_(visible_passage_ids(session, user))
+                )
                 .limit(1)
             ).first()
             is not None

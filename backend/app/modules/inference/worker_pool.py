@@ -136,6 +136,10 @@ class WorkerPool:
                 for key, worker in self._workers.items()
             ]
             total = sum(size for _, _, size in usages)
+            if not any(worker.process is process for _, worker, _ in usages):
+                # The same budget also admits a media renderer alongside cached
+                # encoders. Its RSS is external to this pool, but still counts.
+                total += rss(process.pid) or 0
             for key, worker, size in usages:
                 if total <= budget:
                     break

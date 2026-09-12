@@ -10,7 +10,8 @@ class GenerationProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     endpoint_id: int | None = Field(default=None, ge=1)
     local_model_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    profile: Literal["semantic_text"] = "semantic_text"
+    profile: Literal["semantic_text", "thumbnail", "multiview"] = "semantic_text"
+    aggregation: Literal["mean", "max"] = "mean"
     query_prefix: str | None = Field(default=None, max_length=256)
     document_prefix: str | None = Field(default=None, max_length=256)
     passage_recipe_version: int = Field(default=1, ge=1)
@@ -23,6 +24,14 @@ class GenerationProposal(BaseModel):
     def require_one_provider(self):
         if (self.endpoint_id is None) == (self.local_model_id is None):
             raise ValueError("search_one_provider_required")
+        if self.profile != "semantic_text" and (
+            self.endpoint_id is not None
+            or self.query_prefix is not None
+            or self.document_prefix is not None
+        ):
+            raise ValueError("search_visual_requires_local_paired_encoder")
+        if self.aggregation != "mean" and self.profile != "multiview":
+            raise ValueError("search_aggregation_unavailable")
         return self
 
 

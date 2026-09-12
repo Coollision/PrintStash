@@ -173,13 +173,26 @@ class SearchIndexFailure(SQLModel, table=True):
             "input_hash",
             name="uq_search_index_failure_unit",
         ),
+        UniqueConstraint(
+            "generation_id",
+            "file_id",
+            "input_hash",
+            name="uq_search_index_failure_file",
+        ),
+        CheckConstraint(
+            "(passage_id IS NOT NULL AND file_id IS NULL) OR (passage_id IS NULL AND file_id IS NOT NULL)",
+            name="source_identity",
+        ),
     )
     id: int | None = Field(default=None, primary_key=True)
     generation_id: int = Field(
         foreign_key="index_generations.id", ondelete="CASCADE", index=True
     )
-    passage_id: int = Field(
-        foreign_key="search_passages.id", ondelete="CASCADE", index=True
+    passage_id: int | None = Field(
+        default=None, foreign_key="search_passages.id", ondelete="CASCADE", index=True
+    )
+    file_id: int | None = Field(
+        default=None, foreign_key="files.id", ondelete="CASCADE", index=True
     )
     input_hash: str = Field(max_length=64)
     attempts: int = 0

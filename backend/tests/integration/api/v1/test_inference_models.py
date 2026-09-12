@@ -8,6 +8,22 @@ from tests.factories.embeddings import text_embedding_assets
 
 
 class TestInferenceModels:
+    def test_curated_visual_catalog_pins_the_complete_encoder(
+        self, client, auth_headers
+    ):
+        response = client.get("/api/v1/inference/models", headers=auth_headers)
+        assert response.status_code == 200
+        clip = next(
+            row for row in response.json() if row["key"] == "clip-vit-base-patch32-fp32"
+        )
+        assert clip["modality"] == "text_image"
+        assert clip["repository"] == "Xenova/clip-vit-base-patch32"
+        assert clip["revision"] == "d15189d7028b43f1d3e65039190477f6af591c2a"
+        assert clip["license"] == "MIT"
+        assets = 351685709 + 254058553 + 2224119
+        # Capacity includes the bounded manifest as well as both towers.
+        assert assets < clip["size_bytes"] <= assets + 256 * 1024
+
     def test_reports_local_unavailable_while_offering_remote(
         self, client, auth_headers, monkeypatch, make_inference_endpoint
     ):

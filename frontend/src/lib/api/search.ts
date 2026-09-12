@@ -51,6 +51,38 @@ export async function searchLibrary(
 export function getSearchStatus() {
   return getJson<SearchStatus>("/api/v1/search/status", { fresh: true });
 }
+export async function searchUsingModel(
+  modelId: number,
+  cursor?: string,
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  return handleResponse<SearchResponse>(
+    await fetch(getUrl(`/api/v1/models/${modelId}/similar-text?${params}`), {
+      headers: authHeaders(),
+      cache: "no-store",
+      signal,
+    }),
+  );
+}
+export async function searchImage(
+  image: File,
+  query: { cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ limit: String(query.limit ?? 30) });
+  if (query.cursor) params.set("cursor", query.cursor);
+  return handleResponse<SearchResponse>(
+    await fetch(getUrl(`/api/v1/search/image?${params}`), {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": image.type },
+      body: image,
+      cache: "no-store",
+      signal,
+    }),
+  );
+}
 const configuration = "/api/v1/config/ai-search";
 export function getSearchSettings() {
   return getJson<SearchSettingsRead>(configuration, { fresh: true });

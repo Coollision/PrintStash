@@ -114,7 +114,8 @@ export interface InferenceModel {
 export interface GenerationProposal {
   endpoint_id?: number;
   local_model_id?: string;
-  profile?: "semantic_text";
+  profile?: "semantic_text" | "thumbnail" | "multiview";
+  aggregation?: "mean" | "max";
   query_prefix?: string;
   document_prefix?: string;
   passage_recipe_version?: number;

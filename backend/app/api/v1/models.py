@@ -32,6 +32,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, Response
 from printstash_core.files import slugify
 from printstash_core.library import RevisionError
+from printstash_core.search.passages import SubjectType
 from sqlalchemy import func
 from sqlmodel import Session, select
 from starlette.background import BackgroundTask
@@ -131,8 +132,33 @@ from app.schemas.provenance import (
     ModelSourceCoverRead,
 )
 from app.schemas.saved_views import ModelStarRead
+from app.schemas.search import SearchResponse
 
 router = APIRouter(prefix="/models", tags=["models"])
+
+
+@router.get("/{model_id}/similar-text", response_model=SearchResponse)
+def search_using_model(
+    model_id: int,
+    response: Response,
+    limit: int = Query(30, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=512),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    from app.modules.search.retrieval import search
+
+    response.headers["Cache-Control"] = "no-store"
+    return search(
+        session,
+        user,
+        "",
+        source_model_id=model_id,
+        limit=limit,
+        cursor=cursor,
+        types=(SubjectType.MODEL,),
+    )
+
 
 _GCODE_SUFFIXES = {".gcode", ".g", ".gco", ".bgcode"}
 

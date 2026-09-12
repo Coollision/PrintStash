@@ -16,6 +16,7 @@ from printstash_core.inference.model_capabilities import (
     capabilities_for_identity,
 )
 from printstash_core.inference.transforms import IndexTransform
+from printstash_core.search.visual_inputs import VisualRecipe
 from sqlalchemy import delete, func, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
@@ -37,7 +38,7 @@ from app.db.session import get_session_factory
 from app.db.transactions import begin_write
 from app.modules.administration import audit
 from app.modules.inference.configuration import load as load_endpoint
-from app.modules.search import configuration, vector_index, vector_store
+from app.modules.search import configuration, vector_index, vector_store, visual_sources
 from app.modules.search.access import indexable_passage_ids
 from app.modules.search.text_inputs import TextRecipe
 from app.modules.storage.capacity import CapacityManager, CapacityResource
@@ -60,6 +61,8 @@ def contract(session: Session, generation: IndexGeneration) -> Space:
 
 
 def eligible(session: Session, space: Space):
+    if space.profile in visual_sources.PROFILES:
+        return visual_sources.eligible(session)
     recipe = TextRecipe.for_space(space)
     return select(SearchPassage.id).where(
         SearchPassage.recipe_version == recipe.passage_version,
@@ -68,6 +71,8 @@ def eligible(session: Session, space: Space):
 
 
 def current_vectors(session: Session, generation_id: int, space: Space):
+    if space.profile in visual_sources.PROFILES:
+        return visual_sources.current_vectors(session, generation_id, space)
     return (
         select(PassageVector.id)
         .join(SearchPassage, SearchPassage.id == PassageVector.passage_id)
@@ -82,6 +87,8 @@ def current_vectors(session: Session, generation_id: int, space: Space):
 
 
 def missing(session: Session, generation_id: int, space: Space):
+    if space.profile in visual_sources.PROFILES:
+        return visual_sources.missing(session, generation_id, space)
     present = (
         select(PassageVector.id)
         .where(
@@ -98,6 +105,8 @@ def missing(session: Session, generation_id: int, space: Space):
 
 def counts(session: Session, generation: IndexGeneration) -> tuple[int, int, int]:
     space = contract(session, generation)
+    if space.profile in visual_sources.PROFILES:
+        return visual_sources.counts(session, generation.id, space)
     total = session.exec(
         select(func.count()).select_from(eligible(session, space).subquery())
     ).one()
@@ -199,13 +208,21 @@ def estimate_bytes(passages: int, dimension: int) -> int:
     return (passages + 128) * (dimension * 4 * 3 + 1024) + 1024**2
 
 
+def source_units(space: Space, count: int) -> int:
+    return (
+        count * visual_sources.units_per_file(VisualRecipe.for_space(space))
+        if space.profile in visual_sources.PROFILES
+        else count
+    )
+
+
 def estimate(session: Session, proposal: GenerationProposal) -> GenerationEstimate:
     space = proposal_space(session, proposal)
     transform_backend(session, proposal, space)
     total = session.exec(
         select(func.count()).select_from(eligible(session, space).subquery())
     ).one()
-    required = estimate_bytes(total, space.dimension)
+    required = estimate_bytes(source_units(space, total), space.dimension)
     occupied = occupied_bytes(session)
     budget = configuration.settings(session).max_index_bytes
     prior = session.exec(
@@ -295,6 +312,34 @@ def prepare(
     with model_cache.cache_lock() if proposal.local_model_id else nullcontext():
         space = proposal_space(session, proposal)
         result = _prepare_space(session, actor, proposal, space)
+        if (
+            space.profile == "multiview"
+            and session.exec(
+                select(IndexGeneration.id)
+                .join(EmbeddingSpace, EmbeddingSpace.id == IndexGeneration.space_id)
+                .where(
+                    EmbeddingSpace.profile == "thumbnail",
+                    col(IndexGeneration.state).in_(("active", "building")),
+                )
+                .limit(1)
+            ).first()
+            is None
+        ):
+            # A multiview proposal also prepares a real serving fallback. Both
+            # builds retain independent leases, states and atomic activation.
+            reservation_id = session.get(IndexGeneration, result.id).reservation_id
+            try:
+                fallback = proposal.model_copy(
+                    update={"profile": "thumbnail", "aggregation": "mean"}
+                )
+                _prepare_space(
+                    session, actor, fallback, proposal_space(session, fallback)
+                )
+            except Exception:
+                session.rollback()
+                if reservation_id:
+                    CapacityManager(get_session_factory()).release(reservation_id)
+                raise
         if proposal.local_model_id:
             # Keep the reference pin until the new generation is durable.
             session.commit()
@@ -305,9 +350,23 @@ def proposal_space(session: Session, proposal: GenerationProposal) -> Space:
     """Resolve an immutable proposal without inference, jobs or database writes."""
     if proposal.local_model_id:
         from app.modules.inference import model_cache
-        from app.modules.inference.manifest import TextModelManifest
+        from app.modules.inference.manifest import LocalModelManifest, TextModelManifest
 
         model = model_cache.resolve(proposal.local_model_id)
+        if proposal.profile in visual_sources.PROFILES:
+            if (
+                not isinstance(model.manifest, LocalModelManifest)
+                or model.manifest.family != "clip"
+            ):
+                raise OperationError(
+                    "embedding_alignment_unavailable", kind=ErrorKind.INVALID
+                )
+            return VisualRecipe.space(
+                model.manifest.space(),
+                image_size=model.manifest.image.image_size,
+                profile=proposal.profile,
+                aggregation=proposal.aggregation,
+            )
         if not isinstance(model.manifest, TextModelManifest):
             raise OperationError("embedding_text_unavailable", kind=ErrorKind.INVALID)
         original = model.manifest.space()
@@ -361,9 +420,12 @@ def proposal_space(session: Session, proposal: GenerationProposal) -> Space:
 def transform_backend(
     session: Session, proposal: GenerationProposal, space: Space
 ) -> tuple[IndexTransform, str]:
-    recipe = TextRecipe.for_space(space)
-    if len(space.document_prefix) >= recipe.max_input_characters:
-        raise OperationError("search_prefix_exceeds_budget", kind=ErrorKind.INVALID)
+    if space.profile in visual_sources.PROFILES:
+        VisualRecipe.for_space(space)
+    else:
+        recipe = TextRecipe.for_space(space)
+        if len(space.document_prefix) >= recipe.max_input_characters:
+            raise OperationError("search_prefix_exceeds_budget", kind=ErrorKind.INVALID)
     dimension = proposal.index_dimension or space.dimension
     capabilities = capabilities_for(space)
     transform = IndexTransform.approved(
@@ -398,7 +460,7 @@ def _prepare_space(
     total = session.exec(
         select(func.count()).select_from(eligible(session, space).subquery())
     ).one()
-    estimate = estimate_bytes(total, space.dimension)
+    estimate = estimate_bytes(source_units(space, total), space.dimension)
     version = secrets.token_hex(16)
     reservation_id = "search-generation:" + version
     manager = CapacityManager(get_session_factory())
@@ -457,7 +519,11 @@ def _lock_cutover(session: Session) -> None:
     # takes its ordinary write transaction. No inference happens under this lock.
     begin_write(session)
     if session.get_bind().dialect.name == "postgresql":
-        session.exec(text("LOCK TABLE search_passages, passage_vectors IN SHARE MODE"))
+        session.exec(
+            text(
+                "LOCK TABLE models, files, search_passages, passage_vectors IN SHARE MODE"
+            )
+        )
 
 
 def verify_counts(session: Session, generation: IndexGeneration) -> tuple[int, int]:

@@ -27,6 +27,9 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
   const { t } = useI18n();
   const statusLabel = (key: string) => t(isMessageKey(key) ? key : "aiSearch.unspecified");
   const [selection, setSelection] = useState("");
+  const [profile, setProfile] =
+    useState<NonNullable<GenerationProposal["profile"]>>("semantic_text");
+  const [aggregation, setAggregation] = useState<"mean" | "max">("mean");
   const [indexBackend, setIndexBackend] = useState<GenerationProposal["index_backend"]>("auto");
   const [quantization, setQuantization] = useState<GenerationProposal["quantization"]>("float32");
   const [dimension, setDimension] = useState(0);
@@ -65,11 +68,13 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
           ...(local ? { local_model_id: local.id } : { endpoint_id: remote?.id }),
           index_backend: indexBackend,
           quantization,
+          profile,
+          aggregation: profile === "multiview" ? aggregation : "mean",
           auto_activate: autoActivate,
         }
       : null;
   if (proposal && dimension) proposal.index_dimension = dimension;
-  if (proposal && customPrefixes) {
+  if (proposal && customPrefixes && profile === "semantic_text") {
     proposal.query_prefix = queryPrefix;
     proposal.document_prefix = documentPrefix;
   }
@@ -144,7 +149,8 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
         ) : active.length ? (
           active.map((generation) => (
             <p key={generation.id} className="mt-1 break-words text-sm">
-              {generation.model} · {generation.index_dimension} · {generation.effective_backend}
+              {statusLabel(`aiSearch.profile.${generation.profile}`)} · {generation.model} ·{" "}
+              {generation.index_dimension} · {generation.effective_backend}
             </p>
           ))
         ) : (
@@ -154,6 +160,46 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
       <div className="space-y-4 border-t border-border p-4 sm:p-5">
         <h4 className="text-sm font-semibold">{t("aiSearch.prepareIndex")}</h4>
         <p className="max-w-prose text-xs text-muted-foreground">{t("aiSearch.pendingHelp")}</p>
+        <label className="block space-y-1 text-sm">
+          {t("aiSearch.indexPurpose")}
+          <select
+            className="block w-full rounded-md border border-input bg-background p-2"
+            value={profile}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value === "semantic_text" || value === "thumbnail" || value === "multiview") {
+                setProfile(value);
+                setSelection("");
+                setDimension(0);
+              }
+            }}
+          >
+            <option value="semantic_text">{t("aiSearch.profile.semantic_text")}</option>
+            <option value="thumbnail">{t("aiSearch.profile.thumbnail")}</option>
+            <option value="multiview">{t("aiSearch.profile.multiview")}</option>
+          </select>
+        </label>
+        {profile !== "semantic_text" && (
+          <p className="max-w-prose text-xs text-muted-foreground">
+            {t(profile === "thumbnail" ? "aiSearch.thumbnailHelp" : "aiSearch.multiviewHelp")}
+          </p>
+        )}
+        {profile === "multiview" && (
+          <label className="block space-y-1 text-sm">
+            {t("aiSearch.aggregation")}
+            <select
+              className="block w-full rounded-md border border-input bg-background p-2"
+              value={aggregation}
+              onChange={(event) => {
+                if (event.target.value === "mean" || event.target.value === "max")
+                  setAggregation(event.target.value);
+              }}
+            >
+              <option value="mean">{t("aiSearch.meanViews")}</option>
+              <option value="max">{t("aiSearch.bestView")}</option>
+            </select>
+          </label>
+        )}
         <label className="block space-y-1 text-sm">
           {t("aiSearch.model")}
           <select
@@ -167,7 +213,10 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
             <option value="">{t("aiSearch.chooseModel")}</option>
             <optgroup label={t("aiSearch.localModels")}>
               {models.data
-                ?.filter((model) => model.modality === "text")
+                ?.filter(
+                  (model) =>
+                    model.modality === (profile === "semantic_text" ? "text" : "text_image"),
+                )
                 .map((model) => (
                   <option key={model.id} value={`local:${model.id}`}>
                     {model.key} ·{" "}
@@ -175,15 +224,17 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
                   </option>
                 ))}
             </optgroup>
-            <optgroup label={t("aiSearch.compatibleServers")}>
-              {settings.endpoints
-                .filter((endpoint) => endpoint.kind === "embedding")
-                .map((endpoint) => (
-                  <option key={endpoint.id} value={`endpoint:${endpoint.id}`}>
-                    {endpoint.model} · {endpoint.host}
-                  </option>
-                ))}
-            </optgroup>
+            {profile === "semantic_text" && (
+              <optgroup label={t("aiSearch.compatibleServers")}>
+                {settings.endpoints
+                  .filter((endpoint) => endpoint.kind === "embedding")
+                  .map((endpoint) => (
+                    <option key={endpoint.id} value={`endpoint:${endpoint.id}`}>
+                      {endpoint.model} · {endpoint.host}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
           </select>
         </label>
         {models.isError && (
@@ -329,39 +380,41 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
             </select>
           </label>
         </div>
-        <details>
-          <summary className="cursor-pointer text-sm font-medium">
-            {t("aiSearch.inputRecipe")}
-          </summary>
-          <label className="mt-3 flex items-center gap-2 text-sm">
-            <Checkbox
-              ariaLabel={t("aiSearch.customPrefixes")}
-              checked={customPrefixes}
-              onChange={setCustomPrefixes}
-            />
-            {t("aiSearch.customPrefixes")}
-          </label>
-          {customPrefixes && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1 text-sm">
-                {t("aiSearch.queryPrefix")}
-                <Input
-                  value={queryPrefix}
-                  maxLength={256}
-                  onChange={(event) => setQueryPrefix(event.target.value)}
-                />
-              </label>
-              <label className="space-y-1 text-sm">
-                {t("aiSearch.documentPrefix")}
-                <Input
-                  value={documentPrefix}
-                  maxLength={256}
-                  onChange={(event) => setDocumentPrefix(event.target.value)}
-                />
-              </label>
-            </div>
-          )}
-        </details>
+        {profile === "semantic_text" && (
+          <details>
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("aiSearch.inputRecipe")}
+            </summary>
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <Checkbox
+                ariaLabel={t("aiSearch.customPrefixes")}
+                checked={customPrefixes}
+                onChange={setCustomPrefixes}
+              />
+              {t("aiSearch.customPrefixes")}
+            </label>
+            {customPrefixes && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  {t("aiSearch.queryPrefix")}
+                  <Input
+                    value={queryPrefix}
+                    maxLength={256}
+                    onChange={(event) => setQueryPrefix(event.target.value)}
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  {t("aiSearch.documentPrefix")}
+                  <Input
+                    value={documentPrefix}
+                    maxLength={256}
+                    onChange={(event) => setDocumentPrefix(event.target.value)}
+                  />
+                </label>
+              </div>
+            )}
+          </details>
+        )}
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
             ariaLabel={t("aiSearch.autoActivate")}
@@ -385,7 +438,9 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
             loading={prepare.isPending}
             disabled={
               !canPrepare ||
-              generations.data?.some((generation) => generation.state === "building") ||
+              generations.data?.some(
+                (generation) => generation.state === "building" && generation.profile === profile,
+              ) ||
               currentEstimate?.fits_budget === false
             }
             onClick={() => {
@@ -397,15 +452,20 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
         </div>
         {currentEstimate && (
           <p role="status" className="text-sm text-muted-foreground">
-            {t("aiSearch.estimateResult", {
-              count: currentEstimate.passages,
-              size: formatBytes(currentEstimate.estimated_bytes),
-              existing: formatBytes(currentEstimate.existing_bytes),
-              time:
-                currentEstimate.estimated_seconds === null
-                  ? t("aiSearch.estimateUnknown")
-                  : formatDuration(currentEstimate.estimated_seconds),
-            })}
+            {t(
+              profile === "semantic_text"
+                ? "aiSearch.estimateResult"
+                : "aiSearch.estimateVisualResult",
+              {
+                count: currentEstimate.passages,
+                size: formatBytes(currentEstimate.estimated_bytes),
+                existing: formatBytes(currentEstimate.existing_bytes),
+                time:
+                  currentEstimate.estimated_seconds === null
+                    ? t("aiSearch.estimateUnknown")
+                    : formatDuration(currentEstimate.estimated_seconds),
+              },
+            )}
             {!currentEstimate.fits_budget && (
               <span className="block text-destructive">{t("aiSearch.overBudget")}</span>
             )}
@@ -476,7 +536,7 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 break-words text-sm font-medium">
-                  {generation.model}{" "}
+                  {statusLabel(`aiSearch.profile.${generation.profile}`)} · {generation.model}{" "}
                   <Badge variant="outline">
                     {statusLabel(`aiSearch.generation.${generation.state}`)}
                   </Badge>

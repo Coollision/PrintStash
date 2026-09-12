@@ -76,6 +76,22 @@ class TestQueryRunner:
         assert first == second == (1, 0, 0, 0)
         assert len(provider.calls) == 1
 
+    def test_runs_compatible_images_without_caching_inputs_or_vectors(
+        self, query_runtime
+    ):
+        runner, provider, original = query_runtime
+        space = replace(original, modality="text_image")
+        value = EmbeddingInput("image", rgb=b"\x12\x34\x56", width=1, height=1)
+
+        first = runner.embed(provider, space, value, authorization="reader", seconds=1)
+        provider.vectors = ((0, 1, 0, 0),)
+        second = runner.embed(provider, space, value, authorization="reader", seconds=1)
+
+        assert first == (1, 0, 0, 0)
+        assert second == (0, 1, 0, 0)
+        assert len(provider.calls) == 2
+        assert runner._cache == {}
+
     @pytest.mark.parametrize(
         "changed",
         ["space", "user", "permissions"],

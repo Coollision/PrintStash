@@ -46,14 +46,20 @@ def list_models(session: Session = Depends(get_session)):
             InferenceModelRead(
                 id=identity,
                 key=manifest.model_key,
-                revision=manifest.model_revision,
-                repository=manifest.repository
+                revision=entry.revision if entry else manifest.model_revision,
+                repository=entry.repository
+                if entry
+                else manifest.repository
                 if isinstance(manifest, TextModelManifest)
                 else None,
-                languages=list(manifest.language)
+                languages=list(entry.languages)
+                if entry
+                else list(manifest.language)
                 if isinstance(manifest, TextModelManifest)
                 else [],
-                license=manifest.license
+                license=entry.license
+                if entry
+                else manifest.license
                 if isinstance(manifest, TextModelManifest)
                 else None,
                 modality=manifest.space().modality,

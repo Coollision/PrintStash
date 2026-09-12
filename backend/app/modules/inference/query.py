@@ -45,19 +45,26 @@ class QueryRunner:
         authorization: str,
         seconds: float,
     ) -> tuple[float, ...]:
-        if value.modality != "text":
+        if value.modality == "image" and space.modality not in {"image", "text_image"}:
             raise EmbeddingError("embedding_image_unavailable")
-        key = hashlib.sha256(
-            json.dumps(
-                [space.config_hash, authorization, value.text], separators=(",", ":")
-            ).encode()
-        ).hexdigest()
+        # Image queries are ephemeral even at the vector-cache layer. The same
+        # executor, concurrency limit and cancellation contract serve both modes.
+        key = (
+            hashlib.sha256(
+                json.dumps(
+                    [space.config_hash, authorization, value.text],
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            if value.modality == "text"
+            else None
+        )
         cancelled = threading.Event()
         context = InferenceContext.bounded(seconds, cancelled=cancelled.is_set)
         with self._lock:
             if self._closed:
                 raise EmbeddingError("inference_query_unavailable")
-            cached = self._cache.pop(key, None)
+            cached = self._cache.pop(key, None) if key is not None else None
             if cached and cached[0] > time.monotonic():
                 self._cache[key] = cached
                 return struct.unpack(f"<{space.dimension}f", cached[1])
@@ -94,7 +101,7 @@ class QueryRunner:
         finally:
             cancelled.set()
         with self._lock:
-            if not self._closed:
+            if not self._closed and key is not None:
                 self._cache[key] = (time.monotonic() + self._ttl, blob)
                 while len(self._cache) > self._entries:
                     self._cache.popitem(last=False)

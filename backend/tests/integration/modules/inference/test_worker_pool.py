@@ -29,6 +29,27 @@ def spawn():
     )
 
 
+def test_external_renderer_evicts_idle_encoders_under_one_memory_budget(
+    workers, spawn, tmp_path
+):
+    context = InferenceContext.bounded(5)
+    with workers.acquire(("encoder",), tmp_path, spawn, context) as encoder:
+        pass
+    renderer = spawn()
+    try:
+        sizes = {encoder.pid: 70, renderer.pid: 50}
+        workers.enforce_memory_budget(renderer, 100, sizes.get)
+        assert encoder.poll() is not None
+        assert renderer.poll() is None
+        with pytest.raises(EmbeddingError, match="embedding_worker_oom"):
+            workers.enforce_memory_budget(renderer, 40, sizes.get)
+    finally:
+        renderer.kill()
+        renderer.wait()
+        renderer.stdin.close()
+        renderer.stdout.close()
+
+
 class TestWorkerPool:
     def test_reuses_a_loaded_worker(self, workers, spawn, tmp_path):
         with workers.acquire(

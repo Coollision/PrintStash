@@ -15,12 +15,12 @@ stop_backend() {
 trap stop_backend EXIT
 trap 'exit 0' TERM INT
 
+cd "$BACKEND_DIR"
+uv run python -m tests.fakes.search_ui_assets "$MODEL_ROOT"
 if [ -n "${PLAYWRIGHT_AI_SEARCH_MODEL_DIR:-}" ]; then
   export VAULT_EMBEDDING_LOCAL_MODEL_DIR="$PLAYWRIGHT_AI_SEARCH_MODEL_DIR"
 else
-  cd "$BACKEND_DIR"
-  uv run python -m tests.fakes.search_ui_assets "$MODEL_ROOT"
-  export VAULT_EMBEDDING_LOCAL_MODEL_DIR="$MODEL_ROOT"
+  export VAULT_EMBEDDING_LOCAL_MODEL_DIR=""
 fi
 export VAULT_EMBEDDING_CACHE_DIR="$MODEL_ROOT/cache"
 export VAULT_EMBEDDING_DOWNLOAD_ENABLED=false

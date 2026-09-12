@@ -21,6 +21,18 @@ def assets(tmp_path):
 
 
 class TestManifest:
+    def test_visual_profiles_use_the_exact_paired_encoder(self, assets):
+        from printstash_core.search.visual_inputs import VisualRecipe
+
+        contract = manifest.read_manifest(assets, "two-tower-contract")
+        derived = VisualRecipe.space(
+            contract.space(), image_size=32, profile="multiview"
+        )
+        manifest.validate_space(contract, derived)
+        changed = replace(derived, model_revision="another-tower")
+        with pytest.raises(EmbeddingError, match="embedding_space_mismatch"):
+            manifest.validate_space(contract, changed)
+
     def test_preserves_legacy_visual_space_identity(self):
         from tests.paths import FIXTURES_DIR
 

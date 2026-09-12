@@ -18,6 +18,84 @@ function results(options: RenderAppOptions = {}) {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("Search results", () => {
+  it("uses the Model query endpoint without sending a name or image", async () => {
+    const app = results({
+      at: "/search?model=17",
+      routes: {
+        "GET /api/v1/models/17/similar-text?": (_url, init) => {
+          expect(init?.cache).toBe("no-store");
+          return json(searchResponse({ items: [aSearchResult()] }));
+        },
+      },
+    });
+    expect(await screen.findByRole("link", { name: "Desk bracket" })).toBeVisible();
+    expect(screen.getByText("Find related Models", { selector: "p" })).toBeVisible();
+    expect(app.requestsWithMethod("POST")).toHaveLength(0);
+    expect(app.requests().some((request) => request.url.includes("/search?q="))).toBe(false);
+  });
+  it("submits an image in memory and clears its preview and results", async () => {
+    const user = userEvent.setup();
+    const preview = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:private-query");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const image = new File(["image bytes"], "private-location.png", { type: "image/png" });
+    const app = results({
+      at: "/search?image=1",
+      routes: {
+        "GET /api/v1/search/status": json(
+          searchStatus({ enabled: true, semantic_ready: true, legs: ["lexical", "thumbnail"] }),
+        ),
+        "POST /api/v1/search/image?": (_url, init) => {
+          expect(init?.body).toBe(image);
+          expect(init?.cache).toBe("no-store");
+          return json(
+            searchResponse({
+              items: [
+                aSearchResult({
+                  evidence: [{ leg: "thumbnail", field: "visual", text: "", ranges: [] }],
+                }),
+              ],
+            }),
+          );
+        },
+      },
+    });
+    const input = await screen.findByLabelText("Choose image", { selector: "input" });
+    await waitFor(() => expect(input).toBeEnabled());
+    await user.upload(input, image);
+    expect(await screen.findByRole("link", { name: "Desk bracket" })).toBeVisible();
+    expect(screen.getByText("Appearance match")).toBeVisible();
+    expect(screen.getByRole("img", { name: "Image used for this search" })).toHaveAttribute(
+      "src",
+      "blob:private-query",
+    );
+    expect(app.requests().some((request) => request.url.includes("private-location"))).toBe(false);
+    expect(preview).toHaveBeenCalledWith(image);
+    await user.click(screen.getByRole("button", { name: "Clear image" }));
+    expect(screen.queryByRole("link", { name: "Desk bracket" })).toBeNull();
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(revoke).toHaveBeenCalledWith("blob:private-query");
+  });
+  it("requires a ready visual index before accepting images", async () => {
+    const app = results({ at: "/search?image=1" });
+    expect(await screen.findByText(/Visual search needs a ready visual index/)).toBeVisible();
+    expect(screen.getByLabelText("Choose image", { selector: "input" })).toBeDisabled();
+    expect(app.requestsWithMethod("POST")).toHaveLength(0);
+  });
+  it("rejects oversized image selection before sending it", async () => {
+    const user = userEvent.setup();
+    const app = results({
+      at: "/search?image=1",
+      routes: { "GET /api/v1/search/status": json(searchStatus({ legs: ["thumbnail"] })) },
+    });
+    const input = await screen.findByLabelText("Choose image", { selector: "input" });
+    await waitFor(() => expect(input).toBeEnabled());
+    await user.upload(
+      input,
+      new File([new Uint8Array(8 * 1024 * 1024 + 1)], "large.png", { type: "image/png" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("no larger than 8 MB");
+    expect(app.requestsWithMethod("POST")).toHaveLength(0);
+  });
   it("shows a shared excerpt once with both match reasons", async () => {
     const lexical = {
       leg: "lexical",

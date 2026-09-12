@@ -1,5 +1,17 @@
 import type { SearchEvidence } from "@/types/search";
 import { useI18n } from "@/lib/i18n";
+import { useAuthenticatedAssetUrl } from "@/lib/use-authenticated-asset-url";
+
+export function SearchModelPreview({ path }: { path: string | null | undefined }) {
+  const source = useAuthenticatedAssetUrl(path);
+  return source ? (
+    <img
+      src={source}
+      alt=""
+      className="h-16 w-16 shrink-0 rounded-md border border-border bg-muted/30 object-contain"
+    />
+  ) : null;
+}
 
 export function SearchEvidenceList({ evidence }: { evidence: SearchEvidence[] }) {
   const { t } = useI18n();
@@ -17,13 +29,23 @@ export function SearchEvidenceList({ evidence }: { evidence: SearchEvidence[] })
           <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
             {group.map((match) => (
               <span key={match.leg}>
-                {t(match.leg === "lexical" ? "aiSearch.keywordMatch" : "aiSearch.semanticMatch")}
+                {t(
+                  match.leg === "lexical"
+                    ? "aiSearch.keywordMatch"
+                    : match.leg === "thumbnail"
+                      ? "aiSearch.appearanceMatch"
+                      : match.leg === "multiview"
+                        ? "aiSearch.shapeMatch"
+                        : "aiSearch.semanticMatch",
+                )}
               </span>
             ))}
           </p>
-          <p className="mt-1 break-words text-sm leading-relaxed text-foreground">
-            <EvidenceText evidence={group[0]} />
-          </p>
+          {group[0].text && (
+            <p className="mt-1 break-words text-sm leading-relaxed text-foreground">
+              <EvidenceText evidence={group[0]} />
+            </p>
+          )}
         </div>
       ))}
     </>
