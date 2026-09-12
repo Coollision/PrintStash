@@ -413,6 +413,81 @@ class TestSearch:
 
         result = search(db_session, actor, "Bracket")
 
-        assert parse_qs(urlsplit(result.items[0].href).query)["c"] == [
-            collection.path
-        ]
+        assert parse_qs(urlsplit(result.items[0].href).query)["c"] == [collection.path]
+
+
+class TestStructuredRetrieval:
+    def test_filters_semantic_candidates_before_scoring(
+        self, db_session, hybrid_library, healthy_embeddings
+    ):
+        from app.schemas.models import ModelFilters
+
+        actor, _, _, _, model = hybrid_library
+        result = search(
+            db_session,
+            actor,
+            "assembly instructions",
+            filters=ModelFilters(printed=True),
+        )
+        assert result.items == []
+        assert healthy_embeddings.requests == []
+        result = search(
+            db_session, actor, "unrelated words", filters=ModelFilters(printed=False)
+        )
+        assert [item.subject_id for item in result.items] == [model.id]
+        assert len(healthy_embeddings.requests) == 1
+        assert result.items[0].evidence[0].leg == "semantic_text"
+
+    def test_serves_a_filter_only_query_in_requested_order(
+        self, db_session, hybrid_library, make_model
+    ):
+        from app.schemas.models import ModelFilters, ModelSort
+
+        actor, *_ = hybrid_library
+        first = make_model("Alpha")
+        last = make_model("Zulu")
+        result = search(
+            db_session,
+            actor,
+            "",
+            filters=ModelFilters(printed=False),
+            sort=ModelSort.NAME_ASC,
+            limit=1,
+        )
+        assert result.items[0].subject_id == first.id
+        assert result.next_cursor
+        following = search(
+            db_session,
+            actor,
+            "",
+            filters=ModelFilters(printed=False),
+            sort=ModelSort.NAME_ASC,
+            cursor=result.next_cursor,
+        )
+        assert following.items[-1].subject_id == last.id
+        assert all(item.subject_type == "model" for item in following.items)
+        assert result.items[0].evidence[0].field == "filters"
+
+    @pytest.mark.parametrize("change", ["filters", "sort"])
+    def test_expires_a_cursor_when_structured_context_changes(
+        self, db_session, hybrid_library, make_model, change
+    ):
+        from app.schemas.models import ModelFilters, ModelSort
+
+        actor, *_ = hybrid_library
+        make_model("Additional model")
+        result = search(
+            db_session, actor, "", filters=ModelFilters(printed=False), limit=1
+        )
+        assert result.next_cursor
+        with pytest.raises(OperationError, match="search_cursor_invalid"):
+            search(
+                db_session,
+                actor,
+                "",
+                filters=ModelFilters()
+                if change == "filters"
+                else ModelFilters(printed=False),
+                sort=ModelSort.NAME_ASC if change == "sort" else ModelSort.RELEVANCE,
+                cursor=result.next_cursor,
+            )

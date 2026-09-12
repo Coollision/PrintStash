@@ -1,3 +1,4 @@
+/** Search pages preserve authorization evidence, bounded pagination and query privacy. */
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -33,7 +34,7 @@ describe("Search results", () => {
     expect(app.requestsWithMethod("POST")).toHaveLength(0);
     expect(app.requests().some((request) => request.url.includes("/search?q="))).toBe(false);
   });
-  it("submits an image in memory and clears its preview and results", async () => {
+  it("clears an image query without retaining its data", async () => {
     const user = userEvent.setup();
     const preview = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:private-query");
     const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});

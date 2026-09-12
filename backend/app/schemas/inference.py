@@ -2,9 +2,10 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.config import settings as environment
+from app.core.timezones import timezone_name
 from app.modules.inference.endpoint import EndpointParameters
 
 
@@ -72,6 +73,17 @@ class SearchSettings(BaseModel):
     send_query_images: bool = Field(
         default_factory=lambda: environment.ai_search_send_query_images
     )
+    timezone: str = Field(
+        default="UTC",
+        max_length=128,
+        description="Instance calendar timezone; personal preference takes precedence.",
+    )
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value):
+        return timezone_name(value)
+
     chat_endpoint_id: int | None = Field(default=None, ge=1)
     rollback_retention_hours: int = Field(default=24, ge=1, le=720)
     max_index_bytes: int = Field(default=2147483648, ge=1048576, le=1099511627776)

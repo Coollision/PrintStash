@@ -133,6 +133,30 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 @app.middleware("http")
+async def protect_search_error_details(request: Request, call_next):
+    # Starlette re-raises unexpected exceptions after its 500 handler; uvicorn
+    # would then format the original traceback, including SQL/query arguments.
+    # Terminate that path here even in DEBUG. Provider prompts are never logged.
+    sensitive = (
+        request.url.path.startswith("/api/v1/search") or "q" in request.query_params
+    )
+    if not sensitive:
+        return await call_next(request)
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        logger.error(
+            "search request failed method=%s path=%s error=%s",
+            request.method,
+            request.url.path,
+            type(exc).__name__,
+        )
+        return JSONResponse(
+            status_code=500, content={"detail": "internal_server_error"}
+        )
+
+
+@app.middleware("http")
 async def bind_audit_context(request: Request, call_next):
     actor_id = None
     from app.modules.identity.auth import (  # deferred: avoids cycle

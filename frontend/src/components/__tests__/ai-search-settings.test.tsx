@@ -1,3 +1,4 @@
+/** Administrator settings disclose inference capabilities and require independent consent. */
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -159,7 +160,7 @@ describe("AI Search settings", () => {
       rrf_k: 60,
     });
   });
-  it("requires chat capability and render consent before enabling captions", async () => {
+  it("requires the caption capability prerequisites", async () => {
     const user = userEvent.setup();
     settingsPanel({
       routes: {

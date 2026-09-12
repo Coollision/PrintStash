@@ -81,6 +81,7 @@ from app.db.models import (
     SystemConfig,
     Tag,
     User,
+    UserSearchPreferences,
     VaultAuditEvent,
     VaultAuditPolicy,
     VaultAuditRun,
@@ -623,3 +624,7 @@ class MakeSearchLexicalPosting(Protocol):
     def __call__(
         self, passage: SearchPassage, term: str = "bracket", **overrides: Any
     ) -> SearchLexicalPosting: ...
+
+
+class MakeUserSearchPreferences(Protocol):
+    def __call__(self, user: User, **overrides: Any) -> UserSearchPreferences: ...

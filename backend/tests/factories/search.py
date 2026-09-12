@@ -135,3 +135,9 @@ def build_subject_caption(
         "text": "A printable object",
     }
     return save(session, SubjectCaption(**(defaults | overrides)))
+
+
+def build_user_search_preferences(session: Session, user, **overrides: Any):
+    from app.db.models import UserSearchPreferences
+
+    return save(session, UserSearchPreferences(user_id=user.id, **overrides))

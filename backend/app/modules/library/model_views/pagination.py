@@ -253,3 +253,23 @@ def page_items(
         next_cursor=next_cursor,
         total=total,
     )
+
+
+def ordered_ids(
+    session: Session,
+    user: User,
+    filters: ModelFilters,
+    sort: ModelSort,
+    *,
+    ids: list[int] | None = None,
+    limit: int = 2049,
+) -> list[int]:
+    """Bounded canonical ordering for the heterogeneous search materializer."""
+    filtered, rank = filtered_with_rank(session, user, filters)
+    if ids is not None:
+        if len(ids) > 2048:
+            raise ValueError("model_projection_limit")
+        filtered = filtered.where(Model.id.in_(ids))
+    statement, expression = _sort_value_and_statement(filtered, sort, rank)
+    statement = _apply_model_cursor(statement, expression, sort, None)
+    return list(session.exec(statement.with_only_columns(Model.id).limit(limit)).all())

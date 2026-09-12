@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import struct
 from urllib.parse import urlencode
@@ -17,17 +18,20 @@ from sqlmodel import Session, select
 from app.core.errors import ErrorKind, OperationError
 from app.db.models import File, SearchPassage, User
 from app.modules.library.model_views.listing import read_items_by_ids
+from app.modules.library.model_views.pagination import ordered_ids
 from app.modules.search import (
     configuration,
     cursors,
     model_query,
     semantic,
+    structured,
     visual_sources,
 )
 from app.modules.search.access import visible_passage_ids
 from app.modules.search.dependencies import SUBJECT_MODELS
 from app.modules.search.lexical_index import capability
 from app.modules.search.lexical_query import ordered_passages
+from app.schemas.models import ModelFilters, ModelSort
 from app.schemas.search import SearchEvidence, SearchResponse, SearchResult
 
 MAX_CANDIDATES = 2048
@@ -83,10 +87,15 @@ def search(
     instant: bool = False,
     image: EmbeddingInput | None = None,
     source_model_id: int | None = None,
+    filters: ModelFilters | None = None,
+    sort: ModelSort = ModelSort.RELEVANCE,
 ) -> SearchResponse:
     if not 1 <= limit <= 100:
         raise ValueError("search_page_limit")
     query_terms(query)
+    structured.validate(user, filters)
+    if sort != ModelSort.RELEVANCE and filters is None:
+        filters = ModelFilters()
     if image is not None and image.modality != "image":
         raise ValueError("search_image_required")
     private_query_key = query
@@ -144,6 +153,10 @@ def search(
         settings.rrf_k,
         settings.lexical_weight,
         settings.lexical_backend,
+        json.dumps(filters.model_dump(mode="json"), sort_keys=True)
+        if filters is not None
+        else None,
+        sort.value,
         tuple((leg.name, leg.floor, leg.weight) for leg in active),
     )
     context = cursors.context_key(
@@ -163,6 +176,7 @@ def search(
                 dense_query,
                 leg,
                 types=types,
+                filters=filters,
             )
             for leg in active
         ]
@@ -196,6 +210,7 @@ def search(
                 dense_query,
                 leg,
                 types=types,
+                filters=filters,
             )
             for leg in active
         ]
@@ -227,6 +242,7 @@ def search(
     allowed = visible_passage_ids(session, user).where(
         SearchPassage.subject_type.in_([kind.value for kind in types])
     )
+    allowed = structured.passages(allowed, session, user, filters)
     try:
         with session.begin_nested():
             ranks = (
@@ -295,6 +311,15 @@ def search(
                 select(File).where(
                     File.id.in_([match[1] for match in result.visual_matches]),
                     File.id.in_(visual_sources.eligible(session, user)),
+                    *(
+                        [
+                            File.model_id.in_(
+                                structured.model_ids(session, user, filters)
+                            )
+                        ]
+                        if filters is not None
+                        else []
+                    ),
                 )
             ).all()
         }
@@ -305,7 +330,43 @@ def search(
         )
         rank_lists = [leg for leg in rank_lists if leg.name != result.leg.name]
         rank_lists.append(RankedLeg(result.leg.name, subjects, result.leg.weight))
+    filter_only = (
+        filters is not None
+        and not query.strip()
+        and image is None
+        and source_model_id is None
+    )
+    filtered_truncated = False
+    if filter_only and SubjectType.MODEL in types:
+        baseline = ordered_ids(session, user, filters, sort, limit=MAX_CANDIDATES + 1)
+        filtered_truncated = len(baseline) > MAX_CANDIDATES
+        rank_lists = [
+            RankedLeg(
+                "filters",
+                tuple(
+                    SearchSubject(SubjectType.MODEL, id)
+                    for id in baseline[:MAX_CANDIDATES]
+                ),
+                1,
+            )
+        ]
     fused = fuse(tuple(rank_lists), k=settings.rrf_k)
+    filtered_truncated = filtered_truncated or len(fused) > MAX_CANDIDATES
+    fused = fused[:MAX_CANDIDATES]
+    if sort != ModelSort.RELEVANCE and fused:
+        order = ordered_ids(
+            session,
+            user,
+            filters or ModelFilters(),
+            sort,
+            ids=[match.subject.subject_id for match in fused],
+            limit=MAX_CANDIDATES,
+        )
+        positions = {id: index for index, id in enumerate(order)}
+        fused = sorted(
+            (match for match in fused if match.subject.subject_id in positions),
+            key=lambda match: positions[match.subject.subject_id],
+        )
     selected = fused[offset : offset + limit]
     model_ids = [
         match.subject.subject_id
@@ -335,7 +396,9 @@ def search(
                 name=row.name,
                 href=href,
                 evidence=[
-                    SearchEvidence(leg=name, field="visual", text="")
+                    SearchEvidence(leg=name, field="filters", text="")
+                    if name == "filters"
+                    else SearchEvidence(leg=name, field="visual", text="")
                     if name in visual_sources.PROFILES
                     else evidence(
                         evidence_by_subject[(subject, name)], query
@@ -367,7 +430,8 @@ def search(
         legs=list(ranked_ids),
         semantic_ready=ready,
         generations=list(generations),
-        truncated=len(ranks) == MAX_CANDIDATES
+        truncated=filtered_truncated
+        or len(ranks) == MAX_CANDIDATES
         or any(result.truncated for result in dense),
         outcome="results"
         if items

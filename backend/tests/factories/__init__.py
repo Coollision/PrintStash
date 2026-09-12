@@ -176,6 +176,9 @@ from tests.factories.search import (
     build_search_reconciliation_state as build_search_reconciliation_state,
 )
 from tests.factories.search import build_subject_caption as build_subject_caption
+from tests.factories.search import (
+    build_user_search_preferences as build_user_search_preferences,
+)
 from tests.factories.similarity import (
     build_embedding_space,
     build_geometry_fingerprint,
@@ -307,6 +310,7 @@ __all__ += [
     "build_passage_vector",
     "build_search_passage",
     "build_subject_caption",
+    "build_user_search_preferences",
     "build_inference_endpoint",
     "build_search_dependency",
     "build_search_reconciliation_state",

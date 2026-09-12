@@ -550,7 +550,7 @@ describe("ModelBrowser", () => {
       expect(window.localStorage.getItem("ps-vault-sort")).toBe("name-asc");
     });
 
-    it("remembers relevance and sends it to Model browse", async () => {
+    it("restores the selected relevance ordering for Model browse", async () => {
       const user = userEvent.setup();
       const app = renderVault({ at: "/?q=benchy", models: [aModelListItem({ name: "Benchy" })] });
       await screen.findByText("Benchy");

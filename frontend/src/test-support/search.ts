@@ -57,6 +57,7 @@ export function searchSettings(overrides: Partial<SearchSettings> = {}): SearchS
     download_enabled: false,
     send_rendered_images: false,
     send_query_images: false,
+    timezone: "UTC",
     chat_endpoint_id: null,
     rollback_retention_hours: 24,
     max_index_bytes: 2147483648,

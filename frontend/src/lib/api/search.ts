@@ -6,7 +6,10 @@ import {
   sendAction,
   sendJson,
 } from "@/lib/api/request";
+import type { SavedViewFilters, ModelSort } from "@/types";
 import type {
+  ParsedSearch,
+  SearchPreferences,
   EndpointProposal,
   GenerationEstimate,
   GenerationProposal,
@@ -27,6 +30,8 @@ export interface SearchQuery {
   cursor?: string;
   limit?: number;
   types?: SearchSubjectType[];
+  filters?: SavedViewFilters;
+  sort?: ModelSort;
 }
 export async function searchLibrary(
   query: SearchQuery,
@@ -37,6 +42,8 @@ export async function searchLibrary(
     mode: query.mode ?? "hybrid",
     limit: String(query.limit ?? 30),
   });
+  if (query.filters) params.set("filters", JSON.stringify(query.filters));
+  if (query.sort) params.set("sort", query.sort);
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.instant) params.set("instant", "true");
   query.types?.forEach((type) => params.append("types[]", type));
@@ -141,4 +148,24 @@ export function validateInferenceModel(id: string) {
 }
 export function deleteInferenceModel(id: string) {
   return sendAction(`/api/v1/inference/models/${id}`, "DELETE");
+}
+
+export function getSearchPreferences() {
+  return getJson<SearchPreferences>("/api/v1/search/preferences", { fresh: true });
+}
+export function saveSearchPreferences(
+  value: Partial<Pick<SearchPreferences, "nl_filters_enabled" | "timezone">>,
+) {
+  return sendJson<SearchPreferences>("/api/v1/search/preferences", "PATCH", value);
+}
+export async function parseSearch(query: string, signal?: AbortSignal): Promise<ParsedSearch> {
+  return handleResponse<ParsedSearch>(
+    await fetch(getUrl("/api/v1/search/parse"), {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+      cache: "no-store",
+      signal,
+    }),
+  );
 }

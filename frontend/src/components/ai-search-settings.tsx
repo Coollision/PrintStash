@@ -152,6 +152,15 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
           </label>
         </div>
         <label className="mt-3 block space-y-1 text-sm">
+          {t("aiSearch.instanceTimezone")}
+          <Input
+            required
+            maxLength={128}
+            value={draft.timezone}
+            onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}
+          />
+        </label>
+        <label className="mt-3 block space-y-1 text-sm">
           {t("aiSearch.chatEndpoint")}
           <select
             className="block w-full rounded-md border border-input bg-background p-2"

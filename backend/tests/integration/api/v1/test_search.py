@@ -252,3 +252,214 @@ class TestSearch:
             row.id for row in models
         ]
         assert second["next_cursor"] is None
+
+
+class TestStructuredSearch:
+    def test_filters_results_by_actual_print_history(
+        self, client, db_session, auth_headers, make_model, make_file, make_print_job
+    ):
+        import json
+        from datetime import datetime, timezone
+
+        from app.db.models import PrintJobState
+
+        model = make_model("Qualifying bracket")
+        make_model("Other bracket")
+        file = make_file(model)
+        content_changed(db_session, "model", [model.id])
+        rebuild_partition(db_session)
+        db_session.commit()
+        make_print_job(
+            file,
+            state=PrintJobState.COMPLETED,
+            finished_at=datetime(2026, 8, 12, tzinfo=timezone.utc),
+            actual_duration_s=100,
+        )
+        response = client.get(
+            "/api/v1/search",
+            headers=auth_headers,
+            params={
+                "q": "bracket",
+                "filters": json.dumps(
+                    {
+                        "printed_after": "2026-08-01T00:00:00Z",
+                        "printed_before": "2026-09-01T00:00:00Z",
+                        "print_duration_max_s": 10800,
+                        "print_outcome": ["completed"],
+                    }
+                ),
+            },
+        )
+        assert response.status_code == 200
+        assert [item["subject_id"] for item in response.json()["items"]] == [model.id]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            '{"extra":true}',
+            '{"print_duration_min_s":100,"print_duration_max_s":99}',
+            '{"printed_after":"2026-09-02","printed_before":"2026-09-01"}',
+            "not json",
+        ],
+    )
+    def test_rejects_invalid_filter_payloads(self, client, auth_headers, payload):
+        response = client.get(
+            "/api/v1/search", headers=auth_headers, params={"filters": payload}
+        )
+        assert (
+            response.status_code == 422
+            and response.json()["detail"] == "model_filters_invalid"
+        )
+
+    def test_preserves_admin_only_printer_filter_policy(self, client, make_user):
+        response = client.get(
+            "/api/v1/search",
+            headers=bearer(make_user()),
+            params={"filters": '{"printer_id":1}'},
+        )
+        assert response.status_code == 403
+
+    def test_keeps_failed_queries_out_of_request_logs(
+        self, client, auth_headers, caplog
+    ):
+        import logging
+
+        with caplog.at_level(logging.INFO):
+            response = client.get(
+                "/api/v1/search",
+                headers=auth_headers,
+                params={"q": "private-search-marker", "filters": "invalid"},
+            )
+        assert response.status_code == 422
+        assert "private-search-marker" not in caplog.text
+        assert "status=422" in caplog.text
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v1/models",
+            "/api/v1/models/page",
+            "/api/v1/models/facets",
+            "/api/v1/models/outliner",
+        ],
+    )
+    def test_rejects_inconsistent_history_ranges_in_browse(
+        self, client, auth_headers, path
+    ):
+        response = client.get(
+            path,
+            headers=auth_headers,
+            params={"print_duration_min_s": 100, "print_duration_max_s": 100},
+        )
+        assert response.status_code == 422
+
+
+class TestSearchPreferences:
+    def test_persists_only_the_signed_in_users_preferences(self, client, make_user):
+        first, second = make_user(), make_user()
+        response = client.patch(
+            "/api/v1/search/preferences",
+            headers=bearer(first),
+            json={"nl_filters_enabled": True, "timezone": "America/New_York"},
+        )
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert response.json()["nl_filters_enabled"]
+        other = client.get("/api/v1/search/preferences", headers=bearer(second)).json()
+        assert not other["nl_filters_enabled"] and other["timezone"] is None
+
+    def test_rejects_unknown_timezone(self, client, auth_headers):
+        response = client.patch(
+            "/api/v1/search/preferences",
+            headers=auth_headers,
+            json={"timezone": "Mars/Olympus"},
+        )
+        assert response.status_code == 422
+
+    def test_returns_original_query_when_parser_is_unavailable(
+        self, client, auth_headers
+    ):
+        response = client.post(
+            "/api/v1/search/parse", headers=auth_headers, json={"query": "original"}
+        )
+        assert response.status_code == 200 and not response.json()["parsed"]
+        assert response.json()["residual_query"] == "original"
+        assert response.headers["cache-control"] == "no-store"
+
+
+class TestSearchErrorPrivacy:
+    def test_omits_raw_query_from_unexpected_error_traces(
+        self, app, client, auth_headers, caplog, monkeypatch
+    ):
+        import logging
+
+        from fastapi import Request
+
+        from app.core.config import _overlay
+
+        monkeypatch.setitem(_overlay, "log_level", "DEBUG")
+
+        async def failing(request: Request):
+            raise RuntimeError("failed to parse " + request.query_params["q"])
+
+        path = "/api/v1/search/__test__/failure"
+        app.add_api_route(path, failing, methods=["GET"], include_in_schema=False)
+        route = app.router.routes[-1]
+        try:
+            with caplog.at_level(logging.DEBUG):
+                response = client.get(
+                    path, params={"q": "raw-private-query-marker"}, headers=auth_headers
+                )
+            assert response.status_code == 500
+            assert "raw-private-query-marker" not in caplog.text
+            assert "RuntimeError" in caplog.text
+        finally:
+            app.router.routes.remove(route)
+
+
+class TestSearchParseAuthentication:
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [("GET", "/preferences"), ("PATCH", "/preferences"), ("POST", "/parse")],
+    )
+    def test_requires_a_signed_in_user(self, client, method, path):
+        response = client.request(
+            method,
+            "/api/v1/search" + path,
+            json={"query": "private"} if path == "/parse" else {},
+        )
+        assert response.status_code == 401
+
+
+class TestBrowseHistory:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v1/models",
+            "/api/v1/models/page",
+            "/api/v1/models/outliner",
+            "/api/v1/models/facets",
+        ],
+    )
+    def test_applies_actual_duration_to_each_browse_reader(
+        self, client, auth_headers, make_model, make_file, make_print_job, path
+    ):
+        from app.db.models import PrintJobState
+
+        short, exact = make_model("Short"), make_model("At maximum")
+        for model, duration in ((short, 199), (exact, 200)):
+            make_print_job(
+                make_file(model),
+                state=PrintJobState.COMPLETED,
+                actual_duration_s=duration,
+            )
+        response = client.get(
+            path, headers=auth_headers, params={"print_duration_max_s": 200}
+        )
+        assert response.status_code == 200
+        result = response.json()
+        if path.endswith("/facets"):
+            assert result["print_outcome"] == [{"value": "completed", "count": 1}]
+        else:
+            items = result["items"] if path.endswith("/page") else result
+            assert [item["id"] for item in items] == [short.id]

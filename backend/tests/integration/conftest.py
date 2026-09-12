@@ -78,6 +78,7 @@ from tests.factories.protocols import (
     MakeSubjectCaption,
     MakeSystemConfig,
     MakeUser,
+    MakeUserSearchPreferences,
     MakeVaultGeneration,
     MakeVaultMigration,
     MakeVaultMigrationObject,
@@ -659,6 +660,7 @@ __all__ += [
     "make_passage_vector",
     "make_search_passage",
     "make_subject_caption",
+    "make_user_search_preferences",
 ]
 
 
@@ -697,3 +699,8 @@ __all__ += [
     "make_search_lexical_term",
     "make_search_lexical_posting",
 ]
+
+
+@pytest.fixture
+def make_user_search_preferences(db_session: Session) -> MakeUserSearchPreferences:
+    return _bound(factories.build_user_search_preferences, db_session)

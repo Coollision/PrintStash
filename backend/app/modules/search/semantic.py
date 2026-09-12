@@ -27,6 +27,7 @@ from app.modules.search import (
     configuration,
     generations,
     model_query,
+    structured,
     vector_store,
     visual_sources,
 )
@@ -116,22 +117,31 @@ def registry(session: Session, settings: SearchSettings) -> tuple[SemanticLeg, .
 
 
 def allowed_vectors(
-    session: Session, user: User, leg: SemanticLeg, types: tuple[SubjectType, ...]
+    session: Session,
+    user: User,
+    leg: SemanticLeg,
+    types: tuple[SubjectType, ...],
+    filters=None,
 ):
     recipe = TextRecipe.for_space(leg.space)
-    return (
-        select(PassageVector.id)
-        .join(SearchPassage, SearchPassage.id == PassageVector.passage_id)
-        .where(
-            PassageVector.generation_id == leg.generation_id,
-            PassageVector.unit_kind == "passage",
-            PassageVector.input_hash == SearchPassage.content_hash,
-            PassageVector.subject_type == SearchPassage.subject_type,
-            PassageVector.subject_id == SearchPassage.subject_id,
-            SearchPassage.recipe_version == recipe.passage_version,
-            SearchPassage.id.in_(visible_passage_ids(session, user)),
-            SearchPassage.subject_type.in_([kind.value for kind in types]),
-        )
+    return structured.vectors(
+        (
+            select(PassageVector.id)
+            .join(SearchPassage, SearchPassage.id == PassageVector.passage_id)
+            .where(
+                PassageVector.generation_id == leg.generation_id,
+                PassageVector.unit_kind == "passage",
+                PassageVector.input_hash == SearchPassage.content_hash,
+                PassageVector.subject_type == SearchPassage.subject_type,
+                PassageVector.subject_id == SearchPassage.subject_id,
+                SearchPassage.recipe_version == recipe.passage_version,
+                SearchPassage.id.in_(visible_passage_ids(session, user)),
+                SearchPassage.subject_type.in_([kind.value for kind in types]),
+            )
+        ),
+        session,
+        user,
+        filters,
     )
 
 
@@ -143,6 +153,7 @@ def retrieve(
     leg: SemanticLeg,
     *,
     types: tuple[SubjectType, ...],
+    filters=None,
 ) -> LegResult:
     """Read-only search owns this session's transactions, including its lease.
 
@@ -152,7 +163,9 @@ def retrieve(
     if leg.space.profile in visual_sources.PROFILES:
         from app.modules.search.visual_query import retrieve as retrieve_visual
 
-        return retrieve_visual(session, user_id, auth_version, query, leg, types=types)
+        return retrieve_visual(
+            session, user_id, auth_version, query, leg, types=types, filters=filters
+        )
     lease = None
     try:
         user = session.get(User, user_id, populate_existing=True)
@@ -163,7 +176,7 @@ def retrieve(
             or not configuration.settings(session).enabled
         ):
             return LegResult(leg, available=False)
-        allowed = allowed_vectors(session, user, leg, types)
+        allowed = allowed_vectors(session, user, leg, types, filters)
         if (
             not isinstance(query, model_query.ModelQuery)
             and session.exec(allowed.limit(1)).first() is None
@@ -206,7 +219,7 @@ def retrieve(
         ):
             return LegResult(leg, available=False)
         for attempt in range(2):
-            allowed = allowed_vectors(session, user, leg, types)
+            allowed = allowed_vectors(session, user, leg, types, filters)
             if isinstance(query, model_query.ModelQuery):
                 if not model_query.unchanged(
                     session, user, query, source_snapshot, allowed
@@ -235,7 +248,7 @@ def retrieve(
                         select(PassageVector.id, PassageVector.passage_id).where(
                             PassageVector.id.in_(ids),
                             PassageVector.id.in_(
-                                allowed_vectors(session, user, leg, types)
+                                allowed_vectors(session, user, leg, types, filters)
                             ),
                         )
                     ).all()

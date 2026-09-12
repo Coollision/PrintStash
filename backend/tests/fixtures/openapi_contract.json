@@ -10199,6 +10199,290 @@
         "title": "ModelFamilyRead",
         "type": "object"
       },
+      "ModelFilters": {
+        "additionalProperties": false,
+        "description": "Canonical additive filter contract shared by browse, facets, and views.",
+        "properties": {
+          "browse": {
+            "default": "models",
+            "enum": [
+              "models",
+              "families_collapsed"
+            ],
+            "title": "Browse",
+            "type": "string"
+          },
+          "collection": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection"
+          },
+          "direct": {
+            "default": false,
+            "title": "Direct",
+            "type": "boolean"
+          },
+          "family_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Id"
+          },
+          "family_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "canonical",
+                  "identical",
+                  "rescaled",
+                  "mirrored",
+                  "repaired",
+                  "print_variant"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Role"
+          },
+          "favorites": {
+            "default": false,
+            "title": "Favorites",
+            "type": "boolean"
+          },
+          "file_type": {
+            "items": {
+              "$ref": "#/components/schemas/FileType"
+            },
+            "title": "File Type",
+            "type": "array"
+          },
+          "has_similar_candidates": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Similar Candidates"
+          },
+          "in_family": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Family"
+          },
+          "material_type": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Material Type",
+            "type": "array"
+          },
+          "print_duration_max_s": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive actual PrintJob duration: under three hours is 10800.",
+            "title": "Print Duration Max S"
+          },
+          "print_duration_min_s": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Inclusive actual PrintJob duration; null durations do not match.",
+            "title": "Print Duration Min S"
+          },
+          "print_outcome": {
+            "items": {
+              "$ref": "#/components/schemas/PrintJobState"
+            },
+            "title": "Print Outcome",
+            "type": "array"
+          },
+          "printed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printed"
+          },
+          "printed_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Inclusive finished_at lower bound; UTC when no offset is supplied.",
+            "title": "Printed After"
+          },
+          "printed_before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive finished_at upper bound.",
+            "title": "Printed Before"
+          },
+          "printer_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Id"
+          },
+          "printer_model": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Printer Model",
+            "type": "array"
+          },
+          "printer_presence": {
+            "anyOf": [
+              {
+                "enum": [
+                  "any",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Presence"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q"
+          },
+          "revision_status": {
+            "items": {
+              "$ref": "#/components/schemas/FileRevisionStatus"
+            },
+            "title": "Revision Status",
+            "type": "array"
+          },
+          "slicer_name": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Slicer Name",
+            "type": "array"
+          },
+          "storage": {
+            "items": {
+              "enum": [
+                "vault",
+                "external"
+              ],
+              "type": "string"
+            },
+            "title": "Storage",
+            "type": "array"
+          },
+          "tag": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Tag",
+            "type": "array"
+          },
+          "uploaded_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded After"
+          },
+          "uploaded_before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded Before"
+          }
+        },
+        "title": "ModelFilters",
+        "type": "object"
+      },
       "ModelListItem": {
         "properties": {
           "collection": {
@@ -12015,6 +12299,71 @@
           "name"
         ],
         "title": "OutlinerModelRead",
+        "type": "object"
+      },
+      "ParseSearchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "maxLength": 512,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "ParseSearchRequest",
+        "type": "object"
+      },
+      "ParsedSearch": {
+        "properties": {
+          "filters": {
+            "$ref": "#/components/schemas/ModelFilters"
+          },
+          "parsed": {
+            "default": false,
+            "title": "Parsed",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "residual_query": {
+            "title": "Residual Query",
+            "type": "string"
+          },
+          "sort": {
+            "default": "relevance",
+            "enum": [
+              "relevance",
+              "date-desc",
+              "date-asc",
+              "name-asc",
+              "name-desc",
+              "printed-desc"
+            ],
+            "title": "Sort",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "residual_query",
+          "timezone"
+        ],
+        "title": "ParsedSearch",
         "type": "object"
       },
       "PlanRequest": {
@@ -15404,6 +15753,34 @@
             "title": "Material Type",
             "type": "array"
           },
+          "print_duration_max_s": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive actual PrintJob duration: under three hours is 10800.",
+            "title": "Print Duration Max S"
+          },
+          "print_duration_min_s": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Inclusive actual PrintJob duration; null durations do not match.",
+            "title": "Print Duration Min S"
+          },
           "print_outcome": {
             "items": {
               "$ref": "#/components/schemas/PrintJobState"
@@ -15421,6 +15798,32 @@
               }
             ],
             "title": "Printed"
+          },
+          "printed_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Inclusive finished_at lower bound; UTC when no offset is supplied.",
+            "title": "Printed After"
+          },
+          "printed_before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive finished_at upper bound.",
+            "title": "Printed Before"
           },
           "printer_id": {
             "anyOf": [
@@ -15460,7 +15863,7 @@
           "q": {
             "anyOf": [
               {
-                "maxLength": 255,
+                "maxLength": 512,
                 "type": "string"
               },
               {
@@ -15483,6 +15886,16 @@
             "maxItems": 64,
             "title": "Slicer Name",
             "type": "array"
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSort"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "storage": {
             "items": {
@@ -15633,6 +16046,81 @@
           "text"
         ],
         "title": "SearchEvidence",
+        "type": "object"
+      },
+      "SearchPreferencesPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "nl_filters_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nl Filters Enabled"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "title": "SearchPreferencesPatch",
+        "type": "object"
+      },
+      "SearchPreferencesRead": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "effective_timezone": {
+            "title": "Effective Timezone",
+            "type": "string"
+          },
+          "endpoint_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Host"
+          },
+          "nl_filters_enabled": {
+            "default": false,
+            "title": "Nl Filters Enabled",
+            "type": "boolean"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "required": [
+          "effective_timezone",
+          "available"
+        ],
+        "title": "SearchPreferencesRead",
         "type": "object"
       },
       "SearchRequest": {
@@ -15924,6 +16412,13 @@
           "send_rendered_images": {
             "title": "Send Rendered Images",
             "type": "boolean"
+          },
+          "timezone": {
+            "default": "UTC",
+            "description": "Instance calendar timezone; personal preference takes precedence.",
+            "maxLength": 128,
+            "title": "Timezone",
+            "type": "string"
           }
         },
         "title": "SearchSettings",
@@ -30631,6 +31126,76 @@
           },
           {
             "in": "query",
+            "name": "printed_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "printed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_min_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Min S"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_max_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Max S"
+            }
+          },
+          {
+            "in": "query",
             "name": "has_similar_candidates",
             "required": false,
             "schema": {
@@ -31303,6 +31868,76 @@
           },
           {
             "in": "query",
+            "name": "printed_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "printed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_min_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Min S"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_max_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Max S"
+            }
+          },
+          {
+            "in": "query",
             "name": "has_similar_candidates",
             "required": false,
             "schema": {
@@ -31760,6 +32395,76 @@
           },
           {
             "in": "query",
+            "name": "printed_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "printed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_min_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Min S"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_max_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Max S"
+            }
+          },
+          {
+            "in": "query",
             "name": "has_similar_candidates",
             "required": false,
             "schema": {
@@ -32177,6 +32882,76 @@
                 }
               ],
               "title": "Uploaded Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "printed_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "printed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Printed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_min_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Min S"
+            }
+          },
+          {
+            "in": "query",
+            "name": "print_duration_max_s",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Print Duration Max S"
             }
           },
           {
@@ -37816,6 +38591,34 @@
               "title": "Instant",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Canonical ModelFilters JSON; q is supplied separately. Restricts results to Models.",
+            "in": "query",
+            "name": "filters",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 8192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Canonical ModelFilters JSON; q is supplied separately. Restricts results to Models.",
+              "title": "Filters"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ModelSort",
+              "default": "relevance"
+            }
           }
         ],
         "responses": {
@@ -38292,6 +39095,122 @@
           }
         ],
         "summary": "Search Image",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/parse": {
+      "post": {
+        "operationId": "parse_search_api_v1_search_parse_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParseSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParsedSearch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Parse Search",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/preferences": {
+      "get": {
+        "operationId": "read_preferences_api_v1_search_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchPreferencesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Preferences",
+        "tags": [
+          "search"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_preferences_api_v1_search_preferences_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchPreferencesPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchPreferencesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Patch Preferences",
         "tags": [
           "search"
         ]

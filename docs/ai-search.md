@@ -504,3 +504,69 @@ through the additive vector migration. Existing generations are adopted only
 after checking the stored immutable Space metadata. PostgreSQL nullable owner
 columns are typed centrally, so consumers can omit Model/File/Passage owners
 without relying on SQLite's permissive NULL typing.
+
+
+### Editable natural-language filters (W15)
+
+Print history filters are ordinary library filters and work without any inference
+provider. `printed_after` includes its `PrintJob.finished_at` boundary;
+`printed_before` excludes it. `print_duration_min_s` includes its
+`PrintJob.actual_duration_s` boundary; `print_duration_max_s` excludes it. An
+unknown actual duration does not match a duration filter. For example, “under
+3 hours” means `< 10800`, including 10,799 seconds and excluding 10,800. A single
+live PrintJob must satisfy every selected date, outcome, and duration condition.
+Slicer estimates never substitute for actual duration in these filters.
+
+`GET /search` accepts canonical `ModelFilters` JSON in `filters`, with text in
+`q` and a separate `sort`. Model restrictions apply before lexical and all vector
+rankers, then again during result materialization. Filter-only searches are
+supported. Non-relevance sorts use the library's ordering owner over bounded
+candidates. Search cursors bind both normalized filters and sort. Structured
+filters select Models; other Subject types retain their ordinary text-search flow.
+
+Natural-language interpretation is a separate, optional ChatProvider consumer.
+The instance switch and each user's personal switch both default off. Both must
+be enabled, with a configured chat endpoint, before `POST /search/parse` can send
+anything. The personal control discloses the endpoint host and that submitted
+text plus authorized filter choices are sent there. An OpenAI-compatible endpoint
+can be a local server; a paid OpenAI service is not required. Captions and NL
+parsing remain independently switchable. Preferences live in a separate
+`user_search_preferences` row and cascade when the user is erased.
+
+The parser supplies a closed schema, the current server time, timezone, and
+bounded authorized Collection/tag/material/printer choices. It rejects unknown
+IDs or enum values, additional properties, malformed dates, contradictory
+intervals, and unapproved sorts. Printer selection means current G-code presence
+on a printer, preserving the existing administrator-only filter. It does not
+invent a historical printer predicate. Material refers to existing Artifact
+metadata. Unsupported conditions remain in the residual text.
+
+Relative day/week/month bounds are calculated by the backend, in the user's IANA
+timezone or the instance timezone (UTC by default). Weeks start Monday. Calendar
+boundaries account for DST; the resulting absolute timestamps are visible in
+editable chips. Explicit parse dates must include an offset. Direct filter APIs
+interpret an omitted offset as UTC. The parser proposes a visible “Successful
+print” chip (`completed`) for unqualified “printed”, while explicit failed,
+cancelled, and any-outcome requests are preserved. Users can remove that inference.
+
+Submitting from the top bar requests one parse when consent permits it. The URL
+is replaced with residual text and canonical filters; editing or removing a chip
+does not parse the original sentence again. Saved Views retain normalized text,
+filters, and sort, without a model response, relative date expression, or ranking.
+Invalid output, timeout, unavailable context, or bounded-lane exhaustion keeps the
+original query and adds a discreet failure reason. Parsing uses two in-flight
+slots, no queue, at most 64 choices per category, a 12,000-character context cap,
+and a deadline of at most 15 seconds. No query or completion is stored by this owner.
+
+Query privacy includes failure paths. ASGI request diagnostics omit query
+parameters; unexpected search errors terminate before an upstream traceback can
+include raw query/SQL arguments, including in DEBUG mode. URL redaction handles
+HTTP-client URL objects as well as strings. Both container layouts use the same
+nginx server template, which disables request access/error records because nginx
+includes full URIs in those records. Backend method/path/status diagnostics remain
+available. The proxy test verifies missing-upstream 502 responses with real nginx.
+
+Validation includes a real local HTTP contract server through the ChatProvider,
+actual print-history search and Saved View APIs, PostgreSQL joint predicates,
+and a real browser on desktop/mobile. These verify integration and consent,
+not natural-language quality of a specific LLM.

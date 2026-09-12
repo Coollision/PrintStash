@@ -14,13 +14,14 @@ from app.modules.search import (
     configuration,
     generations,
     model_query,
+    structured,
     vector_store,
     visual_sources,
 )
 from app.modules.search.semantic import LegResult, authorization_context
 
 
-def retrieve(session, user_id, auth_version, query, leg, *, types):
+def retrieve(session, user_id, auth_version, query, leg, *, types, filters=None):
     lease = None
     try:
         user = session.get(User, user_id, populate_existing=True)
@@ -36,8 +37,11 @@ def retrieve(session, user_id, auth_version, query, leg, *, types):
         if leg.space.provider != "onnx_cpu":
             # No remote image wire format is guessed from a text-only endpoint.
             raise EmbeddingError("embedding_image_unavailable")
-        allowed = visual_sources.current_vectors(
-            session, leg.generation_id, leg.space, user
+        allowed = structured.vectors(
+            visual_sources.current_vectors(session, leg.generation_id, leg.space, user),
+            session,
+            user,
+            filters,
         )
         if (
             not isinstance(query, model_query.ModelQuery)
@@ -76,8 +80,11 @@ def retrieve(session, user_id, auth_version, query, leg, *, types):
             or not configuration.settings(session).enabled
         ):
             return LegResult(leg, available=False)
-        allowed = visual_sources.current_vectors(
-            session, leg.generation_id, leg.space, user
+        allowed = structured.vectors(
+            visual_sources.current_vectors(session, leg.generation_id, leg.space, user),
+            session,
+            user,
+            filters,
         )
         if isinstance(query, model_query.ModelQuery):
             if not model_query.unchanged(
@@ -103,8 +110,13 @@ def retrieve(session, user_id, auth_version, query, leg, *, types):
                     select(PassageVector).where(
                         PassageVector.id.in_(ids),
                         PassageVector.id.in_(
-                            visual_sources.current_vectors(
-                                session, leg.generation_id, leg.space, user
+                            structured.vectors(
+                                visual_sources.current_vectors(
+                                    session, leg.generation_id, leg.space, user
+                                ),
+                                session,
+                                user,
+                                filters,
                             )
                         ),
                     )

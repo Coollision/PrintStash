@@ -1,7 +1,16 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { SearchFilterControls } from "@/components/search-filter-controls";
+import { SearchPreferences } from "@/components/search-preferences";
+import { SearchSavedViews } from "@/components/search-saved-views";
+import {
+  readSearchFilters,
+  writeSearchFilters,
+  hasSearchFilters,
+  searchSorts,
+} from "@/lib/search-filters";
 import { SearchEvidenceList, SearchModelPreview } from "@/components/search-evidence";
 import { SearchImageInput } from "@/components/search-image-input";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +19,14 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
-import { getSearchStatus, searchImage, searchLibrary, searchUsingModel } from "@/lib/api/search";
+import {
+  getSearchStatus,
+  getSearchPreferences,
+  parseSearch,
+  searchImage,
+  searchLibrary,
+  searchUsingModel,
+} from "@/lib/api/search";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/errors";
 import { useI18n } from "@/lib/i18n";
@@ -45,7 +61,60 @@ function SearchContent() {
     enabled: !!user,
     refetchInterval: 15000,
   });
-  const queryKey = ["search-results", user?.id, q, mode, types, imageMode, imageVersion, modelId];
+  const filters = readSearchFilters(params);
+  const filtered = hasSearchFilters(filters);
+  const sort = searchSorts.find((value) => value === params.get("sort")) ?? "relevance";
+  const wantsParse = params.get("parse") === "1" && !imageMode && !modelId;
+  const parseFailed = params.get("parse_error") === "1";
+  const preference = useQuery({
+    queryKey: ["search-preferences", user?.id],
+    queryFn: getSearchPreferences,
+    enabled: !!user && !imageMode && !modelId,
+    retry: false,
+  });
+  const canParse = !!preference.data?.available && preference.data.nl_filters_enabled;
+  const parsed = useQuery({
+    queryKey: ["search-parse", user?.id, q],
+    queryFn: ({ signal }) => parseSearch(q, signal),
+    enabled: wantsParse && canParse,
+    retry: false,
+    gcTime: 0,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  useEffect(() => {
+    if (!wantsParse || preference.isPending || (canParse && parsed.isPending)) return;
+    const result = canParse ? parsed.data : undefined;
+    const next = result?.parsed
+      ? writeSearchFilters(result.filters, result.residual_query, result.sort)
+      : new URLSearchParams(params);
+    next.delete("parse");
+    if (canParse && (!!parsed.error || !!result?.reason)) next.set("parse_error", "1");
+    else next.delete("parse_error");
+    router.replace(`/search?${next}`, { scroll: false });
+  }, [
+    wantsParse,
+    preference.isPending,
+    canParse,
+    parsed.isPending,
+    parsed.data,
+    parsed.error,
+    params,
+    router,
+  ]);
+  const queryKey = [
+    "search-results",
+    user?.id,
+    q,
+    mode,
+    types,
+    imageMode,
+    imageVersion,
+    modelId,
+    filters,
+    sort,
+  ];
   const results = useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam, signal }: { pageParam: string | undefined; signal: AbortSignal }) =>
@@ -54,12 +123,19 @@ function SearchContent() {
         : imageMode && image
           ? searchImage(image, { cursor: pageParam }, signal)
           : searchLibrary(
-              { q, mode, cursor: pageParam, types: types.length ? types : undefined },
+              {
+                q,
+                mode,
+                cursor: pageParam,
+                types: types.length ? types : undefined,
+                filters: filtered ? filters : undefined,
+                sort,
+              },
               signal,
             ),
     initialPageParam: undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
-    enabled: !!user && (!!modelId || (imageMode ? !!image : !!q.trim())),
+    enabled: !!user && !wantsParse && (!!modelId || (imageMode ? !!image : !!q.trim() || filtered)),
     retry: false,
     gcTime: 0,
   });
@@ -97,6 +173,39 @@ function SearchContent() {
                 : t("aiSearch.startSearch")
         }
       />
+      {!imageMode && !modelId && (
+        <>
+          <SearchFilterControls
+            key={q}
+            filters={filters}
+            q={q}
+            sort={sort}
+            onChange={(next, query, order) =>
+              router.push(`/search?${writeSearchFilters(next, query, order)}`)
+            }
+          />
+          {user && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <SearchSavedViews
+                userId={user.id}
+                filters={{ ...filters, q, sort }}
+                onSelect={(value) => router.push(`/search?${writeSearchFilters(value)}`)}
+              />
+              {preference.data && <SearchPreferences userId={user.id} value={preference.data} />}
+            </div>
+          )}
+          {wantsParse && (
+            <p role="status" className="mb-3 text-sm text-muted-foreground">
+              {t("aiSearch.parsing")}
+            </p>
+          )}
+          {parseFailed && (
+            <p role="status" className="mb-3 text-sm text-muted-foreground">
+              {t("aiSearch.parseFailed")}
+            </p>
+          )}
+        </>
+      )}
       {imageMode && (
         <SearchImageInput
           image={image}
@@ -176,10 +285,10 @@ function SearchContent() {
       )}
       {modelId ? null : imageMode ? (
         !image && <EmptyState icon={Search} title={t("aiSearch.imagePrompt")} />
-      ) : !q.trim() ? (
+      ) : !q.trim() && !filtered ? (
         <EmptyState icon={Search} title={t("aiSearch.startSearch")} />
       ) : null}
-      {(!!modelId || (imageMode ? !!image : !!q.trim())) &&
+      {(!!modelId || (imageMode ? !!image : !!q.trim() || filtered)) &&
         (results.isPending ? (
           <p role="status" className="py-8 text-sm text-muted-foreground">
             {t("aiSearch.searching")}

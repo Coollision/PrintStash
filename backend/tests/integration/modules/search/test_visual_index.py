@@ -570,3 +570,36 @@ class TestVisualQuery:
 
         monkeypatch.setattr(LocalEmbeddingProvider, "embed", denied)
         assert search(db_session, viewer, "gray").items == []
+
+
+class TestFilteredVisualQuery:
+    def test_applies_actual_history_to_visual_results(
+        self, db_session, visual_setup, advance_generation, make_print_job
+    ):
+        from app.db.models import PrintJobState
+        from app.modules.search.retrieval import search
+        from app.schemas.models import ModelFilters
+
+        actor, encoder, model, file = visual_setup
+        generation = generations.prepare(db_session, actor, proposal(encoder))
+        advance_generation(generation.id)
+        assert (
+            search(
+                db_session,
+                actor,
+                "gray",
+                filters=ModelFilters(print_duration_max_s=200),
+            ).items
+            == []
+        )
+        make_print_job(
+            file,
+            state=PrintJobState.COMPLETED,
+            actual_duration_s=199,
+            finished_at=utcnow(),
+        )
+        result = search(
+            db_session, actor, "gray", filters=ModelFilters(print_duration_max_s=200)
+        )
+        assert [item.subject_id for item in result.items] == [model.id]
+        assert any(evidence.leg == "multiview" for evidence in result.items[0].evidence)

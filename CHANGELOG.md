@@ -25,6 +25,9 @@
   remaining AI Search stages are in development under #166. Separate generated
   captions add explicit render consent, editable/dismissible Model UI, durable
   human-decision protections and caption-aware lexical/semantic passages.
+  Print-history filters use finished jobs and actual duration. Optional personal
+  NL consent enables validated, editable filters with timezone-aware calendar
+  bounds and reusable Saved Views; query text stays out of request/error logs.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
   cyclic library references and native vector bytes without re-embedding.

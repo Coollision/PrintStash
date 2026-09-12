@@ -91,18 +91,48 @@ def _apply_structured_filters(stmt, filters: ModelFilters):
             )
         stmt = stmt.where(Model.id.in_(artifact_ids))  # type: ignore[union-attr]
 
-    live_jobs = select(PrintJob.model_id).where(live(PrintJob))
-    if filters.printed is True:
-        stmt = stmt.where(Model.id.in_(live_jobs))  # type: ignore[union-attr]
-    elif filters.printed is False:
-        stmt = stmt.where(Model.id.not_in(live_jobs))  # type: ignore[attr-defined]
-    if filters.print_outcome:
-        matching_jobs = select(PrintJob.model_id).where(
-            live(PrintJob),
-            PrintJob.state.in_(filters.print_outcome),  # type: ignore[union-attr]
+    matching_jobs = (
+        select(PrintJob.id)
+        .where(PrintJob.model_id == Model.id, *print_job_predicates(filters))
+        .exists()
+    )
+    has_history = bool(filters.print_outcome) or any(
+        value is not None
+        for value in (
+            filters.printed_after,
+            filters.printed_before,
+            filters.print_duration_min_s,
+            filters.print_duration_max_s,
         )
-        stmt = stmt.where(Model.id.in_(matching_jobs))  # type: ignore[union-attr]
+    )
+    if filters.printed is False:
+        # NOT EXISTS also handles captured jobs that have no attached Model.
+        any_job = (
+            select(PrintJob.id)
+            .where(PrintJob.model_id == Model.id, live(PrintJob))
+            .exists()
+        )
+        stmt = stmt.where(~any_job)
+    if filters.printed is True or has_history:
+        stmt = stmt.where(matching_jobs)
+
     return stmt
+
+
+def print_job_predicates(filters: ModelFilters):
+    """Date, outcome and real duration describe the same live PrintJob."""
+    predicates = [live(PrintJob)]
+    if filters.print_outcome:
+        predicates.append(PrintJob.state.in_(filters.print_outcome))
+    if filters.printed_after is not None:
+        predicates.append(PrintJob.finished_at >= filters.printed_after)
+    if filters.printed_before is not None:
+        predicates.append(PrintJob.finished_at < filters.printed_before)
+    if filters.print_duration_min_s is not None:
+        predicates.append(PrintJob.actual_duration_s >= filters.print_duration_min_s)
+    if filters.print_duration_max_s is not None:
+        predicates.append(PrintJob.actual_duration_s < filters.print_duration_max_s)
+    return predicates
 
 
 def filtered_with_rank(session: Session, user: User, filters: ModelFilters):
@@ -161,8 +191,11 @@ def filtered_with_rank(session: Session, user: User, filters: ModelFilters):
         )
         stmt = stmt.where(Model.collection_id.in_(matching))  # type: ignore[union-attr]
     matches = (
-        ranked_model_matches(session, filters.q, stmt.with_only_columns(Model.id).correlate(None))
-        if filters.q and filters.q.strip() else None
+        ranked_model_matches(
+            session, filters.q, stmt.with_only_columns(Model.id).correlate(None)
+        )
+        if filters.q and filters.q.strip()
+        else None
     )
     stmt = library_search.apply_library_search(
         stmt,
@@ -193,8 +226,12 @@ def filtered_with_rank(session: Session, user: User, filters: ModelFilters):
     elif filters.printer_presence == "none":
         stmt = stmt.where(Model.id.not_in(present_model_ids))  # type: ignore[attr-defined]
     rank = (
-        select(matches.c.score).where(matches.c.model_id == Model.id).correlate(Model).scalar_subquery()
-        if matches is not None else None
+        select(matches.c.score)
+        .where(matches.c.model_id == Model.id)
+        .correlate(Model)
+        .scalar_subquery()
+        if matches is not None
+        else None
     )
     return stmt, rank
 

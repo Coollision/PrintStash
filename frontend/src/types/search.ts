@@ -45,6 +45,7 @@ export interface SearchSettings {
   download_enabled: boolean;
   send_rendered_images: boolean;
   send_query_images: boolean;
+  timezone: string;
   chat_endpoint_id: number | null;
   rollback_retention_hours: number;
   max_index_bytes: number;
@@ -162,4 +163,20 @@ export interface GenerationEstimate {
   budget_bytes: number;
   fits_budget: boolean;
   estimated_seconds: number | null;
+}
+
+export interface SearchPreferences {
+  nl_filters_enabled: boolean;
+  timezone: string | null;
+  effective_timezone: string;
+  available: boolean;
+  endpoint_host: string | null;
+}
+export interface ParsedSearch {
+  residual_query: string;
+  filters: import("@/types").SavedViewFilters;
+  sort: import("@/types").ModelSort;
+  parsed: boolean;
+  reason: string | null;
+  timezone: string;
 }

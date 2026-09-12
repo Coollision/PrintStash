@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from printstash_core.inference import EmbeddingError
 from printstash_core.inference.images import decode_image
 from printstash_core.search.passages import SubjectType
+from pydantic import ValidationError
 from sqlmodel import Session
 
 from app.api.image_body import read_image
@@ -17,7 +18,14 @@ from app.core.security import get_current_user, oauth2_scheme
 from app.db.models import User
 from app.db.session import get_session, get_session_factory
 from app.modules.search.retrieval import search
+from app.schemas.models import ModelFilters, ModelSort
 from app.schemas.search import SearchResponse, SearchStatus
+from app.schemas.search_parsing import (
+    ParsedSearch,
+    ParseSearchRequest,
+    SearchPreferencesPatch,
+    SearchPreferencesRead,
+)
 
 router = APIRouter(prefix="/search", tags=["search"])
 _image_slots = threading.BoundedSemaphore(2)
@@ -156,9 +164,21 @@ def search_library(
     ]
     | None = Query(None, alias="legs[]", max_length=4),
     instant: bool = False,
+    filters: str | None = Query(
+        None,
+        max_length=8192,
+        description="Canonical ModelFilters JSON; q is supplied separately. Restricts results to Models.",
+    ),
+    sort: ModelSort = ModelSort.RELEVANCE,
     user: User = Depends(require_search_user),
     session: Session = Depends(get_session),
 ) -> SearchResponse:
+    try:
+        parsed_filters = (
+            ModelFilters.model_validate_json(filters) if filters is not None else None
+        )
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="model_filters_invalid") from None
     return search(
         session,
         user,
@@ -171,4 +191,44 @@ def search_library(
         if legs is not None
         else ("lexical", "semantic_text", "thumbnail", "multiview", "point_cloud"),
         instant=instant,
+        filters=parsed_filters,
+        sort=sort,
     )
+
+
+@router.get("/preferences", response_model=SearchPreferencesRead)
+def read_preferences(
+    response: Response,
+    user: User = Depends(require_search_user),
+    session: Session = Depends(get_session),
+):
+    from app.modules.search.preferences import read
+
+    response.headers["Cache-Control"] = "no-store"
+    return read(session, user)
+
+
+@router.patch("/preferences", response_model=SearchPreferencesRead)
+def patch_preferences(
+    value: SearchPreferencesPatch,
+    response: Response,
+    user: User = Depends(require_search_user),
+    session: Session = Depends(get_session),
+):
+    from app.modules.search.preferences import update
+
+    response.headers["Cache-Control"] = "no-store"
+    return update(session, user, value)
+
+
+@router.post("/parse", response_model=ParsedSearch)
+def parse_search(
+    value: ParseSearchRequest,
+    response: Response,
+    user: User = Depends(require_search_user),
+    session: Session = Depends(get_session),
+):
+    from app.modules.search.parsing import parse
+
+    response.headers["Cache-Control"] = "no-store"
+    return parse(session, user, value.query)

@@ -1,3 +1,4 @@
+/** Typing uses lexical suggestions; submitting enters the explicit search flow. */
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";

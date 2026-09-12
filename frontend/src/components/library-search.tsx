@@ -82,7 +82,7 @@ export function LibrarySearch() {
   function submit() {
     if (!value.trim()) return;
     setOpen(false);
-    router.push(`/search?${new URLSearchParams({ q: value.trim() })}`);
+    router.push(`/search?${new URLSearchParams({ q: value.trim(), parse: "1" })}`);
   }
   if (!visible) return <span className="flex-1" />;
   const current = debounced === value.trim();

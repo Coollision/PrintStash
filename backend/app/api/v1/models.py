@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, Response
 from printstash_core.files import slugify
 from printstash_core.library import RevisionError
 from printstash_core.search.passages import SubjectType
+from pydantic import ValidationError
 from sqlalchemy import func
 from sqlmodel import Session, select
 from starlette.background import BackgroundTask
@@ -135,6 +136,13 @@ from app.schemas.saved_views import ModelStarRead
 from app.schemas.search import SearchResponse
 
 router = APIRouter(prefix="/models", tags=["models"])
+
+
+def _model_filters(**values) -> ModelFilters:
+    try:
+        return ModelFilters.model_validate(values)
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="model_filters_invalid") from None
 
 
 @router.get("/{model_id}/similar-text", response_model=SearchResponse)
@@ -251,6 +259,10 @@ def list_models(
     ),
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
+    printed_after: datetime | None = Query(None),
+    printed_before: datetime | None = Query(None),
+    print_duration_min_s: int | None = Query(None, ge=0, le=2**31 - 1),
+    print_duration_max_s: int | None = Query(None, ge=1, le=2**31 - 1),
     has_similar_candidates: Optional[bool] = Query(None),
     family_id: int | None = Query(None, gt=0),
     family_role: VariantRole | None = Query(None),
@@ -264,7 +276,7 @@ def list_models(
         printer_id is not None or printer_presence is not None
     ) and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="admin_required")
-    filters = ModelFilters(
+    filters = _model_filters(
         collection=collection,
         direct=direct,
         tag=tag or [],
@@ -282,6 +294,10 @@ def list_models(
         storage=storage_filter or [],
         uploaded_after=uploaded_after,
         uploaded_before=uploaded_before,
+        printed_after=printed_after,
+        printed_before=printed_before,
+        print_duration_min_s=print_duration_min_s,
+        print_duration_max_s=print_duration_max_s,
         has_similar_candidates=has_similar_candidates,
         family_id=family_id,
         family_role=family_role,
@@ -321,6 +337,10 @@ def page_models(
     ),
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
+    printed_after: datetime | None = Query(None),
+    printed_before: datetime | None = Query(None),
+    print_duration_min_s: int | None = Query(None, ge=0, le=2**31 - 1),
+    print_duration_max_s: int | None = Query(None, ge=1, le=2**31 - 1),
     has_similar_candidates: Optional[bool] = Query(None),
     family_id: int | None = Query(None, gt=0),
     family_role: VariantRole | None = Query(None),
@@ -335,7 +355,7 @@ def page_models(
         printer_id is not None or printer_presence is not None
     ) and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="admin_required")
-    filters = ModelFilters(
+    filters = _model_filters(
         collection=collection,
         direct=direct,
         tag=tag or [],
@@ -353,6 +373,10 @@ def page_models(
         storage=storage_filter or [],
         uploaded_after=uploaded_after,
         uploaded_before=uploaded_before,
+        printed_after=printed_after,
+        printed_before=printed_before,
+        print_duration_min_s=print_duration_min_s,
+        print_duration_max_s=print_duration_max_s,
         has_similar_candidates=has_similar_candidates,
         family_id=family_id,
         family_role=family_role,
@@ -395,6 +419,10 @@ def outliner_models(
     ),
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
+    printed_after: datetime | None = Query(None),
+    printed_before: datetime | None = Query(None),
+    print_duration_min_s: int | None = Query(None, ge=0, le=2**31 - 1),
+    print_duration_max_s: int | None = Query(None, ge=1, le=2**31 - 1),
     has_similar_candidates: Optional[bool] = Query(None),
     family_id: int | None = Query(None, gt=0),
     family_role: VariantRole | None = Query(None),
@@ -410,7 +438,7 @@ def outliner_models(
     return models_listing.outliner_items(
         session,
         current_user,
-        filters=ModelFilters(
+        filters=_model_filters(
             tag=tag or [],
             printer_id=printer_id,
             printer_presence=printer_presence,
@@ -425,6 +453,10 @@ def outliner_models(
             storage=storage_filter or [],
             uploaded_after=uploaded_after,
             uploaded_before=uploaded_before,
+            printed_after=printed_after,
+            printed_before=printed_before,
+            print_duration_min_s=print_duration_min_s,
+            print_duration_max_s=print_duration_max_s,
             has_similar_candidates=has_similar_candidates,
             family_id=family_id,
             family_role=family_role,
@@ -455,6 +487,10 @@ def model_facets(
     ),
     uploaded_after: Optional[datetime] = Query(None),
     uploaded_before: Optional[datetime] = Query(None),
+    printed_after: datetime | None = Query(None),
+    printed_before: datetime | None = Query(None),
+    print_duration_min_s: int | None = Query(None, ge=0, le=2**31 - 1),
+    print_duration_max_s: int | None = Query(None, ge=1, le=2**31 - 1),
     has_similar_candidates: Optional[bool] = Query(None),
     family_id: int | None = Query(None, gt=0),
     family_role: VariantRole | None = Query(None),
@@ -469,7 +505,7 @@ def model_facets(
     return models_facets.facets(
         session,
         current_user,
-        ModelFilters(
+        _model_filters(
             collection=collection,
             direct=direct,
             tag=tag or [],
@@ -487,6 +523,10 @@ def model_facets(
             storage=storage_filter or [],
             uploaded_after=uploaded_after,
             uploaded_before=uploaded_before,
+            printed_after=printed_after,
+            printed_before=printed_before,
+            print_duration_min_s=print_duration_min_s,
+            print_duration_max_s=print_duration_max_s,
             has_similar_candidates=has_similar_candidates,
             family_id=family_id,
             family_role=family_role,
