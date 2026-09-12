@@ -70,3 +70,15 @@ class TestPointInput:
         assert np.linalg.norm(points[0, :3], axis=0).max() == pytest.approx(1)
         np.testing.assert_allclose(points[0, :3].mean(axis=1), 0, atol=1e-7)
         np.testing.assert_allclose(points[0, 3:], 0.4)
+
+    def test_rejects_near_zero_geometry_radius(self):
+        vertices = np.asarray(
+            [[0, 0, 0], [1e-13, 0, 0], [0, 1e-13, 0], [0, 0, 1e-13]], dtype=np.float64
+        )
+        faces = np.asarray([[0, 2, 1], [0, 1, 3], [1, 2, 3], [2, 0, 3]], dtype=np.int64)
+        with pytest.raises(EmbeddingError, match="embedding_point_geometry_invalid"):
+            point_input(vertices, faces)
+
+    def test_rejects_nonpoint_grouping_inputs(self):
+        with pytest.raises(EmbeddingError, match="embedding_point_input_invalid"):
+            grouped_points(EmbeddingInput("text", text="a bracket"))

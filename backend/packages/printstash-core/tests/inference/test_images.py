@@ -107,3 +107,14 @@ class TestDecodeImage:
         monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
         with pytest.raises(EmbeddingError, match="embedding_image_too_large"):
             decode_image(payload, "image/png")
+
+    def test_reports_an_absent_image_runtime(self, monkeypatch):
+        import sys
+
+        monkeypatch.setitem(sys.modules, "PIL", None)
+        with pytest.raises(EmbeddingError, match="embedding_runtime_unavailable"):
+            decode_image(b"image", "image/png")
+
+    def test_rejects_an_unsupported_decoded_format(self):
+        with pytest.raises(EmbeddingError, match="embedding_image_type_unsupported"):
+            decode_image(encoded_image("GIF"), "image/png")

@@ -42,3 +42,42 @@ class TestTextRecipe:
     def test_rejects_malformed_encoder_digests(self, digest):
         with pytest.raises(EmbeddingError, match="search_recipe_unavailable"):
             TextRecipe(encoder_manifest_sha256=digest)
+
+    @pytest.mark.parametrize("payload", ["not-json", "[]", '{"unknown":true}'])
+    def test_rejects_malformed_recipe_json(self, payload):
+        space = EmbeddingSpace("test", "v1", 4, "text", payload)
+        with pytest.raises(EmbeddingError, match="search_recipe_unavailable"):
+            TextRecipe.for_space(space)
+
+
+class TestDocumentInput:
+    @pytest.mark.parametrize("length,truncated", [(27, False), (28, False), (29, True)])
+    def test_counts_prefix_characters_inside_the_budget(self, length, truncated):
+        from printstash_core.search.text_inputs import document_input
+
+        space = EmbeddingSpace(
+            "test",
+            "v1",
+            4,
+            "text",
+            TextRecipe(max_input_characters=128).encode(),
+            document_prefix="p" * 100,
+        )
+        value, actual = document_input(space, "x" * length)
+        assert value.text == "p" * 100 + "x" * min(28, length)
+        assert actual is truncated
+
+    @pytest.mark.parametrize("prefix", ["p" * 128, "p" * 129])
+    def test_rejects_prefixes_consuming_the_document_budget(self, prefix):
+        from printstash_core.search.text_inputs import document_input
+
+        space = EmbeddingSpace(
+            "test",
+            "v1",
+            4,
+            "text",
+            TextRecipe(max_input_characters=128).encode(),
+            document_prefix=prefix,
+        )
+        with pytest.raises(EmbeddingError, match="search_prefix_exceeds_budget"):
+            document_input(space, "document")

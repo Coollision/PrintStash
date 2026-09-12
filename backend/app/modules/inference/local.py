@@ -110,6 +110,33 @@ class LocalEmbeddingProvider:
         self._execute((), context=context)
         return self.manifest
 
+    @property
+    def is_warm(self) -> bool:
+        return pool.is_warm(self._worker_key())
+
+    def prepare_query(self) -> None:
+        if not self.is_warm:
+            from app.modules.inference.warmup import requests
+
+            requests.request(manifest_identity(self.manifest))
+            raise EmbeddingError("embedding_model_warming")
+
+    def _worker_key(self) -> tuple:
+        try:
+            fingerprints = tuple(
+                (asset.filename, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+                for asset in self.manifest.assets()
+                for stat in ((self.directory / asset.filename).stat(),)
+            )
+        except OSError:
+            raise EmbeddingError("embedding_asset_unavailable") from None
+        return (
+            str(self.directory),
+            manifest_identity(self.manifest),
+            self.threads,
+            fingerprints,
+        )
+
     def embed(
         self,
         inputs: tuple[EmbeddingInput, ...],
@@ -178,6 +205,7 @@ class LocalEmbeddingProvider:
         self._last_batch.truncations = tuple(result.truncated)
         for vector in result.vectors:
             normalize(vector, self.space.dimension)
+        pool.mark_warm(self._worker_key())
         return tuple(tuple(vector) for vector in result.vectors)
 
     def _request(
@@ -198,24 +226,7 @@ class LocalEmbeddingProvider:
             cleanup.callback(self._release_slot, session, slot.id, token)
             if len(payload) > MAX_INPUT_BYTES:
                 raise EmbeddingError("embedding_input_budget")
-            try:
-                fingerprints = tuple(
-                    (
-                        asset.filename,
-                        (self.directory / asset.filename).stat().st_ino,
-                        (self.directory / asset.filename).stat().st_mtime_ns,
-                        (self.directory / asset.filename).stat().st_size,
-                    )
-                    for asset in self.manifest.assets()
-                )
-            except OSError:
-                raise EmbeddingError("embedding_asset_unavailable") from None
-            key = (
-                str(self.directory),
-                manifest_identity(self.manifest),
-                self.threads,
-                fingerprints,
-            )
+            key = self._worker_key()
             with pool.acquire(
                 key, self.directory, self._spawn, admission_context
             ) as process:

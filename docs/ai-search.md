@@ -581,3 +581,14 @@ model and enable expansion in Advanced settings. The
 [sparse study](ai-search-sparse-study.md) records the immutable export, ranking
 cap, measured 2.09× lexical footprint and unchanged 87.5% recall@5 on the current
 engineering corpus.
+
+## Restart warm-up
+
+Active, already installed local exports warm through their native canaries after
+a process restart, with the text encoder first. The two-worker memory budget
+remains shared with rendering; additional visual models warm on demand. Cold
+queries return lexical results with `embedding_model_warming`, instead of
+repeatedly killing a load at the ordinary query deadline. No query content is
+retained in the bounded warm-up hints, and warm-up never downloads weights or
+calls a remote provider. Revoking local inference or stopping the app cancels
+loading. Existing vector-cache hits remain usable after an idle worker eviction.

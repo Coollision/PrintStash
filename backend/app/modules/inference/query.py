@@ -72,6 +72,9 @@ class QueryRunner:
             if key is not None and cached and cached[0] > time.monotonic():
                 self._cache[key] = cached
                 return struct.unpack(f"<{space.dimension}f", cached[1])
+            prepare = getattr(provider, "prepare_query", None)
+            if prepare is not None:
+                prepare()
             if not self._slots.acquire(blocking=False):
                 raise EmbeddingError("inference_query_busy")
             self._active.add(cancelled)

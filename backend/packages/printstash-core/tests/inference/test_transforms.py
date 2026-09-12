@@ -135,3 +135,44 @@ class TestShortlistCodes:
 
         assert result.ids == (1, 2)
         assert result.truncated is False
+
+    @pytest.mark.parametrize(
+        "limit,max_scan", [(0, 10), (2049, 10), (1, 0), (1, 1000001)]
+    )
+    def test_rejects_invalid_shortlist_budgets(self, limit, max_scan):
+        with pytest.raises(EmbeddingError, match="embedding_query_budget_invalid"):
+            shortlist_codes(
+                IndexTransform(8, 8, "binary"),
+                b"\x00",
+                [],
+                limit=limit,
+                max_scan=max_scan,
+            )
+
+    @pytest.mark.parametrize(
+        "entries,expected",
+        [([], ()), ([(1, b"\x00"), (2, b"\x01"), (3, b"\x07")], (1,))],
+    )
+    def test_finishes_exhausted_candidate_streams(self, entries, expected):
+        result = shortlist_codes(
+            IndexTransform(8, 8, "binary"), b"\x00", entries, limit=1, max_scan=10
+        )
+        assert result.ids == expected
+        assert result.scanned == len(entries)
+        assert result.truncated is False
+
+
+class TestCodeBoundaries:
+    def test_reports_float_code_width(self):
+        transform = IndexTransform(4, 4, "float32")
+        assert transform.code_bytes == 16
+        assert transform.storage_dimension == 4
+
+    @pytest.mark.parametrize(
+        "count,query_bytes,code_bytes", [(0, 8, 8), (513, 8, 8), (1, 7, 8), (1, 8, 7)]
+    )
+    def test_rejects_invalid_distance_blocks(self, count, query_bytes, code_bytes):
+        with pytest.raises(EmbeddingError, match="embedding_code_invalid"):
+            IndexTransform(2, 2).distances(
+                b"x" * query_bytes, (b"x" * code_bytes,) * count
+            )

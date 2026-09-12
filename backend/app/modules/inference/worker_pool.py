@@ -23,6 +23,7 @@ class Worker:
     busy: bool = False
     touched: float = 0
     waiting_queries: int = 0
+    warmed: bool = False
 
     def close(self):
         if self.process.poll() is None:
@@ -41,6 +42,17 @@ class WorkerPool:
         self._condition = threading.Condition()
         self._workers: OrderedDict[tuple, Worker] = OrderedDict()
         self._protected_directories: frozenset[Path] = frozenset()
+
+    def is_warm(self, key: tuple) -> bool:
+        with self._condition:
+            worker = self._workers.get(key)
+            return bool(worker and worker.warmed and worker.process.poll() is None)
+
+    def mark_warm(self, key: tuple) -> None:
+        with self._condition:
+            worker = self._workers.get(key)
+            if worker is not None and worker.process.poll() is None:
+                worker.warmed = True
 
     @contextmanager
     def acquire(

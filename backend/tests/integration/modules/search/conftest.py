@@ -113,3 +113,39 @@ def sparse_setup(db_session, tmp_path, monkeypatch, make_user):
     )
     db_session.commit()
     return actor, model
+
+
+@pytest.fixture
+def warm_model(
+    db_session, tmp_path, monkeypatch, make_embedding_space, make_index_generation
+):
+    import json
+
+    from app.core.config import _overlay
+    from app.modules.inference import model_cache
+    from app.modules.inference.warmup import requests
+    from tests.factories.embeddings import text_embedding_assets
+
+    root = tmp_path / "warm-cache"
+    directory = text_embedding_assets(root / "text")
+    monkeypatch.setitem(_overlay, "embedding_cache_dir", root)
+    monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+    model = model_cache.inspect(directory)
+    space = model.manifest.space()
+    stored = make_embedding_space(
+        config_hash=space.config_hash,
+        config_json=json.dumps(space.__dict__),
+        model_key=space.model_key,
+        model_revision=space.model_revision,
+        native_dimension=space.dimension,
+        modality="text",
+        profile="semantic_text",
+    )
+    generation = make_index_generation(stored, state="active", active=True)
+    configuration.update(
+        db_session, SearchSettings(enabled=True, local_models_enabled=True)
+    )
+    db_session.commit()
+    requests.clear()
+    yield model, generation
+    requests.clear()

@@ -360,6 +360,7 @@ async def lifespan(app: FastAPI):
     from app.db.projections import bind_content_projection
 
     app.state.search_task = app.state.captions_task = app.state.expansion_task = None
+    app.state.model_warmup_task = None
     previous_search = bind_content_search(None)
     previous_projection = bind_content_projection(None)
     if inference_available():
@@ -367,6 +368,7 @@ async def lifespan(app: FastAPI):
         from app.modules.search.projection import LibraryProjection
         from app.runtime.captions import run_captions
         from app.runtime.expansion import run_expansion
+        from app.runtime.model_warmup import run_model_warmup
         from app.runtime.search import run_search
 
         bind_content_search(LibrarySearch())
@@ -374,6 +376,7 @@ async def lifespan(app: FastAPI):
         app.state.search_task = asyncio.create_task(run_search())
         app.state.captions_task = asyncio.create_task(run_captions())
         app.state.expansion_task = asyncio.create_task(run_expansion())
+        app.state.model_warmup_task = asyncio.create_task(run_model_warmup())
     printer_provider_registry = build_provider_registry()
     app.state.printer_provider_registry = printer_provider_registry
     provider_builder = partial(get_provider_client, registry=printer_provider_registry)
@@ -427,6 +430,7 @@ async def lifespan(app: FastAPI):
         app.state.search_task,
         app.state.captions_task,
         app.state.expansion_task,
+        app.state.model_warmup_task,
         app.state.gc_task,
         app.state.external_scan_task,
         app.state.automatic_backup_task,

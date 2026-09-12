@@ -26,3 +26,9 @@ class TestUnitIdentity:
     )
     def test_refuses_unknown_component_encoding(self, key):
         assert unit_component(key) is None
+
+    @pytest.mark.parametrize("file_id,component", [(1, 0), (2**63 - 1, 2048)])
+    def test_preserves_valid_artifact_component_identity(self, file_id, component):
+        key = unit_key(file_id, component, "a" * 64, "{}")
+        assert key == f"mesh:{file_id}:{component}:" + "a" * 64 + ":44136fa355b3678a"
+        assert unit_component(key) == component

@@ -4,17 +4,89 @@ import asyncio
 from contextlib import suppress
 
 import pytest
+from printstash_core.search.passages import SubjectType
 
+from app.core.config import _overlay
+from app.db.session import get_session_factory
+from app.modules.inference import model_cache
 from app.modules.inference.query import close_queries
 from app.modules.inference.worker_pool import pool
+from app.modules.search.model_warmup import ModelWarmup
 from app.runtime.jobs import registry
-from app.runtime.search import run_search
+from app.runtime.search import process_one, run_search
+from tests.factories.embeddings import text_embedding_assets
 from tests.fixtures.model_acquisition import model_host as _model_host  # noqa: F401
 
 pytestmark = pytest.mark.asyncio
 
 
 class TestLocalSearch:
+    async def test_keeps_search_available_during_restart_warmup(
+        self, api, superuser_headers, tmp_path, monkeypatch
+    ):
+        cache = tmp_path / "cached-models"
+        model = model_cache.inspect(text_embedding_assets(cache / "text"))
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", cache)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        response = await api.put(
+            "/api/v1/config/ai-search",
+            headers=superuser_headers,
+            json={"enabled": True, "local_models_enabled": True},
+        )
+        assert response.status_code == 200, response.text
+        response = await api.post(
+            "/api/v1/documents",
+            headers=superuser_headers,
+            json={"name": "red", "body": "red assembly"},
+        )
+        assert response.status_code == 201, response.text
+        document_id = response.json()["id"]
+        response = await api.post(
+            "/api/v1/config/ai-search/generations",
+            headers=superuser_headers,
+            json={"local_model_id": model.id, "index_backend": "numpy"},
+        )
+        assert response.status_code == 202, response.text
+        generation_id = response.json()["id"]
+        processor = ModelWarmup(get_session_factory())
+        try:
+            for _ in range(40):
+                await asyncio.to_thread(process_one, SubjectType.DOCUMENT)
+                response = await api.get(
+                    "/api/v1/config/ai-search/generations", headers=superuser_headers
+                )
+                generation = next(
+                    row for row in response.json() if row["id"] == generation_id
+                )
+                if generation["state"] == "active":
+                    break
+            assert generation["state"] == "active", generation
+            close_queries()
+            pool.close()
+            response = await api.get(
+                "/api/v1/search",
+                headers=superuser_headers,
+                params={"q": "red", "legs": "lexical,semantic_text"},
+            )
+            assert response.status_code == 200, response.text
+            result = response.json()
+            assert result["leg_errors"] == {"semantic_text": "embedding_model_warming"}
+            assert any(item["subject_id"] == document_id for item in result["items"])
+            assert await asyncio.to_thread(processor.work_one)
+            response = await api.get(
+                "/api/v1/search",
+                headers=superuser_headers,
+                params={"q": "red", "legs": "semantic_text"},
+            )
+            assert response.status_code == 200, response.text
+            result = response.json()
+            assert result["leg_errors"] == {}
+            assert any(item["subject_id"] == document_id for item in result["items"])
+        finally:
+            processor.stop()
+            close_queries()
+            pool.close()
+
     async def test_activates_an_acquired_text_model(
         self, api, superuser_headers, model_host
     ):

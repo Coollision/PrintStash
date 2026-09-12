@@ -78,3 +78,37 @@ class TestMeanPool:
     def test_rejects_invalid_views_instead_of_silently_omitting_them(self, vectors):
         with pytest.raises(EmbeddingError):
             mean_pool(vectors, 3)
+
+
+class TestVisualRecipeAdmission:
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"encoder_space_hash": "bad"},
+            {"image_size": True},
+            {"image_size": 513},
+            {"profile": "point_cloud"},
+            {"aggregation": "sum"},
+            {"aggregation": "max"},
+            {"version": "future"},
+            {"thumbnail_recipe": "different"},
+        ],
+    )
+    def test_rejects_incompatible_recipe_declarations(self, fields):
+        with pytest.raises(EmbeddingError, match="search_visual_recipe_invalid"):
+            VisualRecipe(
+                **(
+                    {
+                        "encoder_space_hash": "a" * 64,
+                        "image_size": 224,
+                        "profile": "thumbnail",
+                    }
+                    | fields
+                )
+            )
+
+    @pytest.mark.parametrize("payload", ["not-json", "[]", '{"unknown":true}'])
+    def test_rejects_malformed_recipe_json(self, payload):
+        space = VisualRecipe.space(paired_space(), image_size=224, profile="thumbnail")
+        with pytest.raises(EmbeddingError, match="search_visual_recipe_invalid"):
+            VisualRecipe.for_space(replace(space, render_recipe=payload))

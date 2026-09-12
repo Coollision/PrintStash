@@ -30,6 +30,8 @@
   bounds and reusable Saved Views; query text stays out of request/error logs.
   Optional local SPLADE expansion stores bounded continuous term weights apart
   from original text, with atomic disable, durable retries and measured index cost.
+  After a restart, active local models warm in the background while lexical
+  search remains available; cold queries do not repeatedly terminate model loads.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
   cyclic library references and native vector bytes without re-embedding.

@@ -834,3 +834,42 @@ fixing the URL-object and unexpected-debug-exception paths.
 | SP041 | replays frozen real sparse quality weights | Happy | hash-bound corpus and queries | original and expanded recall@5 both 28/32 | Integration | ✅ `integration/modules/search/retrieval/test_sparse_quality.py::TestSparseQuality::test_measures_frozen_real_sparse_expansion` |
 | SP042 | refuses sparse consent without local prerequisites | Error | enabled expansion without selected local model | 400; setting not accepted | Integration | ✅ `integration/api/v1/test_inference_models.py::TestInferenceModels::test_requires_local_sparse_prerequisites` |
 | SP043 | does no sparse work while an opt in is disabled | Edge | eligible passage with one capability off | no expansion claim or publication | Integration | ✅ `integration/modules/search/test_expansion_worker.py::TestExpansionProcessor::test_does_no_work_with_an_opt_in_disabled` |
+
+## Restart warm-up and cold-query admission
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| WU001 | returns promptly while a local model is cold | Edge | Cold provider, short query budget | Warming result; model loading is not repeatedly killed | Integration | ✅ `integration/modules/inference/query/test_warmup.py::TestLocalQueryWarmup::test_returns_promptly_while_a_model_is_cold` |
+| WU002 | serves queries after background canary warm-up | Happy | Active preplaced model after process restart | Native query fits its ordinary deadline | Integration | ✅ `integration/modules/search/test_model_warmup.py::TestModelWarmup::test_serves_queries_after_background_warmup` |
+| WU003 | warms only active locally permitted models | Error | Disabled local inference, inactive or remote generations | No local model load or network request | Integration | ✅ `integration/modules/search/test_model_warmup.py::TestModelWarmup::test_warms_only_active_locally_permitted_models` |
+| WU004 | bounds pending warm-up requests | Edge | Repeated requests for many models | At most four distinct model identities retained; no query text | Unit | ✅ `unit/modules/inference/test_warmup.py::TestWarmupRequests::test_bounds_pending_models_without_duplicate_work` |
+| WU005 | preserves warm workers while queries wait | Edge | Background load is in progress | Query returns warming without terminating the loader | Integration | ✅ `integration/modules/search/test_model_warmup.py::TestModelWarmup::test_preserves_the_loader_during_cold_queries` |
+| WU006 | invalidates readiness when model assets change | Error | Replaced model graph or tokenizer | Old worker cannot count as ready | Integration | ✅ `integration/modules/inference/query/test_warmup.py::TestLocalQueryWarmup::test_invalidates_readiness_after_an_asset_changes` |
+| WU007 | stops warm-up when local consent is revoked | Error | Configuration off during canary | Contained load cancelled | Integration | ✅ `integration/modules/search/test_model_warmup.py::TestModelWarmup::test_cancels_loading_after_local_consent_is_revoked` |
+| WU008 | preserves vector-cache hits after worker eviction | Edge | Cached query vector; model worker gone | Cached result without another model load | Integration | ✅ `integration/modules/inference/query/test_warmup.py::TestLocalQueryWarmup::test_preserves_cached_vectors_after_worker_eviction` |
+| WU009 | keeps local canary warm-up out of the lexical path | Happy | Cold active text generation | Lexical response available while native model loads | E2E | ✅ `e2e/test_search_local.py::TestLocalSearch::test_keeps_search_available_during_restart_warmup` |
+| WU010 | cancels warm-up before shutdown completes | Edge | Shutdown during contained load | Cancellation drains bounded work | Integration | ✅ `integration/runtime/test_model_warmup.py::TestModelWarmupRuntime::test_cancels_loading_before_shutdown_completes` |
+| WU011 | defers model loading during restore | Edge | restore maintenance active | no loading admitted | Integration | ✅ `integration/runtime/test_model_warmup.py::TestModelWarmupRuntime::test_defers_model_loading_during_restore` |
+
+## Core acceptance coverage audit
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| AC001 | preserves Artifact unit identity on valid boundaries | Happy | valid Artifact ID, component and recipe | stable key and parsed component | Unit | ✅ `core/inference/test_units.py::TestUnitIdentity::test_preserves_valid_artifact_component_identity` |
+| AC002 | binds point recipes to the paired encoder | Happy | valid point Space | exact recipe round-trip | Unit | ✅ `core/search/test_point_inputs.py::TestPointRecipe::test_binds_the_exact_paired_encoder` |
+| AC003 | rejects incompatible point recipe declarations | Error | bad hash, version or profile | safe recipe error | Unit | ✅ `core/search/test_point_inputs.py::TestPointRecipe::test_rejects_incompatible_recipe_declarations` |
+| AC004 | rejects mismatched point Spaces | Error | different modality, profile or alignment | safe recipe error | Unit | ✅ `core/search/test_point_inputs.py::TestPointRecipe::test_rejects_mismatched_spaces` |
+| AC005 | rejects malformed point recipe JSON | Error | malformed or unknown fields | safe recipe error | Unit | ✅ `core/search/test_point_inputs.py::TestPointRecipe::test_rejects_malformed_recipe_json` |
+| AC006 | includes the document prefix within the input budget | Edge | prefix plus document at and above cap | bounded text and accurate truncation | Unit | ✅ `core/search/test_text_inputs.py::TestDocumentInput::test_counts_prefix_characters_inside_the_budget` |
+| AC007 | rejects prefixes consuming the entire budget | Error | prefix at or above cap | safe prefix-budget error | Unit | ✅ `core/search/test_text_inputs.py::TestDocumentInput::test_rejects_prefixes_consuming_the_document_budget` |
+| AC008 | rejects malformed text recipe JSON | Error | malformed or unknown fields | safe recipe error | Unit | ✅ `core/search/test_text_inputs.py::TestTextRecipe::test_rejects_malformed_recipe_json` |
+| AC009 | reports the absent image runtime | Error | Pillow unavailable | safe capability error | Unit | ✅ `core/inference/test_images.py::TestDecodeImage::test_reports_an_absent_image_runtime` |
+| AC010 | rejects unsupported decoded image formats | Error | GIF body declared as PNG | safe unsupported-type error | Unit | ✅ `core/inference/test_images.py::TestDecodeImage::test_rejects_an_unsupported_decoded_format` |
+| AC011 | rejects degenerate point normalization | Error | near-zero geometry radius | safe geometry error | Unit | ✅ `core/inference/test_points.py::TestPointInput::test_rejects_near_zero_geometry_radius` |
+| AC012 | rejects nonpoint grouping inputs | Error | text input offered to point grouping | safe point-input error | Unit | ✅ `core/inference/test_points.py::TestPointInput::test_rejects_nonpoint_grouping_inputs` |
+| AC013 | reports float index code width | Happy | float32 transform | four bytes per coordinate | Unit | ✅ `core/inference/test_transforms.py::TestCodeBoundaries::test_reports_float_code_width` |
+| AC014 | rejects invalid compressed distance blocks | Error | bad code/query lengths or block size | safe code error | Unit | ✅ `core/inference/test_transforms.py::TestCodeBoundaries::test_rejects_invalid_distance_blocks` |
+| AC015 | rejects invalid shortlist budgets | Error | invalid limit or scan bound | safe query-budget error | Unit | ✅ `core/inference/test_transforms.py::TestShortlistCodes::test_rejects_invalid_shortlist_budgets` |
+| AC016 | returns stable bounded compressed shortlists | Edge | short, empty or non-improving candidate streams | ordered IDs and accurate scan/truncation | Unit | ✅ `core/inference/test_transforms.py::TestShortlistCodes::test_finishes_exhausted_candidate_streams` |
+| AC017 | rejects incompatible visual recipe declarations | Error | bad recipe metadata | safe visual-recipe error | Unit | ✅ `core/search/test_visual_inputs.py::TestVisualRecipeAdmission::test_rejects_incompatible_recipe_declarations` |
+| AC018 | rejects malformed visual recipe JSON | Error | malformed or unknown fields | safe visual-recipe error | Unit | ✅ `core/search/test_visual_inputs.py::TestVisualRecipeAdmission::test_rejects_malformed_recipe_json` |
