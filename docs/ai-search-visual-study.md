@@ -3,7 +3,7 @@
 Measured locally on 2026-09-12, x86_64 QEMU CPU, one ONNX inference thread.
 These are reproducible engineering measurements. The 32 queries were written
 before inference, but are assistant-authored, not independent human acceptance.
-No printed-part photograph or physical Raspberry Pi was supplied for this run.
+Physical Raspberry Pi measurements and independent human-query acceptance remain open. A separate public printed-part photograph is measured below.
 
 The frozen corpus has 26 original CC0 analytic meshes and six attributed CC0
 Thingi10K meshes already present in the core fixtures. Shapes reach the image
@@ -26,8 +26,7 @@ are not substituted for a geometry render. Missing or corrupt derivatives fall
 back to the same renderer. Multiview generates its six views and fallback
 thumbnail from one mesh load. Neither aggregation improved this engineering
 corpus over the thumbnail; multiview is an explicit profile choice, not a
-promised quality upgrade. Independent queries and printed-part photographs
-remain acceptance work.
+promised quality upgrade. Independent human-query and broad printed-photo quality remain acceptance work.
 
 On this host, native-size thumbnail rendering took a median 0.15 seconds and
 B/32 image inference 0.44 seconds. Six-view rendering took 0.89 seconds and
@@ -83,3 +82,38 @@ uv run pytest -n 0 tests/integration/modules/search/retrieval/test_visual_qualit
 
 The original native-size measurement SHA-256 is
 `3a50787bfcdcdfcdca4bc90395a792e71b67f6fb5428708d4d4cdd5b26f91a36`.
+
+
+## Printed-part photograph
+
+A separate acceptance case uses the unmodified original
+[physical Benchy photograph](https://commons.wikimedia.org/wiki/File:-3DBenchy_3D-printed_at_low_resolution_on_a_BEETHEFIRST_3D_printer_(17203395618).jpg)
+by #3DBenchy (CC BY 2.0), the matching existing STL and the same 32 frozen
+visual distractors. The full scene includes the printed boat, printer, a large
+foreground filament spool and a watermark. No crop, background removal or
+query-text tuning is applied. Library names and descriptions are opaque;
+visible text in the photograph is retained.
+
+| Profile | Source Model rank among 33 | Cosine score | Top-10 acceptance |
+|---|---:|---:|---|
+| Existing thumbnail | 13 | 0.66444 | Fail |
+| Six views, normalized mean | 1 | 0.71606 | Pass |
+| Six views, maximum score | 2 | 0.69456 | Pass |
+
+The same pinned CLIP encoder produced every vector. This is concrete evidence
+for one photo-to-Model retrieval case and a multiview improvement on that case.
+It does not erase the weaker multiview results on the text-to-shape corpus or
+establish a general photo-recall rate. All three ranks, native vectors and
+input hashes are frozen in `printed-benchy-vectors.json`; the integration test
+replays them through the actual authorized visual store with complete units.
+Attribution and original-byte hashes accompany the photograph fixture.
+
+```sh
+uv run python -m tests.fakes.printed_photo_benchmark \
+  --model-directory /path/to/clip-b32 \
+  --output /tmp/printed-photo.json --profile multiview_mean
+```
+
+The profile is required explicitly; the command preserves all profile results
+and fails if the selected profile misses the fixed top-10 target. Selecting
+`thumbnail` retains the measured failure.

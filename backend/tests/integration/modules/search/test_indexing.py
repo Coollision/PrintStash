@@ -21,6 +21,26 @@ from app.schemas.search_generations import GenerationProposal
 
 
 class TestIndexProcessor:
+    def test_reports_idle_for_a_settled_active_generation(
+        self, db_session, generation_setup, healthy_embeddings, advance_generation
+    ):
+        actor, endpoint = generation_setup
+        proposal = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+        advance_generation(proposal.id)
+        healthy_embeddings.requests.clear()
+
+        assert indexing.IndexProcessor(get_session_factory()).work_one() is False
+
+        assert healthy_embeddings.requests == []
+        assert (
+            db_session.get(IndexGeneration, proposal.id, populate_existing=True).state
+            == "active"
+        )
+
     def test_honors_the_configured_embedding_batch_size(
         self,
         db_session,

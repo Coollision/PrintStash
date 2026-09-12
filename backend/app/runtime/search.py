@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 from itertools import cycle
 
 from printstash_core.inference import EmbeddingError
@@ -53,12 +54,32 @@ def process_one(kind: SubjectType) -> int:
 
 async def run_search() -> None:
     for kind in cycle(SubjectType):
-        unit = asyncio.create_task(asyncio.to_thread(process_one, kind))
         try:
-            await asyncio.shield(unit)
-        except asyncio.CancelledError:
-            await unit
-            raise
+            await _run_unit(partial(process_one, kind))
+            # Repair runs once per tick. Drain at most 128 embedding inputs
+            # (16 default batches), yielding between units and pausing between
+            # bursts so a busy or unavailable provider cannot spin forever.
+            for _ in range(15):
+                if not await _run_unit(_index_one):
+                    break
         except Exception:
             logger.warning("Search indexing paused; retrying a bounded repair unit")
         await asyncio.sleep(1)
+
+
+def _index_one() -> bool:
+    if not maintenance.begin_mutating_operation():
+        return False
+    try:
+        return IndexProcessor(get_session_factory()).work_one()
+    finally:
+        maintenance.end_mutating_operation()
+
+
+async def _run_unit(operation):
+    unit = asyncio.create_task(asyncio.to_thread(operation))
+    try:
+        return await asyncio.shield(unit)
+    except asyncio.CancelledError:
+        await unit
+        raise

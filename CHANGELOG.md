@@ -9,6 +9,8 @@
   evidence, and local image/geometry search. Image queries support file selection,
   drag-and-drop and device camera capture. Pinned BGE, CLIP and OpenShape models
   use one bounded CPU runtime; acquisition and activation require explicit action.
+  AI inference is optional and off by default; library features and ordinary
+  keyword search require no model, inference server or OpenAI account.
 - AI Search settings manage encrypted compatible endpoints, model provenance,
   capacity estimates and resumable index rebuilds. Serving generations remain
   available during replacement; float, int8/binary and approved MRL transforms
@@ -43,6 +45,9 @@
 
 ### Fixed
 
+- Search backfill drains bounded batches between periodic pauses, removing the
+  one-second delay per embedding batch while preserving maintenance and shutdown
+  coordination. Settled active generations stop a burst without inference.
 - Family browsing uses recent changes when relevance scores are unavailable,
   preserving valid cursors for collapsed cards and the Families list.
 

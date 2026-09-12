@@ -1,7 +1,8 @@
 """Replay measured real CLIP vectors through the shipped authorized store.
 
 The 32 queries were frozen before running models. This is an engineering corpus,
-not independent human acceptance or real-photo validation.
+not independent human acceptance. The separate Benchy case replays an
+unmodified, attributed photograph of a physical print.
 """
 
 import base64
@@ -223,3 +224,150 @@ class TestPointRanking:
             }
         assert found == 30
         assert found / 32 > 0.84375  # Same corpus, measured existing thumbnail @10.
+
+
+class TestPrintedPhotoRanking:
+    @pytest.mark.parametrize(
+        "profile,aggregation,expected_rank",
+        [("thumbnail", "mean", 13), ("multiview", "mean", 1), ("multiview", "max", 2)],
+    )
+    def test_replays_printed_photo_rank(
+        self,
+        db_session,
+        make_user,
+        make_model,
+        make_file,
+        make_index_generation,
+        make_passage_vector,
+        profile,
+        aggregation,
+        expected_rank,
+    ):
+        root = FIXTURES_DIR / "search"
+        measured = json.loads((root / "printed-benchy-vectors.json").read_text())
+        corpus = json.loads((root / "clip-b32-visual-vectors.json").read_text())
+        assert (
+            measured["photo_sha256"]
+            == hashlib.sha256((root / "printed-benchy.jpg").read_bytes()).hexdigest()
+        )
+        assert (
+            measured["mesh_sha256"]
+            == hashlib.sha256(
+                (REPO_ROOT / "testdata/benchy/3dbenchy.stl").read_bytes()
+            ).hexdigest()
+        )
+        assert (
+            measured["distractors_sha256"]
+            == hashlib.sha256(
+                (root / "clip-b32-existing-thumbnail-vectors.json").read_bytes()
+            ).hexdigest()
+        )
+        assert (
+            measured["multiview_distractors_sha256"]
+            == hashlib.sha256(
+                (root / "clip-b32-visual-vectors.json").read_bytes()
+            ).hexdigest()
+        )
+        encoder = EmbeddingSpace(**measured["space"])
+        assert encoder.config_hash == measured["space_hash"] == corpus["space_hash"]
+        space = VisualRecipe.space(
+            encoder, image_size=224, profile=profile, aggregation=aggregation
+        )
+        actor = make_user(superuser=True)
+        stored = vector_store.register_space(db_session, space)
+        generation = make_index_generation(
+            stored,
+            index_backend="numpy",
+            effective_backend="numpy",
+            index_dimension=512,
+        )
+        rows = [
+            (
+                item["mesh_sha256"],
+                vectors(
+                    item,
+                    "existing_media" if profile == "thumbnail" else "multiview_matte",
+                ),
+            )
+            for item in corpus["items"]
+        ]
+        payload = base64.b64decode(
+            measured[
+                "model_float32_le_base64"
+                if profile == "thumbnail"
+                else "model_views_float32_le_base64"
+            ],
+            validate=True,
+        )
+        rows.append(
+            (measured["mesh_sha256"], tuple(struct.iter_unpack("<512f", payload)))
+        )
+        assert len(rows) == measured["candidate_count"] == 33
+        target_id = None
+        for index, (digest, views) in enumerate(rows):
+            model = make_model(f"Photographic candidate {index}")
+            file = make_file(model, file_type=FileType.STL, sha256=digest)
+            target_id = model.id
+            units = [("visual_mean", "mean", mean_pool(views, 512))]
+            if profile == "multiview":
+                units += [
+                    ("visual_view", f"view:{i}", vector)
+                    for i, vector in enumerate(views)
+                ]
+            for kind, key, vector in units:
+                make_passage_vector(
+                    generation,
+                    file,
+                    unit_kind=kind,
+                    unit_key=f"file:{file.id}:{key}",
+                    vector_blob=struct.pack("<512f", *vector),
+                )
+            if profile == "multiview":
+                fallback = (
+                    struct.unpack(
+                        "<512f",
+                        base64.b64decode(
+                            measured["model_float32_le_base64"], validate=True
+                        ),
+                    )
+                    if index == len(rows) - 1
+                    else vectors(corpus["items"][index], "existing_media")[0]
+                )
+                make_passage_vector(
+                    generation,
+                    file,
+                    unit_kind="visual_thumbnail",
+                    unit_key=f"file:{file.id}:thumbnail",
+                    vector_blob=struct.pack("<512f", *fallback),
+                )
+        db_session.commit()
+        query = struct.unpack(
+            "<512f",
+            base64.b64decode(measured["query_float32_le_base64"], validate=True),
+        )
+        result = vector_store.query(
+            db_session,
+            generation_id=generation.id,
+            space=space,
+            vector=query,
+            allowed_ids=visual_sources.current_vectors(
+                db_session, generation.id, space, actor
+            ),
+            limit=33,
+        )
+        assert not result.truncated
+        hits = [
+            hit
+            for hit in result.items
+            if hit.score >= semantic.score_floor(space, SearchSettings())
+        ]
+        rank = next(i + 1 for i, hit in enumerate(hits) if hit.subject_id == target_id)
+        recorded = (
+            measured if profile == "thumbnail" else measured["multiview"][aggregation]
+        )
+        assert rank == recorded["rank"] == expected_rank
+        assert hits[rank - 1].score == pytest.approx(recorded["score"], abs=1e-6)
+        if profile == "multiview":
+            assert rank <= 10
+        else:
+            assert rank > 10  # Retain the measured full-scene thumbnail limitation.

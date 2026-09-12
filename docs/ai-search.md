@@ -7,6 +7,12 @@ including the passage requirements from
 [jorgehermo9's plan](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c).
 All stages remain on one branch for one eventual PR.
 
+**AI is optional and off by default.** Library browsing, ordinary keyword search,
+uploads, and printing remain available without a model, inference server, or
+OpenAI account. Administrators separately opt into local inference, downloads,
+remote endpoints, captions, and natural-language parsing; rendered-image egress
+requires its own consent.
+
 Source snapshot: owner gist revision `231e96b8befb0682c00039a3c25e3268443490eb`,
 read on 2026-09-11. The comment’s historical download revision `c3875dac` no
 longer resolves through GitHub; the linked current gist supplies the independent
@@ -263,13 +269,15 @@ checks do not measure natural-language relevance or ARM performance.
 The [coverage matrix](ai-search-coverage.md) retains all 142 original acceptance
 behaviors and the detailed feature contracts. The text, visual, point-cloud and
 sparse studies use pinned real weights and frozen engineering fixtures; they do
-not establish quality on independently labelled user libraries or photographs
-of printed parts. Contract VLM tests establish protocol and lifecycle behavior,
+not establish quality on independently labelled user libraries. A separate
+[printed-photo case](ai-search-visual-study.md#printed-part-photograph) retrieves
+the matching Model in the top 10 with multiview; the thumbnail profile misses
+that target. One photograph does not establish broad photo recall. Contract VLM tests establish protocol and lifecycle behavior,
 not the quality of a particular caption or query-parsing model.
 
 Release acceptance remains open for the complete final test/coverage/security
 gates, large-library end-to-end latency and concurrent-ingest measurements,
-physical ARM/Raspberry Pi runs, and the independent human/photo evaluation.
+physical ARM/Raspberry Pi runs, and independent human-query/broad photo evaluation.
 Native vector acceleration stays opt-in while the 500,000-unit feasibility gate
 is being measured. A passing small fixture is not evidence for these scale or
 hardware targets.

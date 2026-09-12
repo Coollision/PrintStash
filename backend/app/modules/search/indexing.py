@@ -444,6 +444,8 @@ class IndexProcessor:
                     if generation.index_state == "building":
                         return True
                 if not work and not verify:
+                    if generation.state == "active" and generation.phase == "ready":
+                        return False
                     if generation.state == "building" and generation.phase not in {
                         "ready",
                         "verify_failed",
