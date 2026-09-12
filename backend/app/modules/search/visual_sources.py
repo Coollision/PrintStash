@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from printstash_core.search.point_inputs import PointRecipe
 from printstash_core.search.visual_inputs import VisualRecipe
 from sqlalchemy import String, and_, cast, func, literal, or_
 from sqlmodel import Session, col, select
@@ -18,7 +19,15 @@ from app.db.models import (
 from app.db.scopes import live
 from app.modules.library.model_views.access import accessible_live_model_ids_stmt
 
-PROFILES = ("thumbnail", "multiview")
+PROFILES = ("thumbnail", "multiview", "point_cloud")
+
+
+def recipe_for(space):
+    return (
+        PointRecipe.for_space(space)
+        if space.profile == "point_cloud"
+        else VisualRecipe.for_space(space)
+    )
 
 
 def eligible(session: Session, user: User | None = None):
@@ -42,18 +51,20 @@ def eligible(session: Session, user: User | None = None):
     return statement.group_by(File.model_id)
 
 
-def units_per_file(recipe: VisualRecipe) -> int:
+def units_per_file(recipe: VisualRecipe | PointRecipe) -> int:
     return (
-        1 if recipe.profile == "thumbnail" else 8
+        8 if recipe.profile == "multiview" else 1
     )  # six views, mean and fallback thumbnail
 
 
 def complete_files(session: Session, generation_id: int, space):
-    recipe = VisualRecipe.for_space(space)
+    recipe = recipe_for(space)
     prefix = literal("file:") + cast(File.id, String) + literal(":")
     valid_unit = and_(
-        PassageVector.unit_kind == "visual_mean",
-        PassageVector.unit_key == prefix + literal("mean"),
+        PassageVector.unit_kind
+        == ("point_cloud" if recipe.profile == "point_cloud" else "visual_mean"),
+        PassageVector.unit_key
+        == prefix + literal("point" if recipe.profile == "point_cloud" else "mean"),
     )
     if recipe.profile == "multiview":
         valid_unit = or_(
@@ -79,11 +90,6 @@ def complete_files(session: Session, generation_id: int, space):
             PassageVector.subject_type == "model",
             PassageVector.subject_id == File.model_id,
             valid_unit,
-            PassageVector.unit_kind.in_(
-                ("visual_mean",)
-                if recipe.profile == "thumbnail"
-                else ("visual_mean", "visual_view", "visual_thumbnail")
-            ),
             File.id.in_(eligible(session)),
         )
         .group_by(PassageVector.file_id)
@@ -94,17 +100,19 @@ def complete_files(session: Session, generation_id: int, space):
 def current_vectors(
     session: Session, generation_id: int, space, user: User | None = None
 ):
-    recipe = VisualRecipe.for_space(space)
+    recipe = recipe_for(space)
     kind = (
         "visual_view"
         if recipe.profile == "multiview" and recipe.aggregation == "max"
+        else "point_cloud"
+        if recipe.profile == "point_cloud"
         else "visual_mean"
     )
     prefix = literal("file:") + cast(PassageVector.file_id, String) + literal(":")
     keys = (
         [prefix + literal(f"view:{index}") for index in range(6)]
         if kind == "visual_view"
-        else [prefix + literal("mean")]
+        else [prefix + literal("point" if recipe.profile == "point_cloud" else "mean")]
     )
     statement = select(PassageVector.id).where(
         PassageVector.generation_id == generation_id,

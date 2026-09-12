@@ -155,6 +155,9 @@ class LocalEmbeddingProvider:
                     "rgb_base64": base64.b64encode(item.rgb).decode("ascii")
                     if item.rgb is not None
                     else None,
+                    "points_base64": base64.b64encode(item.points).decode("ascii")
+                    if item.points is not None
+                    else None,
                 }
                 for item in inputs
             ]

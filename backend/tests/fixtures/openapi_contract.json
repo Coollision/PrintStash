@@ -6328,7 +6328,8 @@
             "enum": [
               "semantic_text",
               "thumbnail",
-              "multiview"
+              "multiview",
+              "point_cloud"
             ],
             "title": "Profile",
             "type": "string"
@@ -37595,7 +37596,8 @@
                       "lexical",
                       "semantic_text",
                       "thumbnail",
-                      "multiview"
+                      "multiview",
+                      "point_cloud"
                     ],
                     "type": "string"
                   },

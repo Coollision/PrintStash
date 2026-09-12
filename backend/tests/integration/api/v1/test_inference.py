@@ -386,7 +386,7 @@ class TestUpdateSettings:
 
 
 class TestProposeGeneration:
-    def test_exposes_generation_detail_and_actions_on_canonical_routes(
+    def test_exposes_the_canonical_generation_lifecycle(
         self, client, auth_headers, make_inference_endpoint
     ):
         endpoint = make_inference_endpoint()

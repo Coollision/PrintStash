@@ -167,7 +167,12 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
             value={profile}
             onChange={(event) => {
               const value = event.target.value;
-              if (value === "semantic_text" || value === "thumbnail" || value === "multiview") {
+              if (
+                value === "semantic_text" ||
+                value === "thumbnail" ||
+                value === "multiview" ||
+                value === "point_cloud"
+              ) {
                 setProfile(value);
                 setSelection("");
                 setDimension(0);
@@ -177,11 +182,18 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
             <option value="semantic_text">{t("aiSearch.profile.semantic_text")}</option>
             <option value="thumbnail">{t("aiSearch.profile.thumbnail")}</option>
             <option value="multiview">{t("aiSearch.profile.multiview")}</option>
+            <option value="point_cloud">{t("aiSearch.profile.point_cloud")}</option>
           </select>
         </label>
         {profile !== "semantic_text" && (
           <p className="max-w-prose text-xs text-muted-foreground">
-            {t(profile === "thumbnail" ? "aiSearch.thumbnailHelp" : "aiSearch.multiviewHelp")}
+            {t(
+              profile === "thumbnail"
+                ? "aiSearch.thumbnailHelp"
+                : profile === "point_cloud"
+                  ? "aiSearch.pointCloudHelp"
+                  : "aiSearch.multiviewHelp",
+            )}
           </p>
         )}
         {profile === "multiview" && (
@@ -215,7 +227,12 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
               {models.data
                 ?.filter(
                   (model) =>
-                    model.modality === (profile === "semantic_text" ? "text" : "text_image"),
+                    model.modality ===
+                    (profile === "semantic_text"
+                      ? "text"
+                      : profile === "point_cloud"
+                        ? "point_cloud"
+                        : "text_image"),
                 )
                 .map((model) => (
                   <option key={model.id} value={`local:${model.id}`}>

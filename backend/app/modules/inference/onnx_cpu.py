@@ -12,6 +12,7 @@ from app.modules.inference.manifest import (
     LocalModelManifest,
     ModelAsset,
     ModelManifest,
+    PointModelManifest,
     TextModelManifest,
     verify_assets,
 )
@@ -48,7 +49,7 @@ class OnnxCpuProvider:
         options.add_session_config_entry("session.intra_op.allow_spinning", "0")
         options.add_session_config_entry("session.inter_op.allow_spinning", "0")
         self.image = None
-        if isinstance(manifest, LocalModelManifest):
+        if isinstance(manifest, (LocalModelManifest, PointModelManifest)):
             self.image = ort.InferenceSession(
                 _verified_bytes(directory, manifest.image.graph),
                 sess_options=options,
@@ -136,6 +137,22 @@ class OnnxCpuProvider:
                     pad_id=manifest.text.pad_id,
                     pad_token=manifest.text.pad_token,
                 )
+        self.point = None
+        if isinstance(manifest, PointModelManifest):
+            graph = _verified_bytes(directory, manifest.point.graph)
+            self._verify_text_graph(graph, manifest.point.opset)
+            self.point = ort.InferenceSession(
+                graph, sess_options=options, providers=["CPUExecutionProvider"]
+            )
+            self.point.disable_fallback()
+            self._validate_signature(
+                self.point,
+                {
+                    manifest.point.centers_name: ("tensor(float)", (1, 3, 64)),
+                    manifest.point.grouped_name: ("tensor(float)", (1, 9, 256, 64)),
+                },
+                manifest.point.output_name,
+            )
         self._check_canaries()
 
     @staticmethod
@@ -275,10 +292,25 @@ class OnnxCpuProvider:
                         None, :, None
                     ]
                     result = (result * mask).sum(axis=1) / max(float(mask.sum()), 1)
+        elif item.modality == "point_cloud":
+            from printstash_core.inference.points import grouped_points
+
+            if not isinstance(self.manifest, PointModelManifest) or self.point is None:
+                raise EmbeddingError("embedding_point_unavailable")
+            centers, grouped = grouped_points(item)
+            point = self.manifest.point
+            self.truncations.append(False)
+            result = self.point.run(
+                [point.output_name],
+                {point.centers_name: centers, point.grouped_name: grouped},
+            )[0]
         else:
             from PIL import Image
 
-            if not isinstance(self.manifest, LocalModelManifest) or self.image is None:
+            if (
+                not isinstance(self.manifest, (LocalModelManifest, PointModelManifest))
+                or self.image is None
+            ):
                 raise EmbeddingError("embedding_image_unavailable")
             self.truncations.append(False)
             image_contract = self.manifest.image
@@ -312,9 +344,13 @@ class OnnxCpuProvider:
         canary = EmbeddingInput("image", rgb=bytes([127, 127, 127]), width=1, height=1)
         cases = (
             [(canary, self.manifest.image.canary)]
-            if isinstance(self.manifest, LocalModelManifest)
+            if isinstance(self.manifest, (LocalModelManifest, PointModelManifest))
             else []
         )
+        if isinstance(self.manifest, PointModelManifest):
+            from printstash_core.inference.points import canary_input
+
+            cases.append((canary_input(), self.manifest.point.canary))
         if self.manifest.text is not None:
             cases.append(
                 (

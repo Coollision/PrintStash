@@ -93,7 +93,7 @@ class TestVerifyPaths:
 
 
 class TestEmbeddingViews:
-    def test_shares_one_mesh_load_for_thumbnail_and_six_views(
+    def test_loads_the_mesh_once_for_a_complete_visual_pass(
         self, mesh_path, monkeypatch
     ):
         from printstash_core.inference import EmbeddingSpace

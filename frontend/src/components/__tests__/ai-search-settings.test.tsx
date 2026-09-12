@@ -37,6 +37,42 @@ function settingsPanel(options: RenderAppOptions = {}) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AI Search settings", () => {
+  it("prepares the optional preplaced point profile", async () => {
+    const user = userEvent.setup();
+    const point = anInferenceModel({
+      id: "e".repeat(64),
+      key: "openshape-pointbert-vitb32-rgb",
+      modality: "point_cloud",
+      native_dimension: 512,
+      curated: false,
+    });
+    const app = settingsPanel({
+      routes: {
+        "GET /api/v1/inference/models": json([anInferenceModel(), point]),
+        "GET /api/v1/config/ai-search/generations": json([
+          aSearchGeneration({ profile: "thumbnail", state: "active" }),
+        ]),
+        "POST /api/v1/config/ai-search/generations": json(
+          aSearchGeneration({ profile: "point_cloud", model: point.key, state: "building" }),
+        ),
+      },
+    });
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Search index" }),
+      "point_cloud",
+    );
+    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), `local:${point.id}`);
+    expect(screen.getByText(/Build a thumbnail or multiple-view index first/)).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Combine views" })).toBeNull();
+    expect(screen.queryByRole("option", { name: /bge-small/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Build new index" }));
+    await waitFor(() => expect(app.requestsWithMethod("POST")).toHaveLength(1));
+    expect(JSON.parse(app.requestsWithMethod("POST")[0].body)).toMatchObject({
+      local_model_id: point.id,
+      profile: "point_cloud",
+      aggregation: "mean",
+    });
+  });
   it("builds a visual profile independently while a text generation is building", async () => {
     const user = userEvent.setup();
     const clip = anInferenceModel({

@@ -80,7 +80,9 @@ function SearchContent() {
     !!modelId &&
     pages.some((page) => Object.values(page.leg_errors).includes("search_model_index_pending"));
   const visualReady =
-    status.data?.legs.some((leg) => leg === "thumbnail" || leg === "multiview") ?? false;
+    status.data?.legs.some(
+      (leg) => leg === "thumbnail" || leg === "multiview" || leg === "point_cloud",
+    ) ?? false;
   return (
     <PageContainer>
       <PageHeader

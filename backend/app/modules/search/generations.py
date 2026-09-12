@@ -210,7 +210,7 @@ def estimate_bytes(passages: int, dimension: int) -> int:
 
 def source_units(space: Space, count: int) -> int:
     return (
-        count * visual_sources.units_per_file(VisualRecipe.for_space(space))
+        count * visual_sources.units_per_file(visual_sources.recipe_for(space))
         if space.profile in visual_sources.PROFILES
         else count
     )
@@ -311,6 +311,22 @@ def prepare(
         raise OperationError("embedding_local_disabled", kind=ErrorKind.CONFLICT)
     with model_cache.cache_lock() if proposal.local_model_id else nullcontext():
         space = proposal_space(session, proposal)
+        if (
+            space.profile == "point_cloud"
+            and session.exec(
+                select(IndexGeneration.id)
+                .join(EmbeddingSpace, EmbeddingSpace.id == IndexGeneration.space_id)
+                .where(
+                    col(EmbeddingSpace.profile).in_(("thumbnail", "multiview")),
+                    IndexGeneration.state == "active",
+                )
+                .limit(1)
+            ).first()
+            is None
+        ):
+            raise OperationError(
+                "search_visual_fallback_required", kind=ErrorKind.CONFLICT
+            )
         result = _prepare_space(session, actor, proposal, space)
         if (
             space.profile == "multiview"
@@ -350,9 +366,19 @@ def proposal_space(session: Session, proposal: GenerationProposal) -> Space:
     """Resolve an immutable proposal without inference, jobs or database writes."""
     if proposal.local_model_id:
         from app.modules.inference import model_cache
-        from app.modules.inference.manifest import LocalModelManifest, TextModelManifest
+        from app.modules.inference.manifest import (
+            LocalModelManifest,
+            PointModelManifest,
+            TextModelManifest,
+        )
 
         model = model_cache.resolve(proposal.local_model_id)
+        if proposal.profile == "point_cloud":
+            if not isinstance(model.manifest, PointModelManifest):
+                raise OperationError(
+                    "embedding_alignment_unavailable", kind=ErrorKind.INVALID
+                )
+            return model.manifest.space()
         if proposal.profile in visual_sources.PROFILES:
             if (
                 not isinstance(model.manifest, LocalModelManifest)
@@ -421,7 +447,7 @@ def transform_backend(
     session: Session, proposal: GenerationProposal, space: Space
 ) -> tuple[IndexTransform, str]:
     if space.profile in visual_sources.PROFILES:
-        VisualRecipe.for_space(space)
+        visual_sources.recipe_for(space)
     else:
         recipe = TextRecipe.for_space(space)
         if len(space.document_prefix) >= recipe.max_input_characters:

@@ -86,7 +86,9 @@ export function LibrarySearch() {
   }
   if (!visible) return <span className="flex-1" />;
   const current = debounced === value.trim();
-  const visualReady = status.data?.legs.some((leg) => leg === "thumbnail" || leg === "multiview");
+  const visualReady = status.data?.legs.some(
+    (leg) => leg === "thumbnail" || leg === "multiview" || leg === "point_cloud",
+  );
   return (
     <div ref={wrapper} className="mx-3 min-w-0 max-w-2xl flex-1 sm:mx-8">
       <DropdownMenu

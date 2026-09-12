@@ -43,99 +43,183 @@ def vectors(item, style):
     )
 
 
-@pytest.mark.parametrize(
-    "style,aggregation,expected",
-    [
-        ("existing_media", "mean", 27 / 32),
-        ("thumbnail_catalog", "mean", 26 / 32),
-        ("thumbnail_matte", "mean", 26 / 32),
-        ("multiview_matte", "mean", 20 / 32),
-        ("multiview_matte", "max", 23 / 32),
-    ],
-)
-def test_replays_real_visual_ranking(
-    db_session,
-    make_user,
-    make_model,
-    make_file,
-    make_index_generation,
-    make_passage_vector,
-    style,
-    aggregation,
-    expected,
-):
-    root = FIXTURES_DIR / "search"
-    payload = json.loads((root / "clip-b32-visual-vectors.json").read_text())
-    assert (
-        payload["query_manifest_sha256"]
-        == hashlib.sha256((root / "visual-queries.json").read_bytes()).hexdigest()
+class TestVisualRanking:
+    @pytest.mark.parametrize(
+        "style,aggregation,expected",
+        [
+            ("existing_media", "mean", 27 / 32),
+            ("thumbnail_catalog", "mean", 26 / 32),
+            ("thumbnail_matte", "mean", 26 / 32),
+            ("multiview_matte", "mean", 20 / 32),
+            ("multiview_matte", "max", 23 / 32),
+        ],
     )
-    assert (
-        payload["generator_sha256"]
-        == hashlib.sha256(
-            (REPO_ROOT / "backend/tests/fakes/visual_corpus.py").read_bytes()
-        ).hexdigest()
-    )
-    encoder = EmbeddingSpace(**payload["space"])
-    assert encoder.config_hash == payload["space_hash"]
-    profile = "multiview" if style.startswith("multiview") else "thumbnail"
-    space = VisualRecipe.space(
-        encoder, image_size=224, profile=profile, aggregation=aggregation
-    )
-    actor = make_user(superuser=True)
-    stored = vector_store.register_space(db_session, space)
-    generation = make_index_generation(
-        stored, index_backend="numpy", effective_backend="numpy", index_dimension=512
-    )
-    expected_models = {}
-    for item in payload["items"]:
-        # Opaque names and no tags/descriptions: lexical signals cannot explain a hit.
-        model = make_model(f"Object {item['id']}")
-        file = make_file(model, file_type=FileType.STL, sha256=item["mesh_sha256"])
-        expected_models[item["id"]] = model.id
-        views = vectors(item, style)
-        units = [("visual_mean", "mean", mean_pool(views, 512))]
-        if profile == "multiview":
-            units += [
-                ("visual_view", f"view:{i}", vector) for i, vector in enumerate(views)
-            ]
-            units.append(
-                ("visual_thumbnail", "thumbnail", vectors(item, "thumbnail_matte")[0])
+    def test_replays_real_visual_ranking(
+        self,
+        db_session,
+        make_user,
+        make_model,
+        make_file,
+        make_index_generation,
+        make_passage_vector,
+        style,
+        aggregation,
+        expected,
+    ):
+        root = FIXTURES_DIR / "search"
+        payload = json.loads((root / "clip-b32-visual-vectors.json").read_text())
+        assert (
+            payload["query_manifest_sha256"]
+            == hashlib.sha256((root / "visual-queries.json").read_bytes()).hexdigest()
+        )
+        assert (
+            payload["generator_sha256"]
+            == hashlib.sha256(
+                (REPO_ROOT / "backend/tests/fakes/visual_corpus.py").read_bytes()
+            ).hexdigest()
+        )
+        encoder = EmbeddingSpace(**payload["space"])
+        assert encoder.config_hash == payload["space_hash"]
+        profile = "multiview" if style.startswith("multiview") else "thumbnail"
+        space = VisualRecipe.space(
+            encoder, image_size=224, profile=profile, aggregation=aggregation
+        )
+        actor = make_user(superuser=True)
+        stored = vector_store.register_space(db_session, space)
+        generation = make_index_generation(
+            stored,
+            index_backend="numpy",
+            effective_backend="numpy",
+            index_dimension=512,
+        )
+        expected_models = {}
+        for item in payload["items"]:
+            # Opaque names and no tags/descriptions: lexical signals cannot explain a hit.
+            model = make_model(f"Object {item['id']}")
+            file = make_file(model, file_type=FileType.STL, sha256=item["mesh_sha256"])
+            expected_models[item["id"]] = model.id
+            views = vectors(item, style)
+            units = [("visual_mean", "mean", mean_pool(views, 512))]
+            if profile == "multiview":
+                units += [
+                    ("visual_view", f"view:{i}", vector)
+                    for i, vector in enumerate(views)
+                ]
+                units.append(
+                    (
+                        "visual_thumbnail",
+                        "thumbnail",
+                        vectors(item, "thumbnail_matte")[0],
+                    )
+                )
+            for kind, key, vector in units:
+                make_passage_vector(
+                    generation,
+                    file,
+                    unit_kind=kind,
+                    unit_key=f"file:{file.id}:{key}",
+                    vector_blob=struct.pack("<512f", *vector),
+                )
+        db_session.commit()
+        floor = semantic.score_floor(space, SearchSettings())
+        assert floor == 0.2
+        assert (
+            semantic.score_floor(
+                space, SearchSettings(semantic_floors={space.config_hash: 0.6})
             )
-        for kind, key, vector in units:
+            == 0.6
+        )
+        found = 0
+        for item in payload["items"]:
+            query = struct.unpack(
+                "<512f",
+                base64.b64decode(item["query_float32_le_base64"], validate=True),
+            )
+            result = vector_store.query(
+                db_session,
+                generation_id=generation.id,
+                space=space,
+                vector=query,
+                allowed_ids=visual_sources.current_vectors(
+                    db_session, generation.id, space, actor
+                ),
+                limit=5,
+            )
+            assert not result.truncated
+            found += expected_models[item["id"]] in {
+                hit.subject_id for hit in result.items if hit.score >= floor
+            }
+        assert found / 32 == expected
+
+
+class TestPointRanking:
+    def test_replays_real_point_quality_gain(
+        self,
+        db_session,
+        make_user,
+        make_model,
+        make_file,
+        make_index_generation,
+        make_passage_vector,
+    ):
+        root = FIXTURES_DIR / "search"
+        point = json.loads((root / "openshape-b32-point-vectors.json").read_text())
+        visual = json.loads((root / "clip-b32-visual-vectors.json").read_text())
+        space = EmbeddingSpace(**point["space"])
+        assert space.config_hash == point["space_hash"]
+        assert point["query_manifest_sha256"] == visual["query_manifest_sha256"]
+        assert point["generator_sha256"] == visual["generator_sha256"]
+        assert space.alignment_identity == visual["space_hash"]
+        assert semantic.score_floor(space, SearchSettings()) == 0.1
+        assert (
+            semantic.score_floor(
+                space, SearchSettings(semantic_floors={space.config_hash: 0.6})
+            )
+            == 0.6
+        )
+        actor = make_user(superuser=True)
+        stored = vector_store.register_space(db_session, space)
+        generation = make_index_generation(
+            stored,
+            index_backend="numpy",
+            effective_backend="numpy",
+            index_dimension=512,
+        )
+        expected = {}
+        for row in point["items"]:
+            model = make_model(f"Point object {row['id']}")
+            file = make_file(model, file_type=FileType.STL, sha256=row["mesh_sha256"])
+            expected[row["id"]] = model.id
             make_passage_vector(
                 generation,
                 file,
-                unit_kind=kind,
-                unit_key=f"file:{file.id}:{key}",
-                vector_blob=struct.pack("<512f", *vector),
+                unit_kind="point_cloud",
+                unit_key=f"file:{file.id}:point",
+                vector_blob=base64.b64decode(
+                    row["vector_float32_le_base64"], validate=True
+                ),
             )
-    db_session.commit()
-    floor = semantic.score_floor(space, SearchSettings())
-    assert floor == 0.2
-    assert (
-        semantic.score_floor(
-            space, SearchSettings(semantic_floors={space.config_hash: 0.6})
-        )
-        == 0.6
-    )
-    found = 0
-    for item in payload["items"]:
-        query = struct.unpack(
-            "<512f", base64.b64decode(item["query_float32_le_base64"], validate=True)
-        )
-        result = vector_store.query(
-            db_session,
-            generation_id=generation.id,
-            space=space,
-            vector=query,
-            allowed_ids=visual_sources.current_vectors(
-                db_session, generation.id, space, actor
-            ),
-            limit=5,
-        )
-        assert not result.truncated
-        found += expected_models[item["id"]] in {
-            hit.subject_id for hit in result.items if hit.score >= floor
-        }
-    assert found / 32 == expected
+        db_session.commit()
+        found = 0
+        for item in visual["items"]:
+            query = struct.unpack(
+                "<512f",
+                base64.b64decode(item["query_float32_le_base64"], validate=True),
+            )
+            result = vector_store.query(
+                db_session,
+                generation_id=generation.id,
+                space=space,
+                vector=query,
+                allowed_ids=visual_sources.current_vectors(
+                    db_session, generation.id, space, actor
+                ),
+                limit=10,
+            )
+            found += expected[item["id"]] in {
+                hit.subject_id
+                for hit in result.items
+                if hit.score >= semantic.score_floor(space, SearchSettings())
+            }
+        assert found == 30
+        assert found / 32 > 0.84375  # Same corpus, measured existing thumbnail @10.

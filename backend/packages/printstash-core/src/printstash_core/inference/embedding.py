@@ -83,13 +83,14 @@ class EmbeddingSpace:
 
 @dataclass(frozen=True)
 class EmbeddingInput:
-    """Raw RGB bytes or a bounded text string; paths are not provider inputs."""
+    """Bounded text, raw RGB or 10k XYZ/RGB float32 points; never file paths."""
 
-    modality: Literal["image", "text"]
+    modality: Literal["image", "text", "point_cloud"]
     text: str | None = None
     rgb: bytes | None = None
     width: int = 0
     height: int = 0
+    points: bytes | None = None
 
     def __post_init__(self) -> None:
         if self.modality == "text":
@@ -99,6 +100,7 @@ class EmbeddingInput:
                 and len(self.text) <= 16384
                 and self.rgb is None
                 and self.width == self.height == 0
+                and self.points is None
             )
         elif self.modality == "image":
             valid = (
@@ -109,6 +111,15 @@ class EmbeddingInput:
                 and 1 <= self.width <= 1024
                 and 1 <= self.height <= 1024
                 and len(self.rgb) == self.width * self.height * 3
+                and self.points is None
+            )
+        elif self.modality == "point_cloud":
+            valid = (
+                self.text is None
+                and self.rgb is None
+                and self.width == self.height == 0
+                and isinstance(self.points, bytes)
+                and len(self.points) == 6 * 10_000 * 4
             )
         else:
             valid = False

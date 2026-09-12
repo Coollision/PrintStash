@@ -223,3 +223,73 @@ class TestCancel:
         env.session.expire_all()
         assert outcome == "search_generation_not_building"
         assert env.session.get(IndexGeneration, generation_id).state == "active"
+
+
+class TestPointGenerations:
+    def test_publishes_current_point_units_on_postgres(
+        self, generation_database, tmp_path, monkeypatch
+    ):
+        import hashlib
+
+        from app.core.config import _overlay
+        from app.db.models import FileType, PassageVector
+        from app.modules.inference import model_cache
+        from app.modules.search.indexing import IndexProcessor
+        from app.modules.search.retrieval import search
+        from tests.factories import build_file, build_model
+        from tests.factories.embeddings import (
+            local_embedding_assets,
+            point_embedding_assets,
+        )
+        from tests.factories.geometry import tetrahedron
+
+        env = generation_database
+        root = tmp_path / "models"
+        clip = model_cache.inspect(local_embedding_assets(root / "clip"))
+        point = model_cache.inspect(point_embedding_assets(root / "point"))
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", root)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        configuration.update(
+            env.session, SearchSettings(enabled=True, local_models_enabled=True)
+        )
+        model = build_model(env.session, "Opaque object")
+        payload = tetrahedron().export(file_type="stl")
+        path = tmp_path / "object.stl"
+        path.write_bytes(payload)
+        file = build_file(
+            env.session,
+            model,
+            file_type=FileType.STL,
+            path=str(path),
+            sha256=hashlib.sha256(payload).hexdigest(),
+            size_bytes=len(payload),
+            external=True,
+        )
+        env.session.commit()
+        processor = IndexProcessor(env.factory)
+        for profile, encoder in (("thumbnail", clip), ("point_cloud", point)):
+            proposal = generations.prepare(
+                env.session,
+                env.actor,
+                GenerationProposal(
+                    local_model_id=encoder.id, profile=profile, index_backend="numpy"
+                ),
+            )
+            for _ in range(30):
+                processor.work_one()
+                env.session.expire_all()
+                stored = env.session.get(IndexGeneration, proposal.id)
+                if stored.state == "active":
+                    break
+            assert stored.state == "active"
+            assert generations.counts(env.session, stored) == (1, 1, 0)
+        vector = env.session.exec(
+            select(PassageVector).where(PassageVector.generation_id == proposal.id)
+        ).one()
+        assert (vector.unit_kind, vector.unit_key, vector.input_hash) == (
+            "point_cloud",
+            f"file:{file.id}:point",
+            file.sha256,
+        )
+        result = search(env.session, env.actor, "gray", legs=("point_cloud",))
+        assert [row.subject_id for row in result.items] == [model.id]

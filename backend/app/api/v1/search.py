@@ -151,7 +151,9 @@ def search_library(
     limit: int = Query(30, ge=1, le=100),
     cursor: str | None = Query(None, max_length=512),
     types: list[SubjectType] | None = Query(None, alias="types[]", max_length=4),
-    legs: list[Literal["lexical", "semantic_text", "thumbnail", "multiview"]]
+    legs: list[
+        Literal["lexical", "semantic_text", "thumbnail", "multiview", "point_cloud"]
+    ]
     | None = Query(None, alias="legs[]", max_length=4),
     instant: bool = False,
     user: User = Depends(require_search_user),
@@ -167,6 +169,6 @@ def search_library(
         types=tuple(types) if types is not None else tuple(SubjectType),
         legs=tuple(legs)
         if legs is not None
-        else ("lexical", "semantic_text", "thumbnail", "multiview"),
+        else ("lexical", "semantic_text", "thumbnail", "multiview", "point_cloud"),
         instant=instant,
     )

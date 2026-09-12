@@ -14,7 +14,7 @@ from app.db.models import User
 from app.db.session import get_session, get_session_factory
 from app.modules.inference import model_cache, model_registry
 from app.modules.inference.local import LocalEmbeddingProvider
-from app.modules.inference.manifest import TextModelManifest
+from app.modules.inference.manifest import PointModelManifest, TextModelManifest
 from app.runtime import model_acquisition
 from app.schemas.inference_models import (
     DownloadRead,
@@ -50,7 +50,7 @@ def list_models(session: Session = Depends(get_session)):
                 repository=entry.repository
                 if entry
                 else manifest.repository
-                if isinstance(manifest, TextModelManifest)
+                if isinstance(manifest, (TextModelManifest, PointModelManifest))
                 else None,
                 languages=list(entry.languages)
                 if entry
@@ -60,7 +60,7 @@ def list_models(session: Session = Depends(get_session)):
                 license=entry.license
                 if entry
                 else manifest.license
-                if isinstance(manifest, TextModelManifest)
+                if isinstance(manifest, (TextModelManifest, PointModelManifest))
                 else None,
                 modality=manifest.space().modality,
                 native_dimension=manifest.native_dimension,

@@ -3798,5 +3798,7 @@
   "aiSearch.estimateVisualResult": "{count} fragmentos · hasta {size} de espacio adicional · {existing} ya usados · tiempo: {time}",
   "aiSearch.modelPending": "Este Modelo está pendiente de indexación. Se muestran las coincidencias disponibles; vuelve a intentarlo en breve.",
   "aiSearch.tryRelatedAgain": "Vuelve a intentarlo cuando el Modelo esté indexado o elige otro Modelo.",
-  "aiSearch.tryAnotherImage": "Prueba una imagen clara del objeto desde otro ángulo."
+  "aiSearch.tryAnotherImage": "Prueba una imagen clara del objeto desde otro ángulo.",
+  "aiSearch.profile.point_cloud": "Búsqueda geométrica · nube de puntos",
+  "aiSearch.pointCloudHelp": "Codificador OpenShape opcional instalado localmente. Crea primero un índice de miniaturas o de varias vistas para mantener la búsqueda disponible si falla el codificador geométrico."
 }

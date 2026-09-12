@@ -34,7 +34,7 @@ export function SearchEvidenceList({ evidence }: { evidence: SearchEvidence[] })
                     ? "aiSearch.keywordMatch"
                     : match.leg === "thumbnail"
                       ? "aiSearch.appearanceMatch"
-                      : match.leg === "multiview"
+                      : match.leg === "multiview" || match.leg === "point_cloud"
                         ? "aiSearch.shapeMatch"
                         : "aiSearch.semanticMatch",
                 )}

@@ -45,7 +45,11 @@ class QueryRunner:
         authorization: str,
         seconds: float,
     ) -> tuple[float, ...]:
-        if value.modality == "image" and space.modality not in {"image", "text_image"}:
+        if value.modality == "image" and space.modality not in {
+            "image",
+            "text_image",
+            "point_cloud",
+        }:
             raise EmbeddingError("embedding_image_unavailable")
         # Image queries are ephemeral even at the vector-cache layer. The same
         # executor, concurrency limit and cancellation contract serve both modes.
@@ -65,7 +69,7 @@ class QueryRunner:
             if self._closed:
                 raise EmbeddingError("inference_query_unavailable")
             cached = self._cache.pop(key, None) if key is not None else None
-            if cached and cached[0] > time.monotonic():
+            if key is not None and cached and cached[0] > time.monotonic():
                 self._cache[key] = cached
                 return struct.unpack(f"<{space.dimension}f", cached[1])
             if not self._slots.acquire(blocking=False):

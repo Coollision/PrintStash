@@ -13,6 +13,7 @@ from pathlib import Path
 from printstash_core.inference import EmbeddingError, EmbeddingInput
 from printstash_core.inference.context import InferenceContext
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
+from printstash_core.search.point_inputs import PointRecipe
 from printstash_core.search.visual_inputs import VisualRecipe
 
 from app import __file__ as application_file
@@ -24,7 +25,7 @@ from app.modules.media.stl_streaming import _terminate_process_group
 from app.modules.media.visual_worker import MAX_REPLY
 
 
-def _spawn(path: Path, file_type: str, recipe: VisualRecipe):
+def _spawn(path: Path, file_type: str, recipe: VisualRecipe | PointRecipe):
     env = os.environ.copy()
     env.update(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
     env["VAULT_MESH_MAX_RENDER_TRIANGLES"] = str(
@@ -49,7 +50,11 @@ def _spawn(path: Path, file_type: str, recipe: VisualRecipe):
 
 
 def render(
-    path: Path, *, file_type: str, recipe: VisualRecipe, context: InferenceContext
+    path: Path,
+    *,
+    file_type: str,
+    recipe: VisualRecipe | PointRecipe,
+    context: InferenceContext,
 ) -> VisualViews:
     """Caller holds the durable compute permit; this shares media's local cap too."""
     context.remaining()
@@ -89,7 +94,7 @@ def render(
                 process.stdout.close()
 
 
-def decode_reply(payload: bytes, recipe: VisualRecipe) -> VisualViews:
+def decode_reply(payload: bytes, recipe: VisualRecipe | PointRecipe) -> VisualViews:
     if payload.startswith(b"ERR1"):
         code = payload[4:].decode("ascii", errors="replace")
         raise EmbeddingError(
@@ -97,6 +102,11 @@ def decode_reply(payload: bytes, recipe: VisualRecipe) -> VisualViews:
             if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code)
             else "embedding_render_failed"
         )
+    if isinstance(recipe, PointRecipe):
+        if payload[:4] != b"PNT1" or len(payload) != 240004:
+            raise EmbeddingError("embedding_output_invalid")
+        points = EmbeddingInput("point_cloud", points=payload[4:])
+        return VisualViews(None, (points,))
     if len(payload) < 9 or payload[:4] != b"RGB1":
         raise EmbeddingError("embedding_output_invalid")
     width, height, count = struct.unpack("!HHB", payload[4:9])

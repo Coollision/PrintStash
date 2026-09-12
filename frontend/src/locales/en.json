@@ -3798,5 +3798,7 @@
   "aiSearch.estimateVisualResult": "{count} Models · up to {size} additional space · {existing} already used · time: {time}",
   "aiSearch.modelPending": "This Model is waiting to be indexed. Available matches are shown; try again shortly.",
   "aiSearch.tryRelatedAgain": "Try again after this Model has been indexed, or choose another Model.",
-  "aiSearch.tryAnotherImage": "Try a clear image of the object from another angle."
+  "aiSearch.tryAnotherImage": "Try a clear image of the object from another angle.",
+  "aiSearch.profile.point_cloud": "Geometry search · point cloud",
+  "aiSearch.pointCloudHelp": "Optional OpenShape encoder installed locally. Build a thumbnail or multiple-view index first so search remains available if geometry encoding fails."
 }

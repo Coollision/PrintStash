@@ -79,7 +79,7 @@ def claim(session: Session) -> tuple[int, str] | None:
         .where(
             col(IndexGeneration.state).in_(("active", "building")),
             col(EmbeddingSpace.profile).in_(
-                ("semantic_text", "thumbnail", "multiview")
+                ("semantic_text", "thumbnail", "multiview", "point_cloud")
             ),
             IndexGeneration.version_token.is_not(None),
             col(IndexGeneration.cancel_requested).is_(False),

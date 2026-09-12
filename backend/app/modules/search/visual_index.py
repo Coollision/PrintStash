@@ -17,8 +17,9 @@ from printstash_core.inference import EmbeddingError
 from printstash_core.inference.context import InferenceContext
 from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
+from printstash_core.search.point_inputs import PointRecipe
 from printstash_core.search.visual_inputs import VisualRecipe, mean_pool
-from sqlalchemy import delete, literal, or_
+from sqlalchemy import Integer, cast, delete, literal, or_
 from sqlmodel import Session, select
 
 from app.core.time import utcnow
@@ -91,8 +92,28 @@ def copied_views(
     session: Session,
     generation: IndexGeneration,
     item: VisualSource,
-    recipe: VisualRecipe,
+    recipe: VisualRecipe | PointRecipe,
 ):
+    if isinstance(recipe, PointRecipe):
+        # Point recipes include both the export and sampling identity. Copy only
+        # complete native units from the exact same Space.
+        row = session.exec(
+            select(PassageVector)
+            .join(IndexGeneration, IndexGeneration.id == PassageVector.generation_id)
+            .where(
+                IndexGeneration.space_id == generation.space_id,
+                IndexGeneration.id != generation.id,
+                PassageVector.unit_kind == "point_cloud",
+                PassageVector.unit_key == f"file:{item.file_id}:point",
+                PassageVector.input_hash == item.input_hash,
+                PassageVector.file_id == item.file_id,
+            )
+            .limit(1)
+        ).first()
+        if row is None:
+            return None
+        vector = struct.unpack(f"<{row.native_dimension}f", row.vector_blob)
+        return (vector,), None
     candidates = session.exec(
         select(IndexGeneration, EmbeddingSpace)
         .join(EmbeddingSpace, EmbeddingSpace.id == IndexGeneration.space_id)
@@ -150,7 +171,7 @@ def copied_views(
 def render(
     sessions: SessionFactory,
     file: File,
-    recipe: VisualRecipe,
+    recipe: VisualRecipe | PointRecipe,
     context: InferenceContext,
 ):
     token = "search-render:" + secrets.token_hex(16)
@@ -256,8 +277,8 @@ def publish(
         return False
     generation = session.get(IndexGeneration, generation_id, populate_existing=True)
     space = generations.contract(session, generation)
-    recipe = VisualRecipe.for_space(space)
-    if len(views) != recipe.view_count:
+    recipe = visual_sources.recipe_for(space)
+    if len(views) != (1 if isinstance(recipe, PointRecipe) else recipe.view_count):
         raise EmbeddingError("embedding_view_count_mismatch")
     # Lock both source rows before the insert-from-select fence on PostgreSQL.
     current = session.exec(
@@ -279,7 +300,7 @@ def publish(
         File.model_id.label("subject_id"),
         File.model_id.label("model_id"),
         File.id.label("file_id"),
-        literal(None).label("passage_id"),
+        cast(literal(None), Integer).label("passage_id"),
     ).where(
         File.id == item.file_id,
         File.sha256 == item.input_hash,
@@ -287,7 +308,11 @@ def publish(
         File.id.in_(visual_sources.eligible(session)),
         select(IndexGeneration.id).where(*_owned(generation_id, token)).exists(),
     )
-    units = [("visual_mean", "mean", mean_pool(tuple(views), space.dimension))]
+    units = (
+        [("point_cloud", "point", views[0])]
+        if isinstance(recipe, PointRecipe)
+        else [("visual_mean", "mean", mean_pool(tuple(views), space.dimension))]
+    )
     if recipe.profile == "multiview":
         units += [("visual_view", f"view:{i}", v) for i, v in enumerate(views)]
         units.append(("visual_thumbnail", "thumbnail", thumbnail))
@@ -368,7 +393,7 @@ def process(
     with sessions.scoped_session() as session:
         generation = session.get(IndexGeneration, generation_id)
         space = generations.contract(session, generation)
-        recipe = VisualRecipe.for_space(space)
+        recipe = visual_sources.recipe_for(space)
         item = pending(session, generation)
         if item is None:
             if not lock_owned(session, generation_id, token):
@@ -466,7 +491,9 @@ def process(
                 (rendered.thumbnail,) if recipe.profile == "multiview" else ()
             )
             vectors = provider.embed(inputs, space, context=context)
-            views = vectors[: recipe.view_count]
+            views = vectors[
+                : 1 if isinstance(recipe, PointRecipe) else recipe.view_count
+            ]
             thumbnail = vectors[-1] if recipe.profile == "multiview" else vectors[0]
         context.remaining()
         with sessions.scoped_session() as session:

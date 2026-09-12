@@ -10,6 +10,7 @@ from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 from printstash_core.mesh.similarity.components import ExpandedScene
 from printstash_core.mesh.similarity.verification import Verification, verify_meshes
+from printstash_core.search.point_inputs import PointRecipe
 from printstash_core.search.visual_inputs import VisualRecipe
 
 from app.modules.media import mesh_processing, stl_fallback
@@ -172,7 +173,7 @@ def _render_views(mesh, image_size, frames):
 
 @dataclass(frozen=True)
 class VisualViews:
-    thumbnail: EmbeddingInput
+    thumbnail: EmbeddingInput | None
     views: tuple[EmbeddingInput, ...]
 
 
@@ -180,7 +181,7 @@ def visual_views(
     path: Path,
     *,
     file_type: str,
-    recipe: VisualRecipe,
+    recipe: VisualRecipe | PointRecipe,
     triangle_cap: int = MAX_ANALYSIS_FACES,
 ) -> VisualViews:
     """One source load and render permit for the thumbnail and canonical views."""
@@ -194,6 +195,13 @@ def visual_views(
             )
             if not prepared.complete:
                 raise GeometryError("embedding_requires_complete_geometry")
+            if isinstance(recipe, PointRecipe):
+                from printstash_core.inference.points import point_input
+
+                points = point_input(
+                    prepared.whole_mesh.vertices, prepared.whole_mesh.faces
+                )
+                return VisualViews(None, (points,))
             from app.modules.media import mesh_render, thumbnail
 
             encoded = mesh_render.render_mesh_thumbnail(

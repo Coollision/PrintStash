@@ -186,3 +186,67 @@ def text_embedding_assets(directory: Path, *, pooling: str = "cls") -> Path:
     }
     (directory / "manifest.json").write_text(json.dumps(manifest))
     return directory
+
+
+def point_embedding_assets(directory: Path) -> Path:
+    """Original CC0 three-dimensional grouping contract, not a quality model."""
+    import onnx
+    from onnx import TensorProto, helper
+
+    from app.modules.inference.manifest import LocalModelManifest, PointModelManifest
+
+    local_embedding_assets(directory)
+    paired = LocalModelManifest.model_validate_json(
+        (directory / "manifest.json").read_bytes()
+    )
+    graph = helper.make_model(
+        helper.make_graph(
+            [
+                helper.make_node(
+                    "Slice", ["grouped", "starts", "ends", "axes"], ["rgb"]
+                ),
+                helper.make_node(
+                    "ReduceMean", ["rgb"], ["point_embeds"], axes=[2, 3], keepdims=0
+                ),
+            ],
+            "original-point-grouping-contract",
+            [
+                helper.make_tensor_value_info("centers", TensorProto.FLOAT, [1, 3, 64]),
+                helper.make_tensor_value_info(
+                    "grouped", TensorProto.FLOAT, [1, 9, 256, 64]
+                ),
+            ],
+            [helper.make_tensor_value_info("point_embeds", TensorProto.FLOAT, [1, 3])],
+            [
+                helper.make_tensor("starts", TensorProto.INT64, [1], [6]),
+                helper.make_tensor("ends", TensorProto.INT64, [1], [9]),
+                helper.make_tensor("axes", TensorProto.INT64, [1], [1]),
+            ],
+        ),
+        opset_imports=[helper.make_opsetid("", 17)],
+        ir_version=9,
+    )
+    onnx.save(graph, directory / "points.onnx")
+    manifest = PointModelManifest.model_validate(
+        {
+            "schema_version": 3,
+            "model_key": "point-contract",
+            "model_revision": "2" * 40,
+            "repository": "printstash/original-cc0",
+            "checkpoint_sha256": "3" * 64,
+            "license": "CC0-1.0",
+            "paired": paired.model_dump(),
+            "paired_space_hash": paired.space().config_hash,
+            "point": {
+                "graph": {
+                    "filename": "points.onnx",
+                    "sha256": hashlib.sha256(
+                        (directory / "points.onnx").read_bytes()
+                    ).hexdigest(),
+                },
+                "canary": [1 / math.sqrt(3)] * 3,
+            },
+        }
+    )
+    (directory / "manifest.json").write_text(manifest.model_dump_json())
+    return directory

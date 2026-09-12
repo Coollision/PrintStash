@@ -13,7 +13,7 @@ def paired_space():
 
 
 class TestVisualRecipe:
-    def test_binds_both_towers_and_separates_profile_and_aggregation(self):
+    def test_binds_visual_space_identity(self):
         original = paired_space()
         thumbnail = VisualRecipe.space(original, image_size=224, profile="thumbnail")
         mean = VisualRecipe.space(original, image_size=224, profile="multiview")
@@ -52,7 +52,7 @@ class TestVisualRecipe:
         with pytest.raises(EmbeddingError, match="search_visual_recipe_invalid"):
             VisualRecipe.for_space(replace(valid, alignment_identity="f" * 64))
 
-    def test_aggregation_reuse_requires_the_exact_encoder_and_render_recipe(self):
+    def test_reuse_requires_identical_view_inputs(self):
         one = VisualRecipe.space(paired_space(), image_size=224, profile="multiview")
         other = VisualRecipe.space(
             replace(paired_space(), model_revision="paired-r2"),
@@ -66,7 +66,7 @@ class TestVisualRecipe:
 
 
 class TestMeanPool:
-    def test_normalizes_each_view_before_averaging_and_normalizes_the_result(self):
+    def test_returns_a_normalized_mean_of_unit_views(self):
         assert mean_pool(((100, 0, 0), (0, 2, 0)), 3) == pytest.approx(
             (2**-0.5, 2**-0.5, 0)
         )

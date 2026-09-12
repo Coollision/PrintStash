@@ -20,11 +20,12 @@ MAX_OUTPUT_BYTES = 1024**2
 
 class WorkerInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    modality: Literal["text", "image"]
+    modality: Literal["text", "image", "point_cloud"]
     text: str | None = Field(default=None, max_length=16384)
     rgb_base64: str | None = Field(default=None, max_length=4 * 1024**2)
     width: int = Field(default=0, ge=0, le=1024, strict=True)
     height: int = Field(default=0, ge=0, le=1024, strict=True)
+    points_base64: str | None = Field(default=None, max_length=320000)
 
 
 class WorkerRequest(BaseModel):
@@ -62,6 +63,11 @@ class NativeWorker:
                     if item.rgb_base64 is not None
                     else None
                 )
+                points = (
+                    base64.b64decode(item.points_base64, validate=True)
+                    if item.points_base64 is not None
+                    else None
+                )
             except ValueError:
                 raise EmbeddingError("embedding_input_invalid") from None
             inputs.append(
@@ -71,6 +77,7 @@ class NativeWorker:
                     rgb=rgb,
                     width=item.width,
                     height=item.height,
+                    points=points,
                 )
             )
         if self.provider is None:

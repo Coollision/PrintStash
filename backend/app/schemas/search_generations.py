@@ -10,7 +10,9 @@ class GenerationProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     endpoint_id: int | None = Field(default=None, ge=1)
     local_model_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    profile: Literal["semantic_text", "thumbnail", "multiview"] = "semantic_text"
+    profile: Literal["semantic_text", "thumbnail", "multiview", "point_cloud"] = (
+        "semantic_text"
+    )
     aggregation: Literal["mean", "max"] = "mean"
     query_prefix: str | None = Field(default=None, max_length=256)
     document_prefix: str | None = Field(default=None, max_length=256)

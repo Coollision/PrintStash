@@ -183,3 +183,72 @@ test("builds a local index and submits a semantic search from the top bar", asyn
     if (documentId) await page.request.delete(`${API}/api/v1/documents/${documentId}`);
   }
 });
+
+test("builds the optional local point profile for geometry search", async ({ page }, testInfo) => {
+  test.setTimeout(180000);
+  const initial: SearchSettingsRead = await (
+    await page.request.get(`${API}/api/v1/config/ai-search`)
+  ).json();
+  let modelId: number | undefined;
+  const name = `Geometry source ${Date.now()}`;
+  try {
+    const mesh = readFileSync(
+      new URL("../../../../testdata/Calibration Cube.stl", import.meta.url),
+    );
+    mesh.write(name, 0, "utf8");
+    await uploadModel(page, name, {
+      gcode: false,
+      meshFile: { name: `${name}.stl`, mimeType: "model/stl", buffer: mesh },
+    });
+    modelId = Number((await modelCard(page, name).getAttribute("href"))!.split("/").at(-1));
+    await page.goto("/settings?section=ai-search");
+    const form = page.getByRole("form", { name: "AI Search", exact: true });
+    await form.getByRole("checkbox", { name: "Enable AI Search", exact: true }).check();
+    await form.getByRole("checkbox", { name: "Allow local models", exact: true }).check();
+    await form.getByRole("button", { name: "Save search settings" }).click();
+    await expect(page.getByText("AI Search settings saved", { exact: true })).toBeVisible();
+    const catalog: InferenceModel[] = await (
+      await page.request.get(`${API}/api/v1/inference/models`)
+    ).json();
+    const clip = catalog.find((entry) => entry.installed && entry.modality === "text_image");
+    const point =
+      catalog.find(
+        (entry) =>
+          entry.installed && entry.modality === "point_cloud" && entry.key !== "point-contract",
+      ) ?? catalog.find((entry) => entry.installed && entry.modality === "point_cloud");
+    expect(clip).toBeDefined();
+    expect(point).toBeDefined();
+    await page.getByRole("combobox", { name: "Search index" }).selectOption("thumbnail");
+    await page
+      .getByRole("combobox", { name: "Model", exact: true })
+      .selectOption(`local:${clip!.id}`);
+    await page.getByRole("button", { name: "Build new index" }).click();
+    await expect
+      .poll(
+        async () => (await (await page.request.get(`${API}/api/v1/search/status`)).json()).legs,
+        { timeout: 90000 },
+      )
+      .toContain("thumbnail");
+    await page.getByRole("combobox", { name: "Search index" }).selectOption("point_cloud");
+    await page
+      .getByRole("combobox", { name: "Model", exact: true })
+      .selectOption(`local:${point!.id}`);
+    await page.getByRole("button", { name: "Build new index" }).click();
+    await expect
+      .poll(
+        async () => (await (await page.request.get(`${API}/api/v1/search/status`)).json()).legs,
+        { timeout: 90000 },
+      )
+      .toContain("point_cloud");
+    await page.goto("/search?q=a+cube");
+    const link = page.getByRole("link", { name, exact: true });
+    await expect(link).toBeVisible();
+    await expect(
+      link.locator("xpath=ancestor::li").getByText("Shape match", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("point-search.png"), fullPage: true });
+  } finally {
+    await page.request.put(`${API}/api/v1/config/ai-search`, { data: initial.settings });
+    if (modelId) await page.request.delete(`${API}/api/v1/models/${modelId}`);
+  }
+});

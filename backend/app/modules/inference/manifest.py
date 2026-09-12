@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Literal
 
 from printstash_core.inference import EmbeddingError, EmbeddingSpace
+from printstash_core.search.point_inputs import PointRecipe
 from printstash_core.search.text_inputs import TextRecipe
 from printstash_core.search.visual_inputs import VisualRecipe
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -164,7 +166,76 @@ class TextModelManifest(FrozenContract):
         return self.text.graph, self.text.tokenizer
 
 
-ModelManifest = LocalModelManifest | TextModelManifest
+class PointTower(FrozenContract):
+    graph: ModelAsset
+    centers_name: SafeName = "centers"
+    grouped_name: SafeName = "grouped"
+    output_name: SafeName = "point_embeds"
+    opset: Literal[17] = 17
+    canary: tuple[Finite, ...] = Field(min_length=1, max_length=4096)
+
+
+class PointModelManifest(FrozenContract):
+    schema_version: Literal[3] = 3
+    model_key: SafeName
+    model_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    checkpoint_sha256: Digest
+    license: str = Field(min_length=1, max_length=128)
+    family: Literal["openshape_pointbert"] = "openshape_pointbert"
+    paired: LocalModelManifest
+    paired_space_hash: Digest
+    point: PointTower
+    canary_tolerance: float = Field(default=0.0001, gt=0, le=0.001, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def compatible_towers(self):
+        if (
+            self.paired.family != "clip"
+            or self.paired.text is None
+            or self.paired_space_hash != self.paired.space().config_hash
+            or len(self.point.canary) != self.paired.native_dimension
+        ):
+            raise ValueError("embedding_point_alignment_mismatch")
+        names = [asset.filename for asset in self.assets()]
+        if len(set(names)) != len(names):
+            raise ValueError("embedding_asset_name_collision")
+        return self
+
+    @property
+    def native_dimension(self) -> int:
+        return self.paired.native_dimension
+
+    @property
+    def image(self) -> ImageTower:
+        return self.paired.image
+
+    @property
+    def text(self) -> TextTower | None:
+        return self.paired.text
+
+    @property
+    def query_prefix(self) -> str:
+        return self.paired.query_prefix
+
+    def space(self) -> EmbeddingSpace:
+        digest = hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+        return EmbeddingSpace(
+            model_key=self.model_key,
+            model_revision=self.model_revision,
+            dimension=self.native_dimension,
+            modality="point_cloud",
+            profile="point_cloud",
+            render_recipe=PointRecipe(digest, self.paired_space_hash).encode(),
+            model_repo=self.repository,
+            alignment_identity=self.paired_space_hash,
+        )
+
+    def assets(self) -> tuple[ModelAsset, ...]:
+        return (*self.paired.assets(), self.point.graph)
+
+
+ModelManifest = LocalModelManifest | TextModelManifest | PointModelManifest
 
 
 def validate_space(manifest: ModelManifest, space: EmbeddingSpace) -> None:
@@ -185,15 +256,11 @@ def validate_space(manifest: ModelManifest, space: EmbeddingSpace) -> None:
         original = TextRecipe.for_space(expected)
         if recipe.encoder_manifest_sha256 != original.encoder_manifest_sha256:
             raise EmbeddingError("embedding_space_mismatch")
-        expected = EmbeddingSpace(
-            **(
-                expected.__dict__
-                | {
-                    "render_recipe": space.render_recipe,
-                    "query_prefix": space.query_prefix,
-                    "document_prefix": space.document_prefix,
-                }
-            )
+        expected = replace(
+            expected,
+            render_recipe=space.render_recipe,
+            query_prefix=space.query_prefix,
+            document_prefix=space.document_prefix,
         )
     if expected != space:
         raise EmbeddingError("embedding_space_mismatch")
@@ -209,9 +276,14 @@ def read_manifest(directory: Path, model_key: str) -> ModelManifest:
         if len(payload) > 256 * 1024:
             raise EmbeddingError("embedding_manifest_unavailable")
         kind = json.loads(payload).get("schema_version", 1)
-        manifest = (
-            TextModelManifest if kind == 2 else LocalModelManifest
-        ).model_validate_json(payload)
+        manifest_type = {
+            1: LocalModelManifest,
+            2: TextModelManifest,
+            3: PointModelManifest,
+        }.get(kind)
+        if manifest_type is None:
+            raise EmbeddingError("embedding_manifest_invalid")
+        manifest = manifest_type.model_validate_json(payload)
     except (
         OSError,
         ValidationError,

@@ -37,12 +37,15 @@ from app.schemas.inference import SearchSettings
 # Measured against the pinned B/32 towers and frozen visual corpus. CLIP cosine
 # scores are not on the text encoder's scale. Admin per-Space overrides win.
 _CLIP_B32 = "7f56e23951620776f8a65d4de5441b6ff1eecd1f48c8ddf1eca8a82f1dea2089"
+_OPENSHAPE_B32 = "4f845433d48ed5f38609b1538118ea8761405d528f750eb07784fbb795ffe448"
 
 
 def score_floor(space: Space, settings: SearchSettings) -> float:
     default = (
-        0.2
-        if space.profile in visual_sources.PROFILES
+        0.1
+        if space.config_hash == _OPENSHAPE_B32
+        else 0.2
+        if space.profile in ("thumbnail", "multiview")
         and space.alignment_identity == _CLIP_B32
         else settings.semantic_floor
     )
