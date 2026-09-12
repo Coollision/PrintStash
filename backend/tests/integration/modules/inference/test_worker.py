@@ -112,6 +112,93 @@ class TestManifest:
 
 
 class TestNativeProtocol:
+    @pytest.mark.parametrize("profile", ["cls", "mean", "point", "sparse"])
+    def test_executes_every_supported_manifest_family(self, tmp_path, profile):
+        import math
+
+        from printstash_core.inference.points import canary_input
+        from tests.factories.embeddings import (
+            point_embedding_assets,
+            sparse_embedding_assets,
+            text_embedding_assets,
+        )
+
+        if profile == "point":
+            directory = point_embedding_assets(tmp_path / "point")
+            key = "point-contract"
+        elif profile == "sparse":
+            directory = sparse_embedding_assets(tmp_path / "sparse")
+            key = "sparse-contract"
+        else:
+            directory = text_embedding_assets(tmp_path / "text", pooling=profile)
+            key = "text-contract"
+        contract = manifest.read_manifest(directory, key)
+        identity = manifest.manifest_identity(contract)
+        native = worker.NativeWorker(directory, key, 1)
+        if profile == "sparse":
+            payload = {"config_hash": identity, "sparse_text": "bicycle bracket"}
+        elif profile == "point":
+            payload = {
+                "config_hash": identity,
+                "inputs": [
+                    {
+                        "modality": "point_cloud",
+                        "points_base64": base64.b64encode(
+                            canary_input().points
+                        ).decode(),
+                    }
+                ],
+            }
+        else:
+            payload = {
+                "config_hash": identity,
+                "inputs": [{"modality": "text", "text": "red blue"}],
+            }
+        result = json.loads(native.execute(json.dumps(payload).encode()))
+        assert result["config_hash"] == identity
+        if profile == "sparse":
+            assert {
+                item["term"]: item["weight"] for item in result["terms"]
+            } == pytest.approx(
+                {
+                    "bicycle": math.log(4),
+                    "bike": math.log(3),
+                    "bracket": math.log(4),
+                    "mount": math.log(3),
+                }
+            )
+            assert result["truncated"] is False
+            payload["sparse_text"] = None
+            assert (
+                json.loads(native.execute(json.dumps(payload).encode()))["terms"] == []
+            )
+        else:
+            expected = {
+                "cls": [1, 0, 0],
+                "mean": [2**-0.5, 0, 2**-0.5],
+                "point": [3**-0.5] * 3,
+            }[profile]
+            np.testing.assert_allclose(result["vectors"], [expected], atol=1e-6)
+            assert result["truncated"] == [False]
+
+    @pytest.mark.parametrize("fault", ["identity", "inputs", "space"])
+    def test_rejects_cross_profile_sparse_envelopes(self, tmp_path, fault):
+        from tests.factories.embeddings import sparse_embedding_assets
+
+        directory = sparse_embedding_assets(tmp_path / "sparse")
+        contract = manifest.read_manifest(directory, "sparse-contract")
+        payload = {"config_hash": manifest.manifest_identity(contract)}
+        if fault == "identity":
+            payload["config_hash"] = "f" * 64
+        elif fault == "inputs":
+            payload["inputs"] = [{"modality": "text", "text": "red"}]
+        else:
+            payload["space_json"] = "{}"
+        with pytest.raises(EmbeddingError, match="embedding_space_mismatch"):
+            worker.NativeWorker(directory, "sparse-contract", 1).execute(
+                json.dumps(payload).encode()
+            )
+
     @pytest.mark.parametrize(
         "frame", [b"\x00", b"\xff\xff\xff\xff", b"\x00\x00\x00\x02x"]
     )

@@ -51,6 +51,54 @@ def proposal(model, **kwargs):
 
 
 class TestVisualIndex:
+    def test_respects_an_independent_consumers_render_permit(
+        self, db_session, visual_setup, monkeypatch
+    ):
+        from printstash_core.inference import EmbeddingError
+        from printstash_core.inference.context import InferenceContext
+        from printstash_core.search.visual_inputs import VisualRecipe
+
+        from app.db.models import ThumbnailRenderSlot
+        from app.modules.media import compute_slots
+        from app.modules.media.thumbnail_generations import (
+            ThumbnailEnsureOutcome,
+            ensure_thumbnail,
+        )
+
+        _, encoder, _, file = visual_setup
+        monkeypatch.setitem(_overlay, "max_render_jobs", 1)
+        permit = compute_slots.acquire(db_session, "independent-consumer")
+        assert permit is not None
+        recipe = VisualRecipe(encoder.id, 32, "multiview")
+        try:
+            thumbnail = ensure_thumbnail(db_session, file)
+            assert thumbnail.outcome == ThumbnailEnsureOutcome.COALESCED
+            with pytest.raises(EmbeddingError, match="embedding_compute_busy"):
+                visual_index.render(
+                    get_session_factory(),
+                    file,
+                    recipe,
+                    InferenceContext.bounded(2, priority="background"),
+                )
+            slots = db_session.exec(select(ThumbnailRenderSlot)).all()
+            assert [(slot.id, slot.lease_token) for slot in slots] == [
+                (permit.id, "independent-consumer")
+            ]
+        finally:
+            compute_slots.release(db_session, permit.id, "independent-consumer")
+            db_session.commit()
+
+        result = visual_index.render(
+            get_session_factory(),
+            file,
+            recipe,
+            InferenceContext.bounded(20),
+        )
+        assert len(result.views) == 6
+        assert len(result.thumbnail.rgb) == 32 * 32 * 3
+        db_session.expire_all()
+        assert db_session.exec(select(ThumbnailRenderSlot)).one().lease_token is None
+
     def test_corrupt_view_identity_does_not_count_as_complete(
         self, db_session, visual_setup, advance_generation
     ):

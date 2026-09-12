@@ -93,7 +93,16 @@ def _orphan_schema_issues(engine) -> list[str]:
         )
         context = MigrationContext.configure(
             connection,
-            opts={"compare_type": True, "compare_server_default": True},
+            opts={
+                "compare_type": True,
+                "compare_server_default": True,
+                # Extra tables are deliberately outside the adoption contract.
+                # Filter before reflection: a rebuildable virtual index may
+                # require an extension unavailable on the restoring host.
+                "include_name": lambda name, kind, _parents: (
+                    kind != "table" or name in SQLModel.metadata.tables
+                ),
+            },
         )
         for difference in compare_metadata(context, SQLModel.metadata):
             issues.extend(_describe_schema_difference(difference))

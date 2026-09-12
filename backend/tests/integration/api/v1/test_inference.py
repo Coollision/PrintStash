@@ -318,7 +318,7 @@ class TestReadSettings:
 
 
 class TestUpdateSettings:
-    def test_audits_the_actor_and_changed_search_policy(
+    def test_audits_search_policy_changes(
         self, client, db_session, make_user
     ):
         from tests.factories import bearer

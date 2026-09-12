@@ -35,7 +35,7 @@ class TestReplicateModels:
         assert db_session.exec(select(func.count(SearchPassage.id))).one() == 10
         assert len(search(db_session, actor, "bracket", mode="lexical").items) == 10
 
-    def test_replicas_survive_refresh_and_rebuild_with_consistent_statistics(
+    def test_replicas_retain_searchability_after_maintenance(
         self,
         db_session,
     ):

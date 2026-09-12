@@ -21,7 +21,7 @@ class TestSearch:
     @pytest.mark.parametrize(
         "kind,expected", [("bytes", 413), ("pixels", 413), ("zip", 415)]
     )
-    def test_rejects_excessive_and_nonimage_uploads_before_retrieval(
+    def test_rejects_unsupported_image_uploads_before_retrieval(
         self, client, db_session, make_user, monkeypatch, kind, expected
     ):
         import struct

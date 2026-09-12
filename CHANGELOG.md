@@ -43,6 +43,10 @@
 
 ### Fixed
 
+- Restoring AI Search backups no longer requires optional vector extensions to
+  inspect unversioned databases. Durable vectors remain searchable through the
+  portable backend while native acceleration is disabled.
+
 - AI Search activation acquires the SQLite writer lock before verification, so
   concurrent worker commits cannot invalidate the cutover snapshot. Search and
   ordinary Model results start without the optional Families annotation package.

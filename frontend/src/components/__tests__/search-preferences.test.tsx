@@ -1,5 +1,5 @@
 /** Personal consent and timezone updates stay scoped to the authenticated user's preference endpoint. */
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { SearchPreferences } from "@/components/search-preferences";
@@ -14,6 +14,31 @@ const value: Preferences = {
   endpoint_host: "local-chat",
 };
 describe("Search preferences", () => {
+  it.each<{ locale: "en" | "es"; title: string; optIn: string }>([
+    {
+      locale: "en",
+      title: "Natural-language search",
+      optIn: "Interpret my searches as editable filters",
+    },
+    {
+      locale: "es",
+      title: "Búsqueda en lenguaje natural",
+      optIn: "Interpretar mis búsquedas como filtros editables",
+    },
+  ])("supports accessible consent in $locale", async ({ locale, title, optIn }) => {
+    const user = userEvent.setup();
+    const app = renderApp(<SearchPreferences value={value} userId={1} />, { locale });
+    const trigger = screen.getByRole("button", { name: title });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: title });
+    expect(dialog).toHaveTextContent("local-chat");
+    expect(screen.getByRole("checkbox", { name: optIn })).not.toBeChecked();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(app.requestsWithMethod("PATCH")).toHaveLength(0);
+  });
   it("hides the option when the instance has no available parser", () => {
     renderApp(<SearchPreferences value={{ ...value, available: false }} userId={1} />);
     expect(screen.queryByRole("button", { name: "Natural-language search" })).toBeNull();

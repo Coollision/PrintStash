@@ -201,40 +201,61 @@ class TestSearch:
 
         assert healthy_embeddings.requests == []
 
-    def test_returns_lexical_results_by_query_deadline(
-        self, client, db_session, hybrid_library, healthy_embeddings
+    @pytest.mark.asyncio
+    async def test_returns_lexical_results_by_query_deadline(
+        self, app, db_session, hybrid_library, healthy_embeddings
     ):
+        import asyncio
         from threading import Event
         from time import monotonic
+
+        import httpx
 
         from app.modules.identity.auth import create_access_token
 
         actor, _, _, _, model = hybrid_library
         configuration.update(
-            db_session, SearchSettings(enabled=True, query_timeout_seconds=0.05)
+            db_session, SearchSettings(enabled=True, query_timeout_seconds=0.5)
         )
         db_session.commit()
         release = Event()
-        healthy_embeddings.before_reply = lambda: release.wait(2)
-        started = monotonic()
-        try:
-            response = client.get(
-                "/api/v1/search",
-                params={"q": "Benchy"},
-                headers={
-                    "Authorization": "Bearer "
-                    + create_access_token(actor.id, actor.username, scope="admin")
-                },
+        entered = Event()
+
+        def block_endpoint():
+            entered.set()
+            release.wait(5)
+
+        healthy_embeddings.before_reply = block_endpoint
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            started = monotonic()
+            pending = asyncio.create_task(
+                client.get(
+                    "/api/v1/search",
+                    params={"q": "Benchy"},
+                    headers={
+                        "Authorization": "Bearer "
+                        + create_access_token(actor.id, actor.username, scope="admin")
+                    },
+                )
             )
-            assert response.status_code == 200, response.text
-            result = response.json()
-            assert not release.is_set()
-            assert monotonic() - started < 1
-            assert [item["subject_id"] for item in result["items"]] == [model.id]
-            assert result["legs"] == ["lexical"]
-            assert result["degraded"] == ["search_semantic_unavailable"]
-        finally:
-            release.set()
+            try:
+                assert await asyncio.to_thread(entered.wait, 2)
+                health = await asyncio.wait_for(client.get("/api/v1/health"), 0.25)
+                assert health.status_code == 200, health.text
+                assert not pending.done()
+                response = await asyncio.wait_for(pending, 1)
+                assert response.status_code == 200, response.text
+                result = response.json()
+                assert not release.is_set()
+                assert monotonic() - started < 1.5
+                assert [item["subject_id"] for item in result["items"]] == [model.id]
+                assert result["legs"] == ["lexical"]
+                assert result["degraded"] == ["search_semantic_unavailable"]
+            finally:
+                release.set()
+                await pending
 
     def test_preserves_an_inflight_generation(
         self, db_session, hybrid_library, healthy_embeddings, advance_generation

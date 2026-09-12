@@ -20,7 +20,7 @@ def projection():
 
 
 class TestLexicalQuery:
-    def test_maintains_statistics_across_create_edit_and_delete(
+    def test_maintains_statistics_through_the_content_lifecycle(
         self, db_session, make_user, make_model
     ):
         from app.db.models import SearchLexicalState, SearchLexicalTerm

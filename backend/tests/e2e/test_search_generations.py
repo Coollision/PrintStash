@@ -139,6 +139,57 @@ def wait_for_active(api, superuser_headers):
 
 class TestSearchGenerationLifecycle:
     @pytest.mark.asyncio
+    async def test_restores_native_search_without_the_extension(
+        self, api, superuser_headers, indexing_server, wait_for_active, e2e_db
+    ):
+        from sqlalchemy import text
+        from sqlalchemy.exc import OperationalError
+
+        fake, endpoint = indexing_server
+        proposal = await api.post(
+            "/api/v1/config/ai-search/generations",
+            headers=superuser_headers,
+            json={"endpoint_id": endpoint["id"], "index_backend": "sqlite_vec"},
+        )
+        assert proposal.status_code == 202, proposal.text
+        active = await wait_for_active(proposal.json()["id"])
+        assert active["index_state"] == "ready"
+        vector = e2e_db.exec(select(PassageVector)).one()
+        vector_id, original = vector.id, vector.vector_blob
+        subject_id = vector.subject_id
+        e2e_db.rollback()
+        created = await api.post("/api/v1/backups", headers=superuser_headers)
+        assert created.status_code == 202, created.text
+        deleted = await api.delete(
+            f"/api/v1/documents/{subject_id}", headers=superuser_headers
+        )
+        assert deleted.status_code == 204, deleted.text
+        _overlay["search_native_vectors_enabled"] = False
+        e2e_db.close()
+        close_queries()
+        restored = await api.post(
+            f"/api/v1/backups/{created.json()['backup_id']}/restore",
+            headers=superuser_headers,
+        )
+        assert restored.status_code == 200, restored.text
+        with get_session_factory().scoped_session() as session:
+            assert session.get(PassageVector, vector_id).vector_blob == original
+            with pytest.raises(OperationalError, match="no such function"):
+                session.execute(text("SELECT vec_version()"))
+            session.rollback()
+        result = await api.get(
+            "/api/v1/search", params={"q": "Assembly"}, headers=superuser_headers
+        )
+        assert result.status_code == 200, result.text
+        assert [
+            (item["subject_type"], item["subject_id"])
+            for item in result.json()["items"]
+        ] == [("document", subject_id)]
+        assert result.json()["semantic_ready"] is True
+        assert set(result.json()["legs"]) == {"lexical", "semantic_text"}
+        assert fake.calls
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("quantization", ["int8", "binary", "model"])
     async def test_serves_continuous_readers_during_a_transform_switch(
         self, api, superuser_headers, indexing_server, wait_for_active, quantization

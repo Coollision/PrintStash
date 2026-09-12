@@ -230,23 +230,45 @@ describe("Search results", () => {
       "mode=hybrid",
     );
   });
-  it("renders degraded search without losing available results", async () => {
+  it.each<{ locale: "en" | "es"; message: string }>([
+    { locale: "en", message: "Some search capabilities are unavailable." },
+    { locale: "es", message: "Algunas funciones de búsqueda no están disponibles." },
+  ])(
+    "renders degraded search in $locale without losing available results",
+    async ({ locale, message }) => {
+      results({
+        locale,
+        routes: {
+          "GET /api/v1/search?": json(
+            searchResponse({ items: [aSearchResult()], degraded: ["search_semantic_unavailable"] }),
+          ),
+        },
+      });
+      expect(await screen.findByText(new RegExp(message))).toBeVisible();
+      expect(screen.getByRole("link", { name: "Desk bracket" })).toBeVisible();
+    },
+  );
+  it.each<{ locale: "en" | "es"; message: string }>([
+    { locale: "en", message: "No strong matches" },
+    { locale: "es", message: "No hay coincidencias claras" },
+  ])("renders no strong matches honestly in $locale", async ({ locale, message }) => {
     results({
-      routes: {
-        "GET /api/v1/search?": json(
-          searchResponse({ items: [aSearchResult()], degraded: ["search_semantic_unavailable"] }),
-        ),
-      },
-    });
-    expect(await screen.findByText(/Some search capabilities are unavailable/)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Desk bracket" })).toBeVisible();
-  });
-  it("renders no strong matches honestly", async () => {
-    results({
+      locale,
       routes: { "GET /api/v1/search?": json(searchResponse({ outcome: "no_strong_matches" })) },
     });
-    expect(await screen.findByText("No strong matches")).toBeVisible();
+    expect(await screen.findByText(message)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Load more results" })).toBeNull();
+  });
+  it.each<{ locale: "en" | "es"; message: string }>([
+    { locale: "en", message: "The AI index is catching up." },
+    { locale: "es", message: "El índice de IA se está actualizando." },
+  ])("explains pending indexing in $locale", async ({ locale, message }) => {
+    results({
+      locale,
+      routes: { "GET /api/v1/search/status": json(searchStatus({ backlog: true })) },
+    });
+    expect(await screen.findByText(new RegExp(message))).toHaveAttribute("role", "status");
+    expect(await screen.findByRole("link", { name: "Desk bracket" })).toBeVisible();
   });
   it("loads the next opaque cursor without repeating the first page", async () => {
     const user = userEvent.setup();
