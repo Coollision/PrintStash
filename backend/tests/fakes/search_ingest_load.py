@@ -23,6 +23,27 @@ from tests.fakes.search_scale import environment
 MAX_P95_INCREASE = 0.25
 
 
+def backfill_overlapped(observations) -> bool:
+    states = [
+        row[side]
+        for row in observations
+        for side in ("generation_before", "generation_after")
+    ]
+    return bool(states) and (
+        all(
+            state["state"] == "building"
+            and state["phase"] == "backfill"
+            and state["id"] == states[0]["id"]
+            for state in states
+        )
+        and all(
+            before["indexed"] <= after["indexed"]
+            for before, after in zip(states, states[1:], strict=False)
+        )
+        and states[-1]["indexed"] > states[0]["indexed"]
+    )
+
+
 def phase(directory: Path, model: Path, *, count: int, uploads: int, loaded: bool):
     environment(directory, model, "numpy")
     import numpy as np
@@ -164,11 +185,7 @@ def phase(directory: Path, model: Path, *, count: int, uploads: int, loaded: boo
         for pid, row in metrics.items():
             row["measurement_cpu_seconds"] = row["cpu_seconds"] - cpu_before.get(pid, 0)
         values = [row["seconds"] for row in results]
-        overlap = not loaded or all(
-            row[side]["state"] == "building" and row[side]["phase"] == "backfill"
-            for row in results
-            for side in ("generation_before", "generation_after")
-        )
+        overlap = not loaded or backfill_overlapped(results)
         result = {
             "phase": "backfill" if loaded else "baseline",
             "architecture": platform.machine(),

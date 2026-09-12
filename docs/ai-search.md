@@ -275,12 +275,14 @@ the matching Model in the top 10 with multiview; the thumbnail profile misses
 that target. One photograph does not establish broad photo recall. Contract VLM tests establish protocol and lifecycle behavior,
 not the quality of a particular caption or query-parsing model.
 
-Release acceptance remains open for the complete final test/coverage/security
-gates, large-library end-to-end latency and concurrent-ingest measurements,
-physical ARM/Raspberry Pi runs, and independent human-query/broad photo evaluation.
-Native vector acceleration stays opt-in while the 500,000-unit feasibility gate
-is being measured. A passing small fixture is not evidence for these scale or
-hardware targets.
+The [coverage matrix](ai-search-coverage.md#final-verification-after-query-path-corrections)
+records completed correctness, coverage and browser checks; security review is
+recorded separately against the final branch snapshot. The
+[performance report](ai-search-performance.md) separates the measured
+500,000-vector feasibility study from complete HTTP latency and concurrent ingest.
+Native acceleration remains opt-in. Release acceptance also requires physical
+ARM/Raspberry Pi runs and independent human-query/broad photo evaluation; small
+fixtures and VM measurements do not establish those hardware or quality targets.
 
 ## Local text models
 

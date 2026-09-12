@@ -85,8 +85,11 @@ and after each upload, and sampled RSS/CPU for the application and its worker
 processes, including children spawned by executor threads. Sampling accompanies
 job polling, so its RSS maximum is labelled as sampled rather than an exact
 kernel high-water mark. A run where backfill finishes before the uploads does
-not satisfy the overlap requirement. The command preserves phase reports and
-exits nonzero when comparison fails.
+not satisfy the overlap requirement. The same generation must remain in backfill
+at every recorded boundary, its indexed count must never regress, and it must
+publish more vectors during the loaded sample. A stalled status label cannot
+satisfy the check. The command preserves phase reports and exits nonzero when
+comparison fails.
 
 Physical Pi 5 backfill and independent human query/photo quality acceptance
 require separate measurements; these harnesses do not substitute for them.
