@@ -3,13 +3,55 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubjectCaption } from "@/components/subject-caption";
+import { AuthContext } from "@/lib/auth-context";
 import { aCaption } from "@/test-support/captions";
-import { json, renderApp } from "@/test-support/render";
+import { adminSession, json, memberSession, renderApp } from "@/test-support/render";
 
 const url = "/api/v1/subjects/model/7/caption";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Subject caption", () => {
+  it("hides cached captions after an identity change", async () => {
+    const app = renderApp(<SubjectCaption type="model" id={7} />, {
+      routes: { [`GET ${url}`]: json(aCaption({ text: "Private project caption" })) },
+    });
+    expect(await screen.findByText("Private project caption")).toBeVisible();
+    app.route({ [`GET ${url}`]: json({ detail: "not_found" }, 404) });
+    // AuthProvider observes cross-tab storage changes without a same-tab
+    // auth-changed event, so its new context must fence existing query data.
+    app.rerender(
+      <AuthContext.Provider value={memberSession()}>
+        <SubjectCaption type="model" id={7} />
+      </AuthContext.Provider>,
+    );
+    expect(screen.queryByText("Private project caption")).toBeNull();
+    expect(await screen.findByText("Caption unavailable.")).toBeVisible();
+  });
+  it("discards a caption draft after an identity change", async () => {
+    const user = userEvent.setup();
+    const app = renderApp(
+      <AuthContext.Provider value={adminSession()}>
+        <SubjectCaption type="model" id={7} />
+      </AuthContext.Provider>,
+      { routes: { [`GET ${url}`]: json(aCaption()) } },
+    );
+    await user.click(await screen.findByRole("button", { name: "Edit caption" }));
+    await user.type(screen.getByRole("textbox"), " confidential draft");
+    app.rerender(
+      <AuthContext.Provider value={memberSession()}>
+        <SubjectCaption type="model" id={7} />
+      </AuthContext.Provider>,
+    );
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+  it("avoids caption reads without an authenticated user", () => {
+    const app = renderApp(<SubjectCaption type="model" id={7} />, {
+      auth: adminSession({ user: null }),
+      routes: { [`GET ${url}`]: json(aCaption()) },
+    });
+    expect(app.requests()).toEqual([]);
+    expect(screen.queryByRole("region", { name: "AI caption" })).toBeNull();
+  });
   it("saves an edit with the displayed version", async () => {
     const user = userEvent.setup();
     const app = renderApp(<SubjectCaption type="model" id={7} />, {

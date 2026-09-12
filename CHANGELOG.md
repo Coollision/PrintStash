@@ -56,6 +56,9 @@
 
 ### Fixed
 
+- Caption text and unsaved edits now clear when the signed-in account changes,
+  including account changes received from another browser tab.
+
 - Idle similarity polling no longer transiently blocks backup restoration with a storage-retention conflict.
 
 - Ordinary dense meshes such as the repository Benchy now receive complete

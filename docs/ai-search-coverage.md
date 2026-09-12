@@ -889,3 +889,11 @@ fixing the URL-object and unexpected-debug-exception paths.
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
 | UI001 | localizes authored search copy | Edge | sparse size label and date example | no untranslated presentation copy; both catalogs complete | Frontend unit | ✅ `frontend/tests/repo/i18n-coverage.test.ts::translationCoverage::has no unwrapped authored JSX copy` |
+
+## Caption identity acceptance audit
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| CI001 | hides cached captions after an identity change | Error | another tab changes the authenticated user | previous user's private text disappears before the new read completes | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx::Subject caption::hides cached captions after an identity change` |
+| CI002 | discards a caption draft after an identity change | Error | another user replaces the editor's session | previous user's unsaved draft disappears | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx::Subject caption::discards a caption draft after an identity change` |
+| CI003 | avoids caption reads without an authenticated user | Error | no authenticated user | no caption request or private text rendered | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx::Subject caption::avoids caption reads without an authenticated user` |

@@ -3,18 +3,35 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { inputClasses } from "@/components/ui/input";
 import { getCaption, patchCaption } from "@/lib/api/captions";
+import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n";
 import type { CaptionPatch } from "@/types/captions";
 import type { SearchSubjectType } from "@/types/search";
 
 export function SubjectCaption({ type, id }: { type: SearchSubjectType; id: number }) {
+  const { user } = useAuth();
+  return user ? (
+    <CaptionContent key={`${user.id}:${type}:${id}`} userId={user.id} type={type} id={id} />
+  ) : null;
+}
+
+function CaptionContent({
+  userId,
+  type,
+  id,
+}: {
+  userId: number;
+  type: SearchSubjectType;
+  id: number;
+}) {
   const { t } = useI18n();
   const client = useQueryClient();
   const fieldId = useId();
-  const key = ["subject-caption", type, id];
+  const key = ["subject-caption", userId, type, id];
   const query = useQuery({
     queryKey: key,
     queryFn: () => getCaption(type, id),
+    gcTime: 0,
     refetchInterval: (current) =>
       current.state.data?.phase === "pending" || current.state.data?.phase === "running"
         ? 5000
