@@ -335,11 +335,13 @@ def query(
             limit=limit,
             max_scan=max_scan,
         )
-        capped = session.exec(scoped_ids.offset(max_scan).limit(1)).first() is not None
+        capped = len(candidates) == min(2048, limit * 8) or (
+            session.exec(scoped_ids.offset(max_scan).limit(1)).first() is not None
+        )
         return replace(
             result,
             backend=vector_index.serving_backend(generation),
-            truncated=capped or len(candidates) == min(2048, limit * 8),
+            truncated=capped,
         )
     rows = session.exec(
         statement.order_by(PassageVector.id)

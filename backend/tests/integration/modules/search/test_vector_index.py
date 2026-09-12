@@ -8,7 +8,7 @@ from printstash_core.inference import EmbeddingError
 from printstash_core.inference import EmbeddingSpace as SpaceContract
 from printstash_core.inference.transforms import IndexTransform
 from printstash_core.inference.vectors import normalize
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlmodel import Session, create_engine, select
 
 from app.core.config import _overlay
@@ -83,6 +83,52 @@ def native_units(
 
 
 class TestVectorIndex:
+    def test_avoids_rescanning_a_full_native_shortlist(
+        self,
+        db_session,
+        native_units,
+        make_passage_vector,
+        make_model,
+        make_file,
+    ):
+        generation, contract, first, _ = native_units
+        for _ in range(30):
+            row = make_passage_vector(
+                generation,
+                make_file(make_model()),
+                vector_blob=normalize(
+                    [0, 1] + [0] * (contract.dimension - 2), contract.dimension
+                ),
+            )
+            vector_index.replace(db_session, generation, row)
+        db_session.commit()
+        checks = []
+        connection = db_session.connection().connection.driver_connection
+
+        def permitted(unit_id):
+            checks.append(unit_id)
+            return 1
+
+        connection.create_function("test_permitted", 1, permitted)
+        try:
+            result = vector_store.query(
+                db_session,
+                generation_id=generation.id,
+                space=contract,
+                vector=[1] + [0] * (contract.dimension - 1),
+                allowed_ids=select(PassageVector.id).where(
+                    func.test_permitted(PassageVector.id) == 1
+                ),
+                limit=1,
+                max_scan=32,
+            )
+        finally:
+            connection.create_function("test_permitted", 1, None)
+        assert result.backend == "sqlite_vec"
+        assert result.truncated is True
+        assert [item.unit_id for item in result.items] == [first.id]
+        assert 32 <= len(checks) <= 40  # One scope scan plus eight fresh candidates.
+
     @pytest.mark.parametrize("backend", ["numpy", "sqlite_vec"])
     @pytest.mark.parametrize(
         "shape", ["limited", "offset", "joined", "distinct", "empty"]

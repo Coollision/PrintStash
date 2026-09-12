@@ -1105,7 +1105,7 @@ CPU execution is also visible to the branch-coverage audit.
 | VK008 | rechecks candidate contributor visibility on PostgreSQL | Edge | Live candidate with private, granted, then trashed contributor | Authorized vector IDs follow each current permission/liveness change | Integration | ✅ `integration/postgres/test_search_passages.py::TestCandidateVisibility::test_rechecks_contributor_visibility_on_postgres`; PostgreSQL owner suite: 11 passed |
 | VK009 | preserves arbitrary vector-scope membership | Edge | Limited, offset, joined, distinct or empty authorized ID query; portable/native backend | Only original scope members can be ranked; native and portable agree | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_preserves_arbitrary_vector_scope_membership`; 274 owner/API/E2E checks and 11 PostgreSQL native checks passed |
 
-### Final verification after query-path corrections
+### Verification at `cb080c6a` after query-path corrections
 
 Backend coverage uses the complete main and resource lane data plus focused
 reruns against every changed source file; old line/branch data for those files
@@ -1133,3 +1133,11 @@ in this matrix; passing correctness tests does not close those acceptance gates.
 
 | SC006 | rejects an inactive backfill load measurement | Error | Generation stays labelled building but stalls, changes identity, regresses or leaves backfill | Acceptance requires actual indexed-vector progress through the measured sample and continuous backfill state | Repo | ✅ `repo/test_search_ingest_load.py::TestBackfillOverlap`; seven outcome checks and four affected hygiene checks passed |
 | BS008 | bounds publication authorization to the current source | Edge | One leased vector publication before/after 1,000 unrelated live passages | Same durable vector; SQLite writer work remains within twice the small-library baseline | Integration | ✅ `integration/modules/search/test_indexing.py::TestPublicationWork::test_bounds_publication_authorization_to_the_current_source` |
+| VK010 | avoids rescanning a full native shortlist | Edge | Authorized native shortlist reaches its declared candidate cap | Truncation remains reported with one authorization pass plus fresh candidate checks | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_avoids_rescanning_a_full_native_shortlist` |
+
+Follow-up publication checks passed **59** owner/PostgreSQL tests and **73**
+visual/caption/cutover/API/E2E tests. The native shortlist correction passed
+**90** shared-store/native/PostgreSQL tests. Their new regressions reproduce
+both removed full-scope scans; affected hygiene, Ruff and Pyright checks pass.
+The refreshed coverage audit and timed load measurements are recorded below
+when complete.
