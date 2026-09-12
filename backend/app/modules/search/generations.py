@@ -41,7 +41,7 @@ from app.db.transactions import begin_write
 from app.modules.administration import audit
 from app.modules.inference.configuration import load as load_endpoint
 from app.modules.search import configuration, vector_index, vector_store, visual_sources
-from app.modules.search.access import indexable_passage_ids
+from app.modules.search.access import indexable_passage_ids, passage_in_scope
 from app.modules.search.text_inputs import TextRecipe
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 from app.runtime.jobs import registry
@@ -87,7 +87,7 @@ def eligible(session: Session, space: Space):
     recipe = TextRecipe.for_space(space)
     return select(SearchPassage.id).where(
         SearchPassage.recipe_version == recipe.passage_version,
-        SearchPassage.id.in_(indexable_passage_ids(session)),
+        passage_in_scope(indexable_passage_ids(session)),
     )
 
 

@@ -30,6 +30,7 @@ from app.db.models import (
 from app.db.session import SessionFactory
 from app.modules.inference.configuration import embedding_provider
 from app.modules.search import configuration, generations, vector_index, vector_store
+from app.modules.search.access import passage_in_scope
 from app.modules.search.reconciliation import reconcile_partition
 from app.modules.search.text_inputs import document_input
 from app.modules.storage.capacity import CapacityManager, CapacityReservationHandle
@@ -200,7 +201,7 @@ def publish(
     ).where(
         SearchPassage.id == item.passage_id,
         SearchPassage.content_hash == item.content_hash,
-        SearchPassage.id.in_(generations.eligible(session, space)),
+        passage_in_scope(generations.eligible(session, space)),
         select(IndexGeneration.id)
         .where(*generations.owned(generation_id, token))
         .exists(),

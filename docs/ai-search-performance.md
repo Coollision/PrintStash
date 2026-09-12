@@ -94,6 +94,18 @@ publish more vectors during the loaded sample. A stalled status label cannot
 satisfy the check. The command preserves phase reports and exits nonzero when
 comparison fails.
 
+The completed pre-correction run at `40b9cb3` failed this gate: all 40 uploads
+succeeded and indexed vectors advanced from 4 to 80 during the loaded sample,
+but p95 increased from **203 ms to 735 ms (3.62×)**. Median latency increased
+from 185 ms to 370 ms. Initial reconciliation took 617.75 seconds, separately
+from upload timing. The raw result and sampled process metrics are retained in
+`backend/tests/fixtures/search/ingest-backfill-10k-x86-before.json`.
+This failure motivated a regression test for per-vector publication: adding
+1,000 unrelated passages raised its SQLite work from 200 to 43,800 instructions
+while the publisher held the writer lock. The correction preserves source and
+lease fences while correlating eligibility to the current passage. A new loaded
+run is required before this acceptance row can pass.
+
 Physical Pi 5 backfill and independent human query/photo quality acceptance
 require separate measurements; these harnesses do not substitute for them.
 

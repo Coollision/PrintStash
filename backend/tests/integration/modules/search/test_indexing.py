@@ -18,6 +18,51 @@ from app.db.session import get_session_factory
 from app.modules.search import generations, indexing
 from app.modules.search.passages import sync_subject
 from app.schemas.search_generations import GenerationProposal
+from tests.fakes.sqlite_work import sqlite_work
+
+
+class TestPublicationWork:
+    def test_bounds_publication_authorization_to_the_current_source(
+        self,
+        db_session,
+        generation_setup,
+        healthy_embeddings,
+        make_model,
+        make_search_passage,
+    ):
+        actor, endpoint = generation_setup
+        proposal = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+        document = db_session.exec(select(Document)).one()
+        sync_subject(db_session, SearchSubject(SubjectType.DOCUMENT, document.id))
+        db_session.commit()
+        generation_id, token = indexing.claim(db_session)
+        assert generation_id == proposal.id
+        generation = db_session.get(IndexGeneration, generation_id)
+        item = indexing.pending(db_session, generation)[0]
+        with sqlite_work(db_session) as small:
+            before = indexing.publish(
+                db_session, generation_id, token, item, (1.0, 0.0, 0.0, 0.0)
+            )
+        stored = db_session.exec(select(PassageVector)).one()
+        expected_blob = stored.vector_blob
+        db_session.delete(stored)
+        for index in range(1000):
+            model = make_model(f"Unrelated {index}")
+            make_search_passage(SearchSubject(SubjectType.MODEL, model.id))
+        db_session.commit()
+        with sqlite_work(db_session) as large:
+            after = indexing.publish(
+                db_session, generation_id, token, item, (1.0, 0.0, 0.0, 0.0)
+            )
+        assert before is after is True
+        stored = db_session.exec(select(PassageVector)).one()
+        assert stored.passage_id == item.passage_id
+        assert stored.vector_blob == expected_blob
+        assert large.instructions <= max(2000, small.instructions * 2)
 
 
 class TestIndexProcessor:
