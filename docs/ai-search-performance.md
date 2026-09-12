@@ -39,7 +39,7 @@ uv run python -m tests.fakes.search_scale \
 uv run python -m tests.fakes.search_scale \
   --directory /tmp/ai-search-scale-100k-native \
   --model-directory /absolute/path/to/bge-export \
-  --count 100000 --queries 32 --backend sqlite-vec
+  --count 100000 --queries 32 --backend sqlite_vec
 ```
 
 Each run creates a separate installation, completes public setup, and calls the
@@ -62,6 +62,30 @@ encoder. Replication preserves realistic passage and authorization structure but
 does not supply 100,000 independent semantic labels. The report records the
 corpus/query digests and distinct-text count so those claims remain separable.
 
-Physical Pi 5 backfill, ingestion under backfill load, and independent human
-query/photo quality acceptance require their own measurements; neither harness
-silently substitutes for those checks.
+## Ingestion under backfill
+
+```sh
+uv run python -m tests.fakes.search_ingest_load \
+  --directory /tmp/ai-search-ingest-load \
+  --model-directory /absolute/path/to/bge-export \
+  --count 10000 --uploads 20
+```
+
+The acceptance limit is declared before measurement: **at most 25% additional
+p95 upload-to-completion latency, no failed ingests, and actual inference
+backfill running throughout every loaded upload**. Baseline and loaded phases
+use fresh installations and the same ordered G-code corpus. Unique comments
+prevent duplicate detection from bypassing ingestion; each phase records the
+exact file hashes. The seeded library has 32 distinct texts, replicated to
+10,000 unembedded passages. Both phases warm the same local model beforehand.
+
+The report contains per-upload completion latency, generation progress before
+and after each upload, and sampled RSS/CPU for the application and its worker
+processes, including children spawned by executor threads. Sampling accompanies
+job polling, so its RSS maximum is labelled as sampled rather than an exact
+kernel high-water mark. A run where backfill finishes before the uploads does
+not satisfy the overlap requirement. The command preserves phase reports and
+exits nonzero when comparison fails.
+
+Physical Pi 5 backfill and independent human query/photo quality acceptance
+require separate measurements; these harnesses do not substitute for them.

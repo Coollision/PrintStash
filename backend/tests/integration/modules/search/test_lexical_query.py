@@ -20,6 +20,31 @@ def projection():
 
 
 class TestLexicalQuery:
+    def test_maintains_statistics_across_create_edit_and_delete(
+        self, db_session, make_user, make_model
+    ):
+        from app.db.models import SearchLexicalState, SearchLexicalTerm
+
+        actor = make_user(superuser=True)
+        first, second = make_model("Bracket"), make_model("Bracket")
+        content_changed(db_session, "model", [first.id, second.id])
+        db_session.commit()
+        state = db_session.get(SearchLexicalState, 1)
+        assert (state.document_count, state.total_length) == (2, 6)
+        assert db_session.get(SearchLexicalTerm, "bracket").document_frequency == 2
+
+        update_model(first.id, ModelUpdate(name="Support"), actor, db_session)
+        db_session.expire_all()
+        assert (state.document_count, state.total_length) == (2, 6)
+        assert db_session.get(SearchLexicalTerm, "bracket").document_frequency == 1
+        assert db_session.get(SearchLexicalTerm, "support").document_frequency == 1
+
+        soft_delete_model(db_session, first)
+        db_session.expire_all()
+        assert (state.document_count, state.total_length) == (1, 3)
+        assert db_session.get(SearchLexicalTerm, "support") is None
+        assert db_session.get(SearchLexicalTerm, "bracket").document_frequency == 1
+
     def test_ranks_exact_title_above_body(self, db_session, make_user, make_model):
         actor = make_user(superuser=True)
         body = make_model("Notes", description="bracket")
@@ -184,7 +209,9 @@ class TestLexicalQuery:
         finally:
             bind_content_search(previous)
 
-    def test_browse_falls_back_after_native_table_loss(self, db_session, make_user, make_model):
+    def test_browse_falls_back_after_native_table_loss(
+        self, db_session, make_user, make_model
+    ):
         from app.db.content_search import bind_content_search
         from app.modules.library.model_views.listing import list_items
         from app.modules.search.lexical_query import LibrarySearch
@@ -198,6 +225,8 @@ class TestLexicalQuery:
         db_session.commit()
         previous = bind_content_search(LibrarySearch())
         try:
-            assert [row.id for row in list_items(db_session, actor, q="bracket")] == [model.id]
+            assert [row.id for row in list_items(db_session, actor, q="bracket")] == [
+                model.id
+            ]
         finally:
             bind_content_search(previous)

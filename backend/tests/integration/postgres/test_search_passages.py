@@ -171,6 +171,14 @@ class TestSearchPassages:
             session.commit()
             assert session.get(SearchLexicalState, 1).document_count == 1
             assert session.get(SearchLexicalTerm, "bracket").document_frequency == 1
+            model.name = "Support"
+            session.add(model)
+            session.flush()
+            sync_subject(session, subject)
+            session.commit()
+            assert session.get(SearchLexicalState, 1).total_length == 3
+            assert session.get(SearchLexicalTerm, "bracket") is None
+            assert session.get(SearchLexicalTerm, "support").document_frequency == 1
             model.deleted_at = utcnow()
             session.add(model)
             session.flush()
@@ -180,6 +188,7 @@ class TestSearchPassages:
             state = session.get(SearchLexicalState, 1)
             assert (state.document_count, state.total_length) == (0, 0)
             assert session.get(SearchLexicalTerm, "bracket") is None
+            assert session.get(SearchLexicalTerm, "support") is None
 
     def test_hides_private_member_context_on_postgres(self, passage_engine):
         from app.db.models import CollectionRole

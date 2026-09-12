@@ -36,7 +36,7 @@ def environment(directory: Path, model: Path, backend: str):
             "VAULT_EMBEDDING_LOCAL_MODEL_DIR": str(model),
             "VAULT_EMBEDDING_ONNX_THREADS": "1",
             "VAULT_EMBEDDING_DOWNLOAD_ENABLED": "false",
-            "VAULT_SEARCH_NATIVE_VECTORS_ENABLED": str(backend == "sqlite-vec").lower(),
+            "VAULT_SEARCH_NATIVE_VECTORS_ENABLED": str(backend == "sqlite_vec").lower(),
         }
     )
     for key in (
@@ -79,6 +79,7 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
     from tests.factories.search_scale import replicate_models
     from tests.factories.similarity import build_index_generation, build_passage_vector
     from tests.fakes.precomputed_embeddings import PrecomputedEmbeddings
+    from tests.fakes.process_metrics import sample_processes
     from tests.paths import FIXTURES_DIR
 
     started, cpu_started = time.perf_counter(), time.process_time()
@@ -190,6 +191,7 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
             return run
 
         observations = []
+        processes = {}
         # Pass-through timing only: every production function and ONNX worker runs.
         with ExitStack() as stack:
             for owner, name, label in (
@@ -223,6 +225,7 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
                 assert body["lexical_backend"] == "fts5"
                 assert parts.get("embedding_seconds", 0) > 0
                 assert parts.get("vector_seconds", 0) > 0
+                sample_processes(processes)
                 expected_seed = replicas["seed_ids"][int(query["expected_id"]) - 1]
 
                 def seed_for(id):
@@ -268,6 +271,7 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
             "budget_seconds": 0.300,
             "budget_passed": p95 < 0.300,
             "observations": observations,
+            "processes": processes,
             "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             "child_peak_rss_kib": resource.getrusage(
                 resource.RUSAGE_CHILDREN
@@ -285,7 +289,7 @@ def main():
     parser.add_argument("--model-directory", type=Path, required=True)
     parser.add_argument("--count", type=int, default=100_000)
     parser.add_argument("--queries", type=int, default=32)
-    parser.add_argument("--backend", choices=("numpy", "sqlite-vec"), default="numpy")
+    parser.add_argument("--backend", choices=("numpy", "sqlite_vec"), default="numpy")
     options = parser.parse_args()
     environment(options.directory, options.model_directory, options.backend)
     result = measure(

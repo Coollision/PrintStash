@@ -34,10 +34,13 @@ class TestSearchPassageLifecycle:
             ]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("fts_available", [True, False], ids=["fts5", "lost-fts5"])
     async def test_searches_all_public_subject_types(
-        self, projection, api, superuser_headers
+        self, projection, api, superuser_headers, fts_available
     ):
         import asyncio
+
+        from sqlalchemy import text
 
         from app.modules.search.lexical_index import rebuild_partition
         from tests.paths import FIXTURES_DIR
@@ -58,6 +61,12 @@ class TestSearchPassageLifecycle:
             json={"name": "Assembly kit"},
         )
         assert aggregate.status_code == 201, aggregate.text
+        with get_session_factory().scoped_session() as session:
+            rebuild_partition(session)
+            session.commit()
+            if not fts_available:
+                session.execute(text("DROP TABLE search_passages_fts"))
+                session.commit()
         source = FIXTURES_DIR / "real_orca_ender3_benchy.gcode"
         upload = await api.post(
             "/api/v1/ingest/orca",
@@ -76,10 +85,6 @@ class TestSearchPassageLifecycle:
                 break
             await asyncio.sleep(0.05)
         assert job["state"] == "completed", job
-        with get_session_factory().scoped_session() as session:
-            rebuild_partition(session)
-            session.commit()
-
         response = await api.get(
             "/api/v1/search",
             headers=superuser_headers,
@@ -93,4 +98,6 @@ class TestSearchPassageLifecycle:
             "multipart_model",
             "document",
         }
-        assert response.json()["lexical_backend"] == "fts5"
+        assert response.json()["lexical_backend"] == (
+            "fts5" if fts_available else "ranked_like"
+        )

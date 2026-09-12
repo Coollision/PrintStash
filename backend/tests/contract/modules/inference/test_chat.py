@@ -4,6 +4,7 @@ import pytest
 from printstash_core.inference import EmbeddingError
 from printstash_core.inference.chat import ChatInput
 from printstash_core.inference.context import InferenceContext
+from pydantic import SecretStr
 
 from app.modules.inference.chat import RemoteChatProvider
 from app.modules.inference.endpoint import EndpointConfig
@@ -38,6 +39,69 @@ def chat_endpoint():
 
 
 class TestRemoteChatProvider:
+    @pytest.mark.parametrize("dialect", ["json_schema", "tools", "json"])
+    @pytest.mark.parametrize(
+        "value", [{"caption": 12}, {"caption": "Boat", "unexpected": "private"}]
+    )
+    def test_rejects_schema_violations_from_a_real_endpoint(
+        self, chat_endpoint, dialect, value
+    ):
+        fake, original = chat_endpoint
+        fake.chat_dialect = dialect
+        fake.chat_result = value
+        provider = RemoteChatProvider(original.endpoint, dialect=dialect)
+
+        with pytest.raises(EmbeddingError, match="chat_output_invalid"):
+            provider.complete(REQUEST)
+
+        assert len(fake.calls) == (2 if dialect == "json" else 1)
+
+    def test_keeps_text_chat_separate_from_image_permission(self, chat_endpoint):
+        fake, provider = chat_endpoint
+        assert provider.complete(REQUEST).value == {"caption": "A small boat"}
+
+        with pytest.raises(EmbeddingError, match="chat_images_unavailable"):
+            provider.complete(
+                ChatInput(
+                    REQUEST.instruction,
+                    REQUEST.text,
+                    REQUEST.schema,
+                    (b"\xff\xd8\xffprivate-image",),
+                )
+            )
+
+        assert len(fake.calls) == 1
+        assert all(
+            isinstance(message["content"], str)
+            for message in fake.calls[0]["body"]["messages"]
+        )
+
+    def test_redacts_chat_credentials_after_failure(self, chat_endpoint, caplog):
+        fake, original = chat_endpoint
+        fake.fault = "500"
+        provider = RemoteChatProvider(
+            original.endpoint.model_copy(
+                update={
+                    "api_key": SecretStr("private-chat-key"),
+                    "headers": {"X-Private-Token": SecretStr("private-chat-header")},
+                }
+            )
+        )
+        caplog.set_level("DEBUG")
+
+        with pytest.raises(EmbeddingError) as failure:
+            provider.complete(REQUEST)
+
+        assert fake.calls
+        rendered = caplog.text + str(failure.value)
+        for private in (
+            "private-chat-key",
+            "private-chat-header",
+            REQUEST.text,
+            provider.endpoint.base_url,
+        ):
+            assert private not in rendered
+
     def test_probes_responses_without_assuming_availability(self, chat_endpoint):
         fake, original = chat_endpoint
         provider = RemoteChatProvider(

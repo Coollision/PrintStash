@@ -471,6 +471,30 @@ class TestCaptions:
             TextRecipe.for_space(generations.contract(db_session, new)).passage_version
             == 2
         )
+        from app.db.projections import bind_content_projection
+        from app.modules.library.commands import update_model
+        from app.modules.search.projection import LibraryProjection
+        from app.schemas.models import ModelUpdate
+
+        previous_projection = bind_content_projection(LibraryProjection())
+        try:
+            update_model(
+                model.id, ModelUpdate(name="Changed human title"), actor, db_session
+            )
+        finally:
+            bind_content_projection(previous_projection)
+        coexisting = db_session.exec(
+            select(SearchPassage)
+            .where(
+                SearchPassage.subject_type == "model",
+                SearchPassage.subject_id == model.id,
+            )
+            .order_by(SearchPassage.recipe_version)
+        ).all()
+        assert [row.recipe_version for row in coexisting] == [1, 2]
+        assert all("Changed human title" in row.text for row in coexisting)
+        assert "Zygomatic" not in coexisting[0].text
+        assert "Zygomatic" in coexisting[1].text
         advance_generation(new.id)
         db_session.expire_all()
         assert db_session.get(IndexGeneration, new.id).state == "active"

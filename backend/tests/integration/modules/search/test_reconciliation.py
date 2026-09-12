@@ -10,6 +10,45 @@ from app.modules.search.reconciliation import reconcile_partition
 
 
 class TestReconciliation:
+    @pytest.mark.parametrize("change", ["rename", "move"])
+    def test_repairs_ancestor_context_without_touching_model_timestamp(
+        self, client, db_session, make_user, make_collection, make_model, change
+    ):
+        from app.db.projections import bind_content_projection
+        from tests.factories import bearer
+
+        actor = make_user(superuser=True)
+        root = make_collection("Root")
+        child = make_collection("Child", parent=root)
+        destination = make_collection("Destination")
+        model = make_model("Bracket", collection=child)
+        reconcile_partition(db_session, SubjectType.MODEL, limit=2)
+        db_session.commit()
+        before = model.updated_at
+        original = db_session.exec(select(SearchPassage.text)).one()
+        previous = bind_content_projection(None)
+        try:
+            response = client.patch(
+                f"/api/v1/collections/{root.id if change == 'rename' else child.id}",
+                headers=bearer(actor),
+                json={"name": "Renamed"}
+                if change == "rename"
+                else {"parent_id": destination.id},
+            )
+            assert response.status_code == 200, response.text
+        finally:
+            bind_content_projection(previous)
+        db_session.expire_all()
+        assert model.updated_at == before
+        assert db_session.exec(select(SearchPassage.text)).one() == original
+
+        reconcile_partition(db_session, SubjectType.MODEL, limit=2)
+
+        current = db_session.exec(select(SearchPassage.text)).one()
+        expected = "renamed/child" if change == "rename" else "destination/child"
+        assert "Collection: " + expected in current
+        assert "Collection: root/child" not in current
+
     @pytest.mark.parametrize("limit", [0, -1, 1025])
     def test_rejects_an_invalid_repair_limit(self, db_session, limit):
         with pytest.raises(ValueError, match="search_reconciliation_limit"):

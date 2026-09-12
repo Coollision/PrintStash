@@ -69,6 +69,17 @@ test.describe("AI Search", () => {
       await uploadModel(page, name, { mesh: true, gcode: false });
       const href = await modelCard(page, name).getAttribute("href");
       modelId = Number(href?.split("/").at(-1));
+      const immediate = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === "/api/v1/search" && url.searchParams.get("instant") === "true";
+      });
+      await page.getByRole("searchbox", { name: "Search library" }).fill(name);
+      await expect(
+        page.locator("[data-search-suggestion]").filter({ hasText: name }),
+      ).toBeVisible();
+      const instant = await (await immediate).json();
+      expect(instant.legs).toEqual(["lexical"]);
+      expect(instant.generations).toEqual([]);
       const endpoint = await page.request.post(`${API}/api/v1/config/ai-search/endpoints`, {
         data: {
           base_url: `http://127.0.0.1:${chatPort}/v1`,
@@ -81,6 +92,7 @@ test.describe("AI Search", () => {
       const configured = await page.request.put(`${API}/api/v1/config/ai-search`, {
         data: {
           ...initial.settings,
+          enabled: true,
           chat_endpoint_id: (await endpoint.json()).id,
           nl_filters_enabled: true,
           timezone: "Europe/Madrid",
@@ -89,6 +101,9 @@ test.describe("AI Search", () => {
       expect(configured.ok()).toBe(true);
       await page.goto("/search");
       await page.getByRole("button", { name: "Natural-language search", exact: true }).click();
+      await expect(page.getByRole("dialog")).toContainText(
+        "submitted searches and available filter choices are sent to 127.0.0.1",
+      );
       await page
         .getByRole("checkbox", { name: "Interpret my searches as editable filters" })
         .check();
@@ -109,7 +124,7 @@ test.describe("AI Search", () => {
       await expect(
         page.getByRole("button", { name: "Remove Actual duration < seconds: 10800" }),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Saved views", exact: true }).click();
+      await page.getByRole("button", { name: /^Saved views(?: \d+)?$/ }).click();
       await page.getByRole("button", { name: "Save current view", exact: true }).click();
       await page.getByRole("textbox", { name: "View name" }).fill(name);
       const saved = page.waitForResponse(
@@ -139,7 +154,7 @@ test.describe("AI Search", () => {
       expect(calls).toBe(1);
       // A persisted normalized view restores without another language-model call.
       await page.goto("/search");
-      await page.getByRole("button", { name: "Saved views", exact: true }).click();
+      await page.getByRole("button", { name: /^Saved views(?: \d+)?$/ }).click();
       await page.getByRole("button", { name, exact: true }).click();
       await expect(
         page.getByRole("button", { name: "Remove Actual duration < seconds: 10800" }),

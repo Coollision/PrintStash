@@ -40,12 +40,16 @@ def replicate_models(session, seeds, generation, *, count):
                 SearchPassage.subject_id == model.id,
             )
         ).one()
-        vector = session.exec(
-            select(PassageVector).where(
-                PassageVector.passage_id == passage.id,
-                PassageVector.generation_id == generation.id,
-            )
-        ).one()
+        vector = (
+            session.exec(
+                select(PassageVector).where(
+                    PassageVector.passage_id == passage.id,
+                    PassageVector.generation_id == generation.id,
+                )
+            ).one()
+            if generation is not None
+            else None
+        )
         dependencies = session.exec(
             select(SearchDependency).where(
                 SearchDependency.subject_type == "model",
@@ -66,7 +70,7 @@ def replicate_models(session, seeds, generation, *, count):
             (
                 _values(model),
                 _values(passage),
-                _values(vector),
+                _values(vector) if vector is not None else None,
                 [_values(row) for row in postings],
             )
         )
@@ -92,16 +96,17 @@ def replicate_models(session, seeds, generation, *, count):
                 }
             )
             passages.append(passage | {"id": passage_id, "subject_id": model_id})
-            vectors.append(
-                vector
-                | {
-                    "id": vector_id,
-                    "unit_key": f"passage:{passage_id}",
-                    "passage_id": passage_id,
-                    "subject_id": model_id,
-                    "model_id": model_id,
-                }
-            )
+            if vector is not None:
+                vectors.append(
+                    vector
+                    | {
+                        "id": vector_id,
+                        "unit_key": f"passage:{passage_id}",
+                        "passage_id": passage_id,
+                        "subject_id": model_id,
+                        "model_id": model_id,
+                    }
+                )
             dependencies.append(
                 {
                     "subject_type": "model",

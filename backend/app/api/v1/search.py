@@ -116,6 +116,8 @@ async def search_image(
             try:
                 image = decode_image(encoded.pop(), mime)
             except EmbeddingError as exc:
+                if exc.code == "embedding_image_type_unsupported":
+                    raise HTTPException(status_code=415, detail=exc.code) from None
                 raise OperationError(
                     exc.code,
                     kind=ErrorKind.TOO_LARGE

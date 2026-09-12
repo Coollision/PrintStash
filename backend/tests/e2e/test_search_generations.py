@@ -139,7 +139,7 @@ def wait_for_active(api, superuser_headers):
 
 class TestSearchGenerationLifecycle:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("quantization", ["int8", "binary"])
+    @pytest.mark.parametrize("quantization", ["int8", "binary", "model"])
     async def test_serves_continuous_readers_during_a_transform_switch(
         self, api, superuser_headers, indexing_server, wait_for_active, quantization
     ):
@@ -166,14 +166,32 @@ class TestSearchGenerationLifecycle:
                 await asyncio.sleep(0.02)
 
         reader = asyncio.create_task(read())
+        other_server = None
         try:
+            replacement_endpoint = endpoint["id"]
+            if quantization == "model":
+                other = InferenceFake(model="replacement-encoder", dimension=8)
+                other_server = start_server(other.app())
+                configured = await api.post(
+                    "/api/v1/config/ai-search/endpoints",
+                    headers=superuser_headers,
+                    json={
+                        "base_url": other_server.base_url + "/v1",
+                        "model": other.model,
+                        "native_dimension": 8,
+                    },
+                )
+                assert configured.status_code == 201, configured.text
+                replacement_endpoint = configured.json()["id"]
             replacement = await api.post(
                 "/api/v1/config/ai-search/generations",
                 headers=superuser_headers,
                 json={
-                    "endpoint_id": endpoint["id"],
+                    "endpoint_id": replacement_endpoint,
                     "index_backend": "sqlite_vec",
-                    "quantization": quantization,
+                    "quantization": "float32"
+                    if quantization == "model"
+                    else quantization,
                 },
             )
             assert replacement.status_code == 202, replacement.text
@@ -184,9 +202,21 @@ class TestSearchGenerationLifecycle:
                 params={"q": "construction manual"},
             )
             observations.append((final.status_code, final.json()))
+            if quantization == "model":
+                assert any(
+                    call["body"]["input"]
+                    == ["Title: Assembly guide\nBody: Fit the lid"]
+                    for call in other.calls
+                )
+                assert any(
+                    call["body"]["input"] == ["construction manual"]
+                    for call in other.calls
+                )
         finally:
             completed.set()
             await reader
+            if other_server is not None:
+                other_server.stop()
 
         assert len(observations) >= 2
         assert {

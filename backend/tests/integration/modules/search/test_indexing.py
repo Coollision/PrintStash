@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 
+import pytest
 from printstash_core.search.passages import SearchSubject, SubjectType
 from sqlmodel import select
 
@@ -231,6 +232,7 @@ class TestIndexProcessor:
         assert healthy_embeddings.requests == []
         assert db_session.get(IndexGeneration, proposal.id).state == "building"
 
+    @pytest.mark.parametrize("fault", ["rejected", "dimension"])
     def test_keeps_active_ready_when_the_replacement_probe_fails(
         self,
         db_session,
@@ -238,6 +240,7 @@ class TestIndexProcessor:
         healthy_embeddings,
         advance_generation,
         advance_indexing,
+        fault,
     ):
         actor, endpoint = generation_setup
         first = generations.prepare(
@@ -255,12 +258,20 @@ class TestIndexProcessor:
                 query_prefix="Replacement query: ",
             ),
         )
-        healthy_embeddings.poison = "Replacement query: "
+        if fault == "dimension":
+            healthy_embeddings.dimension = 8
+        else:
+            healthy_embeddings.poison = "Replacement query: "
 
         advance_indexing(32)
         db_session.expire_all()
 
         assert db_session.get(IndexGeneration, second.id).phase == "verify_failed"
+        assert db_session.get(IndexGeneration, second.id).error_code == (
+            "embedding_dimension_mismatch"
+            if fault == "dimension"
+            else "inference_request_rejected"
+        )
         assert db_session.get(IndexGeneration, first.id).state == "active"
 
     def test_refreshes_both_generations_after_an_edit(

@@ -43,6 +43,46 @@ def remote():
 
 
 class TestRemoteEmbeddingProvider:
+    @pytest.mark.parametrize("modality", ["image", "point_cloud"])
+    def test_never_sends_undeclared_visual_modalities(self, remote, modality):
+        fake, provider = remote
+        provider.embed((EmbeddingInput("text", text="boat"),), provider.space)
+        visual = (
+            EmbeddingInput("image", rgb=b"RGB", width=1, height=1)
+            if modality == "image"
+            else EmbeddingInput("point_cloud", points=b"\x00" * (6 * 10_000 * 4))
+        )
+
+        with pytest.raises(EmbeddingError, match="embedding_image_unavailable"):
+            provider.embed((visual,), provider.space)
+
+        assert len(fake.calls) == 1
+        assert fake.calls[0]["body"]["input"] == ["boat"]
+
+    @pytest.mark.parametrize("fault", ["401", "500"])
+    def test_redacts_credentials_and_upstream_body_after_failure(
+        self, remote, caplog, fault
+    ):
+        fake, provider = remote
+        fake.fault = fault
+        caplog.set_level("DEBUG")
+
+        with pytest.raises(EmbeddingError) as failure:
+            provider.embed(
+                (EmbeddingInput("text", text="private-failed-query"),), provider.space
+            )
+
+        assert fake.calls
+        assert fake.calls[0]["headers"]["authorization"] == "Bearer test-api-key"
+        rendered = caplog.text + str(failure.value)
+        for private in (
+            "test-api-key",
+            "test-secret-must-not-leak",
+            "private-failed-query",
+            provider.endpoint.base_url,
+        ):
+            assert private not in rendered
+
     def test_keeps_remote_inference_available_without_onnx(self, remote, monkeypatch):
         import sys
 

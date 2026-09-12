@@ -150,7 +150,13 @@ test.describe("AI Search", () => {
       const catalog: InferenceModel[] = await (
         await page.request.get(`${API}/api/v1/inference/models`)
       ).json();
-      const model = catalog.find((entry) => entry.installed && entry.modality === "text");
+      const requestedTextModel = process.env.PLAYWRIGHT_AI_SEARCH_TEXT_MODEL;
+      const model = catalog.find(
+        (entry) =>
+          entry.installed &&
+          entry.modality === "text" &&
+          (!requestedTextModel || entry.key === requestedTextModel),
+      );
       expect(model).toBeDefined();
       await page
         .getByRole("combobox", { name: "Model", exact: true })
@@ -211,6 +217,20 @@ test.describe("AI Search", () => {
       }
       await link.click();
       await expect(page).toHaveURL(new RegExp(`/documents/${documentId}$`));
+      const disabled = await page.request.patch(`${API}/api/v1/search/settings`, {
+        data: { enabled: false },
+      });
+      expect(disabled.ok()).toBe(true);
+      await page.goto("/");
+      await expect(page.getByRole("button", { name: "Search with AI" })).toHaveCount(0);
+      await page.goto(`/search?q=${encodeURIComponent(name)}`);
+      await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Natural-language search", exact: true }),
+      ).toHaveCount(0);
+      await page.goto("/search?image=1");
+      await expect(page.getByRole("button", { name: "Choose image", exact: true })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Take photo", exact: true })).toBeDisabled();
     } finally {
       await page.request.put(`${API}/api/v1/config/ai-search`, { data: initial.settings });
       if (documentId) await page.request.delete(`${API}/api/v1/documents/${documentId}`);

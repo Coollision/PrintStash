@@ -18,6 +18,57 @@ def projection():
 
 
 class TestSearch:
+    @pytest.mark.parametrize(
+        "kind,expected", [("bytes", 413), ("pixels", 413), ("zip", 415)]
+    )
+    def test_rejects_excessive_and_nonimage_uploads_before_retrieval(
+        self, client, db_session, make_user, monkeypatch, kind, expected
+    ):
+        import struct
+        import zlib
+
+        from app.api.v1 import search as route
+        from app.modules.search import configuration
+        from app.schemas.inference import SearchSettings
+
+        actor = make_user(superuser=True)
+        configuration.update(db_session, SearchSettings(enabled=True))
+        db_session.commit()
+        headers = bearer(actor) | {"Content-Type": "image/png"}
+        body = b"invalid"
+        if kind == "bytes":
+            headers["Content-Length"] = str(50 * 1024**2)
+        elif kind == "zip":
+            headers["Content-Type"] = "application/zip"
+            body = b"PK\x03\x04private-archive"
+        else:
+
+            def chunk(name, data):
+                return (
+                    struct.pack(">I", len(data))
+                    + name
+                    + data
+                    + struct.pack(">I", zlib.crc32(name + data))
+                )
+
+            body = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", struct.pack(">IIBBBBB", 65535, 65535, 8, 2, 0, 0, 0))
+                + chunk(b"IDAT", b"")
+            )
+
+        def no_retrieval(*args, **kwargs):
+            raise AssertionError("rejected image reached retrieval or inference")
+
+        monkeypatch.setattr(route, "search", no_retrieval)
+        response = client.post("/api/v1/search/image", content=body, headers=headers)
+        assert response.status_code == expected, response.text
+        assert response.json()["detail"] == (
+            "embedding_image_type_unsupported"
+            if kind == "zip"
+            else "embedding_image_too_large"
+        )
+
     @pytest.mark.parametrize("mode", ["anonymous", "disabled", "busy"])
     def test_rejects_image_requests_before_reading_the_body(
         self, client, db_session, make_user, monkeypatch, mode

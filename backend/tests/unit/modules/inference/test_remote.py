@@ -42,11 +42,14 @@ class TestRemoteEmbeddingProvider:
                 remote.endpoint, replace(remote.space, **{field: value})
             )
 
-    def test_rejects_changed_request_spaces(self, remote):
+    @pytest.mark.parametrize(
+        "change", [{"dimension": 8}, {"model_key": "another"}, {"model_revision": "v2"}]
+    )
+    def test_rejects_changed_request_spaces(self, remote, change):
         with pytest.raises(EmbeddingError, match="embedding_space_mismatch"):
             remote.embed(
                 (EmbeddingInput("text", text="boat"),),
-                replace(remote.space, dimension=8),
+                replace(remote.space, **change),
             )
 
     @pytest.mark.parametrize("count", [0, 9], ids=["empty", "over-cap"])

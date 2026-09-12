@@ -263,6 +263,14 @@ class TestVectorIndex:
 
     def test_retirement_preserves_full_float_rows(self, db_session, native_units):
         generation, _, first, _ = native_units
+        native_name = generation.vector_table_name
+        assert (
+            db_session.execute(
+                text("SELECT name FROM sqlite_master WHERE name=:name"),
+                {"name": native_name},
+            ).scalar()
+            == native_name
+        )
         with pytest.raises(EmbeddingError, match="not_retired"):
             vector_index.drop(db_session, generation)
         generation.state = "retired"
@@ -270,6 +278,13 @@ class TestVectorIndex:
         vector_index.drop(db_session, generation)
         assert db_session.get(PassageVector, first.id).vector_blob == first.vector_blob
         assert generation.vector_table_name is None
+        assert (
+            db_session.execute(
+                text("SELECT name FROM sqlite_master WHERE name=:name"),
+                {"name": native_name},
+            ).scalar()
+            is None
+        )
 
     def test_rolls_back_native_preparation(self, db_session, native_units):
         generation, *_ = native_units

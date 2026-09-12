@@ -202,10 +202,12 @@ class TestSearch:
         assert healthy_embeddings.requests == []
 
     def test_returns_lexical_results_by_query_deadline(
-        self, db_session, hybrid_library, healthy_embeddings
+        self, client, db_session, hybrid_library, healthy_embeddings
     ):
         from threading import Event
         from time import monotonic
+
+        from app.modules.identity.auth import create_access_token
 
         actor, _, _, _, model = hybrid_library
         configuration.update(
@@ -216,11 +218,21 @@ class TestSearch:
         healthy_embeddings.before_reply = lambda: release.wait(2)
         started = monotonic()
         try:
-            result = search(db_session, actor, "Benchy")
+            response = client.get(
+                "/api/v1/search",
+                params={"q": "Benchy"},
+                headers={
+                    "Authorization": "Bearer "
+                    + create_access_token(actor.id, actor.username, scope="admin")
+                },
+            )
+            assert response.status_code == 200, response.text
+            result = response.json()
             assert not release.is_set()
             assert monotonic() - started < 1
-            assert [item.subject_id for item in result.items] == [model.id]
-            assert result.degraded == ["search_semantic_unavailable"]
+            assert [item["subject_id"] for item in result["items"]] == [model.id]
+            assert result["legs"] == ["lexical"]
+            assert result["degraded"] == ["search_semantic_unavailable"]
         finally:
             release.set()
 

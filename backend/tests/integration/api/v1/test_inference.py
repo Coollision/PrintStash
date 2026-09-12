@@ -301,6 +301,16 @@ class TestReadSettings:
         assert "test-api-key" not in response.text
         assert "test-header-secret" not in response.text
 
+        public_health = client.get("/api/v1/health")
+        assert public_health.status_code == 200, public_health.text
+        for private in (
+            "inference.local",
+            "11434",
+            "test-api-key",
+            "test-header-secret",
+        ):
+            assert private not in public_health.text
+
     def test_hides_administrative_hosts_from_regular_users(self, client, user_headers):
         response = client.get("/api/v1/config/ai-search", headers=user_headers())
 
@@ -308,6 +318,28 @@ class TestReadSettings:
 
 
 class TestUpdateSettings:
+    def test_audits_the_actor_and_changed_search_policy(
+        self, client, db_session, make_user
+    ):
+        from tests.factories import bearer
+
+        actor = make_user(superuser=True)
+        response = client.patch(
+            "/api/v1/search/settings",
+            headers=bearer(actor),
+            json={"enabled": True, "local_models_enabled": True},
+        )
+        assert response.status_code == 200, response.text
+        record = db_session.exec(
+            select(AuditLog).where(AuditLog.action == "ai_search_settings_changed")
+        ).one()
+        assert record.actor_id == actor.id
+        assert record.resource_type == "ai_search"
+        policy = json.loads(record.diff_json)
+        assert policy["enabled"] is True
+        assert policy["local_models_enabled"] is True
+        assert policy["captions_enabled"] is False
+
     def test_patches_settings_without_resetting_other_opt_ins(
         self, client, auth_headers
     ):
