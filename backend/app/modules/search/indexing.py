@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Session, col, select
 
+from app.core.config import settings
 from app.core.errors import OperationError
 from app.core.time import utcnow
 from app.db.models import (
@@ -34,7 +35,6 @@ from app.modules.search.text_inputs import document_input
 from app.modules.storage.capacity import CapacityManager, CapacityReservationHandle
 from app.runtime.jobs import registry
 
-BATCH_SIZE = 8
 MAX_ATTEMPTS = 3
 
 
@@ -142,7 +142,7 @@ def pending(session: Session, generation: IndexGeneration) -> list[WorkInput]:
             ~deferred,
         )
         .order_by(SearchPassage.id)
-        .limit(BATCH_SIZE)
+        .limit(settings.embedding_batch_size)
     )
     rows = session.exec(
         statement.where(SearchPassage.id > generation.passage_after_id)

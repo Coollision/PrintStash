@@ -4,6 +4,7 @@ import importlib.util
 
 from fastapi import APIRouter, Depends, Response
 from printstash_core.inference import EmbeddingError
+from printstash_core.inference.model_capabilities import capabilities_for
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -40,6 +41,7 @@ def list_models(session: Session = Depends(get_session)):
     for identity in sorted(set(installed) | set(curated)):
         model, entry = installed.get(identity), curated.get(identity)
         manifest = model.manifest if model else entry.manifest
+        capabilities = capabilities_for(manifest.space())
         result.append(
             InferenceModelRead(
                 id=identity,
@@ -61,6 +63,9 @@ def list_models(session: Session = Depends(get_session)):
                 curated=entry is not None,
                 referenced=model_cache.referenced(session, model) if model else False,
                 runtime_available=runtime,
+                mrl_dimensions=list(capabilities.mrl_dimensions)
+                if capabilities
+                else [],
             )
         )
     return result

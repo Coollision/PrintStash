@@ -18,6 +18,40 @@ def projection():
 
 
 class TestSearch:
+    def test_uses_the_configured_ranked_like_backend(
+        self, client, db_session, auth_headers, make_model
+    ):
+        model = make_model("Bracket")
+        content_changed(db_session, "model", [model.id])
+        rebuild_partition(db_session)
+        db_session.commit()
+        assert (
+            client.patch(
+                "/api/v1/search/settings",
+                headers=auth_headers,
+                json={"lexical_backend": "ranked_like"},
+            ).status_code
+            == 200
+        )
+        response = client.get(
+            "/api/v1/search", headers=auth_headers, params={"q": "bracket"}
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["lexical_backend"] == "ranked_like"
+        assert response.json()["items"][0]["subject_id"] == model.id
+
+    def test_links_collection_matches_to_the_existing_browse_route(
+        self, client, db_session, auth_headers, make_collection
+    ):
+        collection = make_collection("Bracket tools")
+        content_changed(db_session, "collection", [collection.id])
+        db_session.commit()
+        response = client.get(
+            "/api/v1/search", headers=auth_headers, params={"q": "bracket"}
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["items"][0]["href"] == "/?c=bracket-tools"
+
     def test_reports_lexical_status_with_ai_disabled(self, client, auth_headers):
         response = client.get("/api/v1/search/status", headers=auth_headers)
 
@@ -28,6 +62,8 @@ class TestSearch:
             "legs": ["lexical"],
             "generations": [],
             "degraded": [],
+            "backlog": False,
+            "remote_hosts": [],
         }
 
     def test_requires_authentication_for_status(self, client):

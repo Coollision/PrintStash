@@ -7,6 +7,7 @@ from app.db.models import InferenceEndpoint, SystemConfig
 from app.modules.administration import audit
 from app.modules.administration.config_repository import get_or_create
 from app.modules.inference.configuration import list_endpoints
+from app.modules.inference.environment import configured
 from app.schemas.inference import SearchSettings, SearchSettingsRead
 
 
@@ -21,7 +22,9 @@ def settings(session: Session) -> SearchSettings:
 
 def read(session: Session) -> SearchSettingsRead:
     return SearchSettingsRead(
-        settings=settings(session), endpoints=list_endpoints(session)
+        settings=settings(session),
+        endpoints=list_endpoints(session),
+        environment_endpoints=configured(),
     )
 
 

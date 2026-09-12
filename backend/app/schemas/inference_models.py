@@ -1,6 +1,6 @@
 """Admin disclosures contain model metadata, never server filesystem paths."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class InferenceModelRead(BaseModel):
@@ -17,6 +17,7 @@ class InferenceModelRead(BaseModel):
     curated: bool
     referenced: bool
     runtime_available: bool
+    mrl_dimensions: list[int] = Field(default_factory=list)
 
 
 class DownloadRead(BaseModel):

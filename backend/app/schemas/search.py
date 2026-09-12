@@ -43,3 +43,5 @@ class SearchStatus(BaseModel):
     legs: list[str]
     generations: list[int]
     degraded: list[str] = Field(default_factory=list)
+    backlog: bool = False
+    remote_hosts: list[str] = Field(default_factory=list)

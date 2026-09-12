@@ -9,6 +9,7 @@ from app.modules.inference.endpoint import EndpointParameters
 
 
 class EndpointProposal(EndpointParameters):
+    inherit_credentials_from_id: int | None = Field(default=None, ge=1)
     kind: Literal["embedding", "chat"] = "embedding"
     native_dimension: int | None = Field(default=None, ge=1, le=4096)
     supports_images: bool = False
@@ -30,6 +31,7 @@ class EndpointRead(BaseModel):
     id: int
     kind: str
     host: str
+    base_url: str
     model: str
     revision: str
     model_repo: str | None
@@ -40,19 +42,36 @@ class EndpointRead(BaseModel):
     dialect: str | None
     guarantee: str | None
     has_credentials: bool
+    header_names: list[str]
+    timeout_seconds: float
+    max_input_characters: int
+    prefer_responses: bool
 
 
 class SearchSettings(BaseModel):
     model_config = {"extra": "forbid", "frozen": True, "validate_default": True}
-    enabled: bool = False
-    captions_enabled: bool = False
-    nl_filters_enabled: bool = False
-    local_models_enabled: bool = False
+    enabled: bool = Field(default_factory=lambda: environment.ai_search_enabled)
+    lexical_backend: Literal["auto", "ranked_like"] = Field(
+        default_factory=lambda: environment.ai_search_lexical_backend
+    )
+    captions_enabled: bool = Field(
+        default_factory=lambda: environment.ai_search_captions_enabled
+    )
+    nl_filters_enabled: bool = Field(
+        default_factory=lambda: environment.ai_search_nl_filters_enabled
+    )
+    local_models_enabled: bool = Field(
+        default_factory=lambda: environment.embedding_local_enabled
+    )
     download_enabled: bool = Field(
         default_factory=lambda: environment.embedding_download_enabled
     )
-    send_rendered_images: bool = False
-    send_query_images: bool = False
+    send_rendered_images: bool = Field(
+        default_factory=lambda: environment.ai_search_send_rendered_images
+    )
+    send_query_images: bool = Field(
+        default_factory=lambda: environment.ai_search_send_query_images
+    )
     chat_endpoint_id: int | None = Field(default=None, ge=1)
     rollback_retention_hours: int = Field(default=24, ge=1, le=720)
     max_index_bytes: int = Field(default=2147483648, ge=1048576, le=1099511627776)
@@ -82,3 +101,6 @@ class SearchSettings(BaseModel):
 class SearchSettingsRead(BaseModel):
     settings: SearchSettings
     endpoints: list[EndpointRead]
+    environment_endpoints: list[Literal["embedding", "chat"]] = Field(
+        default_factory=list
+    )

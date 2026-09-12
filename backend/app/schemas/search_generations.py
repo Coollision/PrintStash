@@ -58,3 +58,15 @@ class GenerationRead(BaseModel):
     job_id: str | None
     verified_at: datetime | None
     retain_until: datetime | None
+    created_at: datetime
+    last_activity_at: datetime | None
+    eta_seconds: int | None
+
+
+class GenerationEstimate(BaseModel):
+    passages: int
+    estimated_bytes: int
+    existing_bytes: int
+    budget_bytes: int
+    fits_budget: bool
+    estimated_seconds: int | None

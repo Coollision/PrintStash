@@ -394,3 +394,48 @@ The W7 stage suite passed 439 tests, followed by 35 contract/quality/end-to-end
 checks, 14 model-admin API checks, 11 core recipe checks and the actual preplaced
 BGE test. The hygiene pass covered 3,255 tests. These are checkpoint results;
 full final coverage and security gates remain required for the completed branch.
+
+## Search and operational UI (W8)
+
+The top bar previews lexical matches while typing. Enter opens `/search?q=…`
+for bounded hybrid retrieval. The AI affordance requires a usable active
+Generation; a pending build cannot turn it on. Results identify all four Subject
+types, use authorized plain-text highlights and expose degradation/backlog. A
+changed Generation expires pagination; Restart discards the previous ranking.
+Spanish translations and keyboard/mobile interactions use the existing design
+primitives. Collection destinations use the existing `c` browse parameter.
+
+Settings → AI Search is administrator-only. It separates the serving index from
+pending provider/model/transform choices. Catalog entries show pinned provenance,
+license, languages and measured asset size. Downloads require explicit action;
+preplaced models require verification. History exposes progress, last activity,
+measured ETA when available, valid cancel/retry/activate actions and failures.
+The resource estimate does no inference or job creation; it counts the current
+Passage projection and includes conservative vector/index overhead and the
+existing generations. Backfill admission checks capacity again as content grows.
+
+Editing an endpoint creates a separately probed immutable version. Unchanged
+secrets stay omitted from the browser request and are inherited on the server.
+Changing destination origin requires a new endpoint; inherited keys/headers
+never travel to a different host, scheme or port. Clearing credentials is explicit.
+Readback includes configured indicators and header names, never secret values.
+Remote query hosts remain visible to users of the active index.
+
+Canonical administrative routes are `GET/PATCH /api/v1/search/settings`,
+`GET/POST /api/v1/search/generations`, generation detail, estimate and
+cancel/activate/retry. `/api/v1/config/ai-search` remains a compatible adapter.
+PATCH preserves settings omitted from the request. All these operations require
+an administrator before reading details or performing work.
+
+Grouped environment presets are documented in `.env.example`. Stored settings
+win over defaults. Importing an endpoint from the environment is explicit and
+runs the same canary as the form. Background batch size is configurable from
+one to eight; interactive local queries wait for shared compute within their
+deadline, and new background embedding batches yield to waiting queries.
+
+The dedicated real-backend Playwright lane provisions an original tiny ONNX
+contract fixture in CI, with no downloads. The same flow was also executed with
+the pinned BGE weights locally. Tiny fixtures establish wiring and lifecycle
+behavior; real-model quality measurements are recorded separately in
+[the model study](ai-search-model-study.md). Visual retrieval, captions, structured
+NL filters and lexical expansion are still subsequent stages.

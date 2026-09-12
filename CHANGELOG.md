@@ -19,7 +19,9 @@
   queries add bounded inference, memory-only vector caching, rank fusion and
   fresh permission checks with lexical fallback. Pinned, opt-in local BGE
   acquisition adds verified offline models, bounded ONNX workers, cancellation,
-  generation-aware cache pruning and real-model regression vectors. The
+  generation-aware cache pruning and real-model regression vectors. The search UI
+  adds lexical suggestions, hybrid result pages, accessible evidence, and admin
+  controls for endpoint secrets, model acquisition and index lifecycles. The
   remaining AI Search stages are in development under #166.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,

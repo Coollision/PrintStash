@@ -20,6 +20,117 @@ def assets(tmp_path):
 
 
 class TestLocalProvider:
+    def test_yields_background_admission_to_waiting_queries(
+        self, db_session, assets, monkeypatch
+    ):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        from printstash_core.inference.context import InferenceContext
+
+        from app.core.config import settings
+        from app.modules.media import compute_slots
+
+        provider = LocalEmbeddingProvider(
+            get_session_factory(), assets, "two-tower-contract", 1
+        )
+        provider.validate()
+        slots = [
+            compute_slots.acquire(db_session, f"render-{index}")
+            for index in range(settings.max_render_jobs)
+        ]
+        waiting, proceed = threading.Event(), threading.Event()
+        acquire = compute_slots.acquire
+
+        def pause_waiter(session, token, **kwargs):
+            slot = acquire(session, token, **kwargs)
+            if slot is None:
+                waiting.set()
+                assert proceed.wait(3)
+            return slot
+
+        monkeypatch.setattr(compute_slots, "acquire", pause_waiter)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(
+                provider.embed,
+                (EmbeddingInput("text", text="red"),),
+                provider.space,
+                context=InferenceContext.bounded(5),
+            )
+            try:
+                assert waiting.wait(3)
+                for index, slot in enumerate(slots):
+                    compute_slots.release(db_session, slot.id, f"render-{index}")
+                db_session.commit()
+                with pytest.raises(EmbeddingError, match="embedding_compute_busy"):
+                    provider.embed(
+                        (EmbeddingInput("text", text="red"),),
+                        provider.space,
+                        context=InferenceContext.bounded(1, priority="background"),
+                    )
+            finally:
+                proceed.set()
+            assert result.result(3) == ((1, 0, 0),)
+        # Completed waiters cannot starve the next background batch.
+        assert provider.embed(
+            (EmbeddingInput("text", text="red"),),
+            provider.space,
+            context=InferenceContext.bounded(3, priority="background"),
+        ) == ((1, 0, 0),)
+
+    def test_waits_for_shared_compute_within_the_query_deadline(
+        self, db_session, assets
+    ):
+        import threading
+
+        from printstash_core.inference.context import InferenceContext
+
+        from app.core.config import settings
+        from app.modules.media import compute_slots
+
+        sessions = get_session_factory()
+        provider = LocalEmbeddingProvider(sessions, assets, "two-tower-contract", 1)
+        provider.validate()
+        slots = [
+            compute_slots.acquire(db_session, f"render-{index}")
+            for index in range(settings.max_render_jobs)
+        ]
+
+        def finish_render():
+            with sessions.scoped_session() as session:
+                for index, slot in enumerate(slots):
+                    compute_slots.release(session, slot.id, f"render-{index}")
+                session.commit()
+
+        timer = threading.Timer(0.15, finish_render)
+        timer.start()
+        try:
+            assert provider.embed(
+                (EmbeddingInput("text", text="red"),),
+                provider.space,
+                context=InferenceContext.bounded(3),
+            ) == ((1, 0, 0),)
+        finally:
+            timer.join()
+
+    def test_times_out_while_waiting_for_shared_compute(self, db_session, assets):
+        from printstash_core.inference.context import InferenceContext
+
+        from app.core.config import settings
+        from app.modules.media import compute_slots
+
+        for index in range(settings.max_render_jobs):
+            assert compute_slots.acquire(db_session, f"render-{index}") is not None
+        provider = LocalEmbeddingProvider(
+            get_session_factory(), assets, "two-tower-contract", 1
+        )
+        with pytest.raises(EmbeddingError, match="inference_timeout"):
+            provider.embed(
+                (EmbeddingInput("text", text="red"),),
+                provider.space,
+                context=InferenceContext.bounded(0.05),
+            )
+
     def test_accepts_read_only_offline_models(self, db_session, assets, monkeypatch):
         import os
 

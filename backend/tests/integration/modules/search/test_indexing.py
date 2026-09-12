@@ -20,6 +20,31 @@ from app.schemas.search_generations import GenerationProposal
 
 
 class TestIndexProcessor:
+    def test_honors_the_configured_embedding_batch_size(
+        self,
+        db_session,
+        generation_setup,
+        healthy_embeddings,
+        make_document,
+        monkeypatch,
+        advance_generation,
+    ):
+        from app.core.config import _overlay
+
+        monkeypatch.setitem(_overlay, "embedding_batch_size", 2)
+        actor, endpoint = generation_setup
+        for index in range(4):
+            make_document(f"Bracket guide {index}", body="Assembly instructions")
+        proposal = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+        advance_generation(proposal.id)
+        batches = [request["input"] for request in healthy_embeddings.requests]
+        assert sum(map(len, batches)) == 6  # Five passages plus one readiness canary.
+        assert max(map(len, batches)) == 2
+
     def test_defers_busy_local_indexing_without_quarantine(
         self, db_session, generation_setup, monkeypatch, advance_indexing
     ):

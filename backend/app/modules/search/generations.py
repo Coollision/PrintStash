@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import secrets
+from contextlib import nullcontext
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -40,7 +42,11 @@ from app.modules.search.access import indexable_passage_ids
 from app.modules.search.text_inputs import TextRecipe
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 from app.runtime.jobs import registry
-from app.schemas.search_generations import GenerationProposal, GenerationRead
+from app.schemas.search_generations import (
+    GenerationEstimate,
+    GenerationProposal,
+    GenerationRead,
+)
 
 LEASE_SECONDS = 180
 READER_SECONDS = 180  # Greater than the hard 120-second inference deadline.
@@ -147,6 +153,13 @@ def read(session: Session, generation: IndexGeneration) -> GenerationRead:
         retain_until=ensure_utc(generation.retain_until)
         if generation.retain_until
         else None,
+        created_at=ensure_utc(generation.created_at),
+        last_activity_at=ensure_utc(generation.last_activity_at)
+        if generation.last_activity_at
+        else None,
+        eta_seconds=work_seconds(generation, max(0, total - indexed))
+        if generation.state == "building" and generation.phase == "backfill"
+        else None,
     )
 
 
@@ -158,6 +171,61 @@ def list_generations(session: Session) -> list[GenerationRead]:
         .limit(100)
     ).all()
     return [read(session, row) for row in rows]
+
+
+def work_seconds(generation: IndexGeneration, remaining: int) -> int | None:
+    """A measured average, including local overhead, rather than a model-size guess."""
+    if not generation.last_activity_at or generation.processed <= 0:
+        return None
+    elapsed = (
+        ensure_utc(generation.last_activity_at) - ensure_utc(generation.created_at)
+    ).total_seconds()
+    if elapsed <= 0:
+        return None
+    return max(0, round(remaining * elapsed / generation.processed))
+
+
+def occupied_bytes(session: Session) -> int:
+    return session.exec(
+        select(
+            func.coalesce(
+                func.sum(func.length(PassageVector.vector_blob) * 3 + 1024), 0
+            )
+        )
+    ).one()
+
+
+def estimate_bytes(passages: int, dimension: int) -> int:
+    return (passages + 128) * (dimension * 4 * 3 + 1024) + 1024**2
+
+
+def estimate(session: Session, proposal: GenerationProposal) -> GenerationEstimate:
+    space = proposal_space(session, proposal)
+    transform_backend(session, proposal, space)
+    total = session.exec(
+        select(func.count()).select_from(eligible(session, space).subquery())
+    ).one()
+    required = estimate_bytes(total, space.dimension)
+    occupied = occupied_bytes(session)
+    budget = configuration.settings(session).max_index_bytes
+    prior = session.exec(
+        select(IndexGeneration)
+        .join(EmbeddingSpace, EmbeddingSpace.id == IndexGeneration.space_id)
+        .where(
+            EmbeddingSpace.config_hash == space.config_hash,
+            IndexGeneration.processed > 0,
+        )
+        .order_by(IndexGeneration.id.desc())
+        .limit(1)
+    ).first()
+    return GenerationEstimate(
+        passages=total,
+        estimated_bytes=required,
+        existing_bytes=occupied,
+        budget_bytes=budget,
+        fits_budget=required + occupied <= budget,
+        estimated_seconds=work_seconds(prior, total) if prior else None,
+    )
 
 
 def require(
@@ -188,13 +256,7 @@ def resources(
     session: Session, space: Space, estimated_bytes: int
 ) -> list[CapacityResource]:
     # Include existing native floats, row overhead and derived-index allowance.
-    occupied = session.exec(
-        select(
-            func.coalesce(
-                func.sum(func.length(PassageVector.vector_blob) * 3 + 1024), 0
-            )
-        )
-    ).one()
+    occupied = occupied_bytes(session)
     available = max(0, configuration.settings(session).max_index_bytes - occupied)
     result = [
         CapacityResource.for_budget(
@@ -223,38 +285,47 @@ def prepare(
         raise OperationError("admin_required", kind=ErrorKind.FORBIDDEN)
     if not configuration.settings(session).enabled:
         raise OperationError("search_ai_disabled", kind=ErrorKind.CONFLICT)
-    if proposal.local_model_id:
-        from dataclasses import replace
+    from app.modules.inference import model_cache
 
+    if (
+        proposal.local_model_id
+        and not configuration.settings(session).local_models_enabled
+    ):
+        raise OperationError("embedding_local_disabled", kind=ErrorKind.CONFLICT)
+    with model_cache.cache_lock() if proposal.local_model_id else nullcontext():
+        space = proposal_space(session, proposal)
+        result = _prepare_space(session, actor, proposal, space)
+        if proposal.local_model_id:
+            # Keep the reference pin until the new generation is durable.
+            session.commit()
+        return result
+
+
+def proposal_space(session: Session, proposal: GenerationProposal) -> Space:
+    """Resolve an immutable proposal without inference, jobs or database writes."""
+    if proposal.local_model_id:
         from app.modules.inference import model_cache
         from app.modules.inference.manifest import TextModelManifest
 
-        if not configuration.settings(session).local_models_enabled:
-            raise OperationError("embedding_local_disabled", kind=ErrorKind.CONFLICT)
-        with model_cache.cache_lock():
-            model = model_cache.resolve(proposal.local_model_id)
-            if not isinstance(model.manifest, TextModelManifest):
-                raise OperationError(
-                    "embedding_text_unavailable", kind=ErrorKind.INVALID
-                )
-            original = model.manifest.space()
-            recipe = replace(
-                TextRecipe.for_space(original),
-                passage_version=proposal.passage_recipe_version,
-            )
-            space = replace(
-                original,
-                render_recipe=recipe.encode(),
-                query_prefix=proposal.query_prefix
-                if proposal.query_prefix is not None
-                else original.query_prefix,
-                document_prefix=proposal.document_prefix
-                if proposal.document_prefix is not None
-                else original.document_prefix,
-            )
-            result = _prepare_space(session, actor, proposal, space, recipe)
-            session.commit()
-            return result
+        model = model_cache.resolve(proposal.local_model_id)
+        if not isinstance(model.manifest, TextModelManifest):
+            raise OperationError("embedding_text_unavailable", kind=ErrorKind.INVALID)
+        original = model.manifest.space()
+        recipe = replace(
+            TextRecipe.for_space(original),
+            passage_version=proposal.passage_recipe_version,
+        )
+        space = replace(
+            original,
+            render_recipe=recipe.encode(),
+            query_prefix=proposal.query_prefix
+            if proposal.query_prefix is not None
+            else original.query_prefix,
+            document_prefix=proposal.document_prefix
+            if proposal.document_prefix is not None
+            else original.document_prefix,
+        )
+        return space
     endpoint_row = session.get(InferenceEndpoint, proposal.endpoint_id)
     if endpoint_row is None or endpoint_row.kind != "embedding":
         raise OperationError("inference_endpoint_unavailable", kind=ErrorKind.INVALID)
@@ -284,16 +355,13 @@ def prepare(
         provider_config_hash=endpoint.identity,
         model_repo=endpoint.model_repo,
     )
-    return _prepare_space(session, actor, proposal, space, recipe)
+    return space
 
 
-def _prepare_space(
-    session: Session,
-    actor: User,
-    proposal: GenerationProposal,
-    space: Space,
-    recipe: TextRecipe,
-) -> GenerationRead:
+def transform_backend(
+    session: Session, proposal: GenerationProposal, space: Space
+) -> tuple[IndexTransform, str]:
+    recipe = TextRecipe.for_space(space)
     if len(space.document_prefix) >= recipe.max_input_characters:
         raise OperationError("search_prefix_exceeds_budget", kind=ErrorKind.INVALID)
     dimension = proposal.index_dimension or space.dimension
@@ -312,6 +380,17 @@ def _prepare_space(
         backend == "pgvector" and dialect != "postgresql"
     ):
         raise OperationError("search_backend_incompatible", kind=ErrorKind.INVALID)
+    return transform, backend
+
+
+def _prepare_space(
+    session: Session,
+    actor: User,
+    proposal: GenerationProposal,
+    space: Space,
+) -> GenerationRead:
+    transform, backend = transform_backend(session, proposal, space)
+    dimension = transform.index_dimension
     key = f"{space.modality}/{space.profile}"
     active = session.exec(
         select(IndexGeneration).where(IndexGeneration.active_profile_key == key)
@@ -319,7 +398,7 @@ def _prepare_space(
     total = session.exec(
         select(func.count()).select_from(eligible(session, space).subquery())
     ).one()
-    estimate = (total + 128) * (space.dimension * 4 * 3 + 1024) + 1024**2
+    estimate = estimate_bytes(total, space.dimension)
     version = secrets.token_hex(16)
     reservation_id = "search-generation:" + version
     manager = CapacityManager(get_session_factory())

@@ -599,6 +599,7 @@ export interface ListModelsParams {
 }
 
 export type ModelSort =
+  | "relevance"
   | "date-desc"
   | "date-asc"
   | "name-asc"

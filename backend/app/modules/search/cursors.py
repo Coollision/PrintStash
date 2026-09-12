@@ -7,7 +7,7 @@ import json
 import time
 
 from app.core.config import settings
-from app.core.errors import OperationError
+from app.core.errors import ErrorKind, OperationError
 
 
 def context_key(
@@ -25,11 +25,12 @@ def context_key(
     ).hexdigest()
 
 
-def encode(context: str, offset: int) -> str:
+def encode(context: str, offset: int, *, generations: tuple[int, ...] = ()) -> str:
     body = (
         base64.urlsafe_b64encode(
             json.dumps(
-                [context, offset, int(time.time()) + 900], separators=(",", ":")
+                [context, offset, int(time.time()) + 900, generations],
+                separators=(",", ":"),
             ).encode()
         )
         .decode()
@@ -41,7 +42,7 @@ def encode(context: str, offset: int) -> str:
     return body + "." + signature
 
 
-def decode(cursor: str, context: str) -> int:
+def decode(cursor: str, context: str, *, generations: tuple[int, ...] = ()) -> int:
     try:
         if len(cursor) > 512:
             raise ValueError
@@ -51,16 +52,20 @@ def decode(cursor: str, context: str) -> int:
         ).hexdigest()
         if not hmac.compare_digest(signature, expected):
             raise ValueError
-        stored, offset, expires = json.loads(
+        stored, offset, expires, previous_generations = json.loads(
             base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
         )
         if (
-            stored != context
-            or type(offset) is not int
+            type(offset) is not int
             or not 0 <= offset <= 2048
             or type(expires) is not int
-            or expires < time.time()
+            or not isinstance(previous_generations, list)
+            or any(type(value) is not int for value in previous_generations)
         ):
+            raise ValueError
+        if expires < time.time() or previous_generations != list(generations):
+            raise OperationError("search_cursor_expired", kind=ErrorKind.CONFLICT)
+        if stored != context:
             raise ValueError
         return offset
     except (ValueError, TypeError, OverflowError) as exc:

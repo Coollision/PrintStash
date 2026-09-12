@@ -31,6 +31,38 @@ from app.modules.inference.worker import MAX_INPUT_BYTES, MAX_OUTPUT_BYTES
 from app.modules.inference.worker_pool import pool
 from app.modules.media import compute_slots
 
+_admission_lock = threading.Lock()
+_waiting_queries = 0
+
+
+def acquire_slot(session: Session, token: str, context: InferenceContext):
+    """Queries wait inside their deadline; background work yields to waiters.
+
+    The durable media lease remains the single authority for compute capacity.
+    This process-local hint orders admission without creating another queue.
+    """
+    global _waiting_queries
+    interactive = context.priority == "interactive"
+    with _admission_lock:
+        if interactive:
+            _waiting_queries += 1
+        elif _waiting_queries:
+            raise EmbeddingError("embedding_compute_busy")
+    try:
+        while True:
+            context.remaining()
+            slot = compute_slots.acquire(session, token)
+            if slot is not None:
+                return slot
+            if not interactive:
+                raise EmbeddingError("embedding_compute_busy")
+            session.rollback()
+            time.sleep(min(0.025, context.remaining()))
+    finally:
+        if interactive:
+            with _admission_lock:
+                _waiting_queries -= 1
+
 
 class WorkerResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -109,9 +141,10 @@ class LocalEmbeddingProvider:
             cleanup.enter_context(pin(self.directory, context=context))
             session = cleanup.enter_context(self.sessions.scoped_session())
             token = "embedding:" + secrets.token_hex(20)
-            slot = compute_slots.acquire(session, token)
-            if slot is None:
-                raise EmbeddingError("embedding_compute_busy")
+            admission_context = context or InferenceContext.bounded(
+                120, priority="background"
+            )
+            slot = acquire_slot(session, token, admission_context)
             cleanup.callback(self._release_slot, session, slot.id, token)
             request_inputs = [
                 {
@@ -134,9 +167,6 @@ class LocalEmbeddingProvider:
             ).encode()
             if len(payload) > MAX_INPUT_BYTES:
                 raise EmbeddingError("embedding_input_budget")
-            admission_context = context or InferenceContext.bounded(
-                120, priority="background"
-            )
             try:
                 fingerprints = tuple(
                     (

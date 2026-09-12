@@ -4025,6 +4025,18 @@
             "title": "Headers",
             "type": "object"
           },
+          "inherit_credentials_from_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherit Credentials From Id"
+          },
           "kind": {
             "default": "embedding",
             "enum": [
@@ -4106,6 +4118,10 @@
       },
       "EndpointRead": {
         "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
           "config_hash": {
             "title": "Config Hash",
             "type": "string"
@@ -4136,6 +4152,13 @@
             "title": "Has Credentials",
             "type": "boolean"
           },
+          "header_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Names",
+            "type": "array"
+          },
           "host": {
             "title": "Host",
             "type": "string"
@@ -4147,6 +4170,10 @@
           "kind": {
             "title": "Kind",
             "type": "string"
+          },
+          "max_input_characters": {
+            "title": "Max Input Characters",
+            "type": "integer"
           },
           "model": {
             "title": "Model",
@@ -4181,6 +4208,10 @@
             ],
             "title": "Native Dimension"
           },
+          "prefer_responses": {
+            "title": "Prefer Responses",
+            "type": "boolean"
+          },
           "revision": {
             "title": "Revision",
             "type": "string"
@@ -4188,12 +4219,17 @@
           "supports_images": {
             "title": "Supports Images",
             "type": "boolean"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "number"
           }
         },
         "required": [
           "id",
           "kind",
           "host",
+          "base_url",
           "model",
           "revision",
           "model_repo",
@@ -4203,7 +4239,11 @@
           "supports_images",
           "dialect",
           "guarantee",
-          "has_credentials"
+          "has_credentials",
+          "header_names",
+          "timeout_seconds",
+          "max_input_characters",
+          "prefer_responses"
         ],
         "title": "EndpointRead",
         "type": "object"
@@ -6155,6 +6195,51 @@
         "title": "GenerationAction",
         "type": "object"
       },
+      "GenerationEstimate": {
+        "properties": {
+          "budget_bytes": {
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "estimated_bytes": {
+            "title": "Estimated Bytes",
+            "type": "integer"
+          },
+          "estimated_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Seconds"
+          },
+          "existing_bytes": {
+            "title": "Existing Bytes",
+            "type": "integer"
+          },
+          "fits_budget": {
+            "title": "Fits Budget",
+            "type": "boolean"
+          },
+          "passages": {
+            "title": "Passages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "passages",
+          "estimated_bytes",
+          "existing_bytes",
+          "budget_bytes",
+          "fits_budget",
+          "estimated_seconds"
+        ],
+        "title": "GenerationEstimate",
+        "type": "object"
+      },
       "GenerationProposal": {
         "additionalProperties": false,
         "properties": {
@@ -6271,6 +6356,11 @@
             "title": "Copied",
             "type": "integer"
           },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "effective_backend": {
             "title": "Effective Backend",
             "type": "string"
@@ -6293,6 +6383,17 @@
           "estimated_bytes": {
             "title": "Estimated Bytes",
             "type": "integer"
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds"
           },
           "id": {
             "title": "Id",
@@ -6335,6 +6436,18 @@
               }
             ],
             "title": "Job Id"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
           },
           "modality": {
             "title": "Modality",
@@ -6438,7 +6551,10 @@
           "estimated_bytes",
           "job_id",
           "verified_at",
-          "retain_until"
+          "retain_until",
+          "created_at",
+          "last_activity_at",
+          "eta_seconds"
         ],
         "title": "GenerationRead",
         "type": "object"
@@ -7083,6 +7199,13 @@
           "modality": {
             "title": "Modality",
             "type": "string"
+          },
+          "mrl_dimensions": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Mrl Dimensions",
+            "type": "array"
           },
           "native_dimension": {
             "title": "Native Dimension",
@@ -15489,7 +15612,6 @@
         "additionalProperties": false,
         "properties": {
           "captions_enabled": {
-            "default": false,
             "title": "Captions Enabled",
             "type": "boolean"
           },
@@ -15510,9 +15632,16 @@
             "type": "boolean"
           },
           "enabled": {
-            "default": false,
             "title": "Enabled",
             "type": "boolean"
+          },
+          "lexical_backend": {
+            "enum": [
+              "auto",
+              "ranked_like"
+            ],
+            "title": "Lexical Backend",
+            "type": "string"
           },
           "lexical_weight": {
             "exclusiveMinimum": 0.0,
@@ -15521,7 +15650,6 @@
             "type": "number"
           },
           "local_models_enabled": {
-            "default": false,
             "title": "Local Models Enabled",
             "type": "boolean"
           },
@@ -15533,7 +15661,6 @@
             "type": "integer"
           },
           "nl_filters_enabled": {
-            "default": false,
             "title": "Nl Filters Enabled",
             "type": "boolean"
           },
@@ -15581,12 +15708,10 @@
             "type": "number"
           },
           "send_query_images": {
-            "default": false,
             "title": "Send Query Images",
             "type": "boolean"
           },
           "send_rendered_images": {
-            "default": false,
             "title": "Send Rendered Images",
             "type": "boolean"
           }
@@ -15603,6 +15728,17 @@
             "title": "Endpoints",
             "type": "array"
           },
+          "environment_endpoints": {
+            "items": {
+              "enum": [
+                "embedding",
+                "chat"
+              ],
+              "type": "string"
+            },
+            "title": "Environment Endpoints",
+            "type": "array"
+          },
           "settings": {
             "$ref": "#/components/schemas/SearchSettings"
           }
@@ -15616,6 +15752,11 @@
       },
       "SearchStatus": {
         "properties": {
+          "backlog": {
+            "default": false,
+            "title": "Backlog",
+            "type": "boolean"
+          },
           "degraded": {
             "items": {
               "type": "string"
@@ -15639,6 +15780,13 @@
               "type": "string"
             },
             "title": "Legs",
+            "type": "array"
+          },
+          "remote_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remote Hosts",
             "type": "array"
           },
           "semantic_ready": {
@@ -22837,6 +22985,57 @@
         ]
       }
     },
+    "/api/v1/config/ai-search/endpoints/from-environment/{kind}": {
+      "post": {
+        "operationId": "import_environment_endpoint_api_v1_config_ai_search_endpoints_from_environment__kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "embedding",
+                "chat"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Import Environment Endpoint",
+        "tags": [
+          "config"
+        ]
+      }
+    },
     "/api/v1/config/ai-search/generations": {
       "get": {
         "operationId": "read_generations_api_v1_config_ai_search_generations_get",
@@ -22906,6 +23105,99 @@
           }
         ],
         "summary": "Propose Generation",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search/generations/estimate": {
+      "post": {
+        "operationId": "estimate_generation_api_v1_config_ai_search_generations_estimate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEstimate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Estimate Generation",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/ai-search/generations/{generation_id}": {
+      "get": {
+        "operationId": "read_generation_api_v1_config_ai_search_generations__generation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Generation",
         "tags": [
           "config"
         ]
@@ -37265,6 +37557,414 @@
           }
         ],
         "summary": "Search Library",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/generations": {
+      "get": {
+        "operationId": "read_generations_api_v1_search_generations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GenerationRead"
+                  },
+                  "title": "Response Read Generations Api V1 Search Generations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Generations",
+        "tags": [
+          "search"
+        ]
+      },
+      "post": {
+        "operationId": "propose_generation_api_v1_search_generations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Propose Generation",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/generations/estimate": {
+      "post": {
+        "operationId": "estimate_generation_api_v1_search_generations_estimate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEstimate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Estimate Generation",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/generations/{generation_id}": {
+      "get": {
+        "operationId": "read_generation_api_v1_search_generations__generation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Generation",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/generations/{generation_id}/activate": {
+      "post": {
+        "operationId": "activate_generation_api_v1_search_generations__generation_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Activate Generation",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/generations/{generation_id}/cancel": {
+      "post": {
+        "operationId": "cancel_generation_api_v1_search_generations__generation_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cancel Generation",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/generations/{generation_id}/retry": {
+      "post": {
+        "operationId": "retry_generation_api_v1_search_generations__generation_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Retry Generation",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/search/settings": {
+      "get": {
+        "operationId": "read_settings_api_v1_search_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Settings",
+        "tags": [
+          "search"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_settings_api_v1_search_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Patch Settings",
         "tags": [
           "search"
         ]

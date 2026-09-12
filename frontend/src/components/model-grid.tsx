@@ -138,6 +138,12 @@ type LibraryItem =
 const PAGE_SIZE = 60;
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   {
+    value: "relevance",
+    get label() {
+      return uiText("aiSearch.relevance");
+    },
+  },
+  {
     value: "date-desc",
     get label() {
       return uiText("Newest");

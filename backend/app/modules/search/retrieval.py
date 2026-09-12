@@ -11,7 +11,7 @@ from printstash_core.search.passages import SearchSubject, SubjectType
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import Session, select
 
-from app.core.errors import OperationError
+from app.core.errors import ErrorKind, OperationError
 from app.db.models import SearchPassage, User
 from app.modules.library.model_views.listing import read_items_by_ids
 from app.modules.search import configuration, cursors, semantic
@@ -89,6 +89,7 @@ def search(
         instant,
         settings.rrf_k,
         settings.lexical_weight,
+        settings.lexical_backend,
         tuple((leg.name, leg.floor, leg.weight) for leg in active),
     )
     context = cursors.context_key(
@@ -98,7 +99,7 @@ def search(
         generations,
         scope=(semantic.authorization_context(session, user), query_context),
     )
-    offset = cursors.decode(cursor, context) if cursor else 0
+    offset = cursors.decode(cursor, context, generations=generations) if cursor else 0
     dense = (
         [
             semantic.retrieve(session, user_id, auth_version, query, leg, types=types)
@@ -112,7 +113,7 @@ def search(
         # inference ran for that leg. Admit once against the new active set;
         # an existing page cursor must restart instead of mixing generations.
         if cursor:
-            raise OperationError("search_cursor_invalid")
+            raise OperationError("search_cursor_expired", kind=ErrorKind.CONFLICT)
         session.rollback()
         session.expire_all()
         active = semantic.registry(session, configuration.settings(session))
@@ -134,14 +135,24 @@ def search(
         raise OperationError("search_user_required")
     if not configuration.settings(session).enabled:
         dense = []
-    backend = capability(session)
+    backend = (
+        "ranked_like"
+        if settings.lexical_backend == "ranked_like"
+        else capability(session)
+    )
     allowed = visible_passage_ids(session, user).where(
         SearchPassage.subject_type.in_([kind.value for kind in types])
     )
     try:
         with session.begin_nested():
             ranks = session.exec(
-                ordered_passages(session, query, allowed, limit=MAX_CANDIDATES)
+                ordered_passages(
+                    session,
+                    query,
+                    allowed,
+                    limit=MAX_CANDIDATES,
+                    force_like=backend == "ranked_like",
+                )
             ).all()
     except DBAPIError:
         ranks = session.exec(
@@ -206,8 +217,7 @@ def search(
             continue
         href = {
             SubjectType.MODEL: f"/models/{subject.subject_id}",
-            SubjectType.COLLECTION: "/?"
-            + urlencode({"collection": getattr(row, "path", "")}),
+            SubjectType.COLLECTION: "/?" + urlencode({"c": getattr(row, "path", "")}),
             SubjectType.DOCUMENT: f"/documents/{subject.subject_id}",
             SubjectType.MULTIPART_MODEL: f"/multipart-models/{subject.subject_id}",
         }[kind]
@@ -240,7 +250,7 @@ def search(
     ready = any(result.available for result in dense)
     return SearchResponse(
         items=items,
-        next_cursor=cursors.encode(context, offset + limit)
+        next_cursor=cursors.encode(context, offset + limit, generations=generations)
         if len(fused) > offset + limit
         else None,
         lexical_backend=backend,

@@ -373,7 +373,7 @@ class TestSearch:
         )
         advance_generation(proposal.id)
 
-        with pytest.raises(OperationError, match="search_cursor_invalid"):
+        with pytest.raises(OperationError, match="search_cursor_expired"):
             search(
                 db_session,
                 actor,
@@ -413,6 +413,6 @@ class TestSearch:
 
         result = search(db_session, actor, "Bracket")
 
-        assert parse_qs(urlsplit(result.items[0].href).query)["collection"] == [
+        assert parse_qs(urlsplit(result.items[0].href).query)["c"] == [
             collection.path
         ]

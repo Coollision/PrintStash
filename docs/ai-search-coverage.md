@@ -2,7 +2,7 @@
 
 Work in progress for #166, based on the [owner’s independent plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c) and [jorgehermo9’s attachment](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c). One branch and one eventual PR. No AI Search availability claim yet.
 
-The branch implements W1–W6, W14 and the W7 local text runtime/acquisition path. Active/building text-prefix recipes receive fresh vectors; coexistence of different passage-template versions is still tracked in A072. The BGE regression corpus meets numeric recall targets; the human-labelled evaluation, candidate benchmarks, UI and later stages remain unfinished.
+The branch implements W1–W8 and W14, including local text acquisition and the search/settings UI. Active/building text-prefix recipes receive fresh vectors; coexistence of different passage-template versions is still tracked in A072. The BGE regression corpus meets numeric recall targets; candidate measurements are recorded separately. The human-labelled evaluation and later stages remain unfinished.
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
@@ -545,3 +545,63 @@ internal persistence subcontracts below now pass. `core/` paths refer to
 | L052 | serves_multiple_private_requests | Happy | two framed queries in one native worker | distinct correct native outputs with bounded framing | Integration | ✅ `integration/modules/inference/test_worker.py::TestNativeProtocol::test_serves_multiple_private_requests` |
 
 W7 measured corpus: hybrid recall@5 0.96875, BM25 0.875, ILIKE 0.625 (32 original engineering queries, real pinned BGE vectors). Both out-of-domain probes returned results at the generic 0.35 floor. This is not the separate human-labelled user evaluation. Physical ARM, broader candidate/visual benchmarks and the remaining stages are still pending.
+
+## W8 operational controls and search UI
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| U001 | preserves_endpoint_credentials_when_editing_model | Happy | existing endpoint; omitted secrets | new tested version retains encrypted secrets | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_preserves_endpoint_credentials_when_editing_model` |
+| U002 | rejects_credential_inheritance_across_origins | Error | edited endpoint host, scheme or port | no probe and no credential egress | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_rejects_credential_inheritance_across_origins` |
+| U003 | clears_explicitly_replaced_credentials | Edge | explicit empty key and headers | new version has no credentials; original unchanged | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_clears_explicitly_replaced_credentials` |
+| U004 | rejects_missing_credential_source | Error | unknown source ID | stable failure without probe | Integration | ✅ `integration/api/v1/test_inference.py::TestCreateEndpoint::test_rejects_missing_credential_source` |
+| U005 | reports_only_usable_active_capabilities | Happy | active verified generation; local runtime or endpoint available | AI status follows usable capability | Integration | ✅ `integration/modules/search/test_status.py::TestStatus::test_reports_only_usable_active_capabilities` |
+| U006 | hides_backlog_for_inaccessible_subjects | Error | missing vectors in private Collection | ordinary status does not reveal backlog | Integration | ✅ `integration/modules/search/test_status.py::TestStatus::test_hides_backlog_for_inaccessible_subjects` |
+| U007 | reports_authorized_backlog | Happy | visible passage missing a current vector | backlog status becomes true | Integration | ✅ `integration/modules/search/test_status.py::TestStatus::test_reports_authorized_backlog` |
+| U008 | disables_local_queries_when_local_opt_in_is_off | Error | active local model; flag disabled | no worker starts | Integration | ✅ `integration/modules/inference/test_configuration.py::TestEmbeddingProvider::test_disables_local_queries_when_local_opt_in_is_off` |
+| U009 | estimates_generation_without_starting_work | Happy | current library and model proposal | bytes/counts returned; no rows, jobs or egress | Integration | ✅ `integration/modules/search/test_generations.py::TestEstimate::test_estimates_generation_without_starting_work` |
+| U010 | reports_measured_generation_eta | Happy | partly processed running generation | last activity, created time and measured estimate | Integration | ✅ `integration/modules/search/test_generations.py::TestEstimate::test_reports_measured_generation_eta` |
+| U011 | loads_grouped_environment_defaults | Happy | AI/embedding/chat environment | typed defaults with SystemConfig overlay | Integration | ✅ `integration/modules/inference/test_environment.py::TestEnvironment::test_loads_grouped_environment_defaults` |
+| U012 | imports_environment_endpoint_only_on_admin_request | Happy | configured env endpoint | no startup networking; explicit canary before persistence | Integration | ✅ `integration/modules/inference/test_environment.py::TestEnvironment::test_imports_environment_endpoint_only_on_admin_request` |
+| U013 | debounces_lexical_suggestions | Happy | typing in search | only lexical request before submit | Frontend | ✅ `frontend/src/components/__tests__/library-search.test.tsx — debounces lexical suggestions without inference` |
+| U014 | submits_hybrid_search | Happy | Enter in search | canonical search route triggers hybrid | Frontend | ✅ `frontend/src/components/__tests__/library-search.test.tsx — submits the query to the results route` |
+| U015 | keeps_search_keyboard_navigation_accessible | Happy | slash, arrows, Escape | focus and selection follow keyboard | Frontend | ✅ `frontend/src/components/__tests__/library-search.test.tsx — keeps keyboard focus through suggestions` |
+| U016 | ignores_stale_suggestions | Edge | late response for old query | old results never replace current input | Frontend | ✅ `frontend/src/components/__tests__/library-search.test.tsx — ignores late suggestions for a replaced query` |
+| U017 | renders_authorized_search_evidence | Happy | heterogeneous Subjects with plain text ranges | type, safe evidence, reason and correct destination | Frontend | ✅ `frontend/src/components/__tests__/search-results.test.tsx — renders authorized evidence for every Subject type` |
+| U018 | renders_degraded_search_state | Error | semantic failure | lexical results with readable warning | Frontend | ✅ `frontend/src/components/__tests__/search-results.test.tsx — renders degraded search without losing available results` |
+| U019 | renders_no_strong_matches | Edge | below semantic floor | honest empty state | Frontend | ✅ `frontend/src/components/__tests__/search-results.test.tsx — renders no strong matches honestly` |
+| U020 | loads_more_search_results | Happy | opaque next cursor | appends page without invented total | Frontend | ✅ `frontend/src/components/__tests__/search-results.test.tsx — loads the next opaque cursor without repeating the first page` |
+| U021 | separates_pending_model_from_active_generation | Happy | new selection before cutover | active history retains old model | Frontend | ✅ `frontend/src/components/__tests__/ai-search-settings.test.tsx — separates pending model selection from the serving index` |
+| U022 | controls_model_download_lifecycle | Happy | admin explicit download | progress, cancel and completion refresh | Frontend | ✅ `frontend/src/components/__tests__/ai-search-settings.test.tsx — explicit download, cancellable progress and completed-model refresh` |
+| U023 | controls_generation_lifecycle | Happy | building, ready, failed generations | only valid cancel/activate/retry actions | Frontend | ✅ `frontend/src/components/__tests__/ai-search-settings.test.tsx — sends a version-fenced cancel/activate/retry action` |
+| U024 | preserves_secrets_in_settings_edits | Happy | existing endpoint form; unchanged key | secret omitted from request; indicator shown | Frontend | ✅ `frontend/src/components/__tests__/ai-search-settings.test.tsx — keeps saved credentials out of an unrelated endpoint edit` |
+| U025 | shows_model_provenance_and_resource_estimate | Happy | catalog model selection | language, license, measured bytes and estimate | Frontend | ✅ `frontend/src/components/__tests__/ai-search-settings.test.tsx — shows pinned provenance with a current-library estimate` |
+| U026 | supports_spanish_search_controls | Happy | Spanish locale | search and maintenance text translated | Frontend | ✅ `frontend/src/components/__tests__/library-search.test.tsx; ai-search-settings.test.tsx — Spanish controls` |
+| U027 | searches_the_real_backend_from_the_top_bar | Happy | real library; browser submit | authorized Subject result opens | Playwright | ✅ `frontend/tests/e2e-real/ai-search/search.spec.ts — actual BGE and original CI fixture` |
+| U028 | supports_search_on_mobile | Happy | narrow viewport | input and results usable without overflow | Playwright | ✅ `frontend/tests/e2e-real/ai-search/search.spec.ts — 390px mobile search and settings` |
+| U029 | waits_for_shared_compute_within_the_query_deadline | Happy | another query or render briefly holds the compute slot | native result after release, within deadline | Integration | ✅ `integration/modules/inference/test_local.py::TestLocalProvider::test_waits_for_shared_compute_within_the_query_deadline` |
+| U030 | times_out_while_waiting_for_shared_compute | Error | compute slot remains occupied | bounded inference_timeout, no extra worker | Integration | ✅ `integration/modules/inference/test_local.py::TestLocalProvider::test_times_out_while_waiting_for_shared_compute` |
+| U031 | patches_canonical_admin_contracts | Happy | partial settings and generation lifecycle through /search | other opt-ins preserved, detail/action consistent | Integration | ✅ `integration/api/v1/test_inference.py::TestUpdateSettings::test_patches_settings_without_resetting_other_opt_ins; TestProposeGeneration::test_exposes_generation_detail_and_actions_on_canonical_routes` |
+| U032 | protects_canonical_administration_routes | Error | ordinary user on every new alias | 403 before side effects or disclosure | Integration | ✅ `integration/api/v1/test_inference.py::TestUpdateSettings::test_protects_canonical_administration_routes` |
+| U033 | uses_configured_lexical_backend_and_browse_routes | Happy | forced LIKE and Collection result | ranked LIKE selected, correct Collection destination | Integration | ✅ `integration/api/v1/test_search.py::TestSearch — configured ranked LIKE and Collection browse destination` |
+| U034 | groups_duplicate_evidence | Edge | two legs share excerpt | one excerpt with both reasons | Frontend | ✅ `frontend/src/components/__tests__/search-results.test.tsx — shows a shared excerpt once with both match reasons` |
+| U035 | restarts_expired_cursor | Error | generation changed between pages | restart discards old pages and cursor | Frontend | ✅ `frontend/src/components/__tests__/search-results.test.tsx — restarts at the first page after a generation expires the cursor` |
+| U036 | remembers_relevance_sort | Happy | select relevance in Model browse | stored preference and request sort agree | Frontend | ✅ `frontend/src/components/__tests__/model-grid.test.tsx — remembers relevance and sends it to Model browse` |
+| U037 | yields_background_admission_to_waiting_queries | Edge | interactive request waiting; capacity released | background yields, interactive receives native result | Integration | ✅ `integration/modules/inference/test_local.py::TestLocalProvider::test_yields_background_admission_to_waiting_queries` |
+| U038 | honors_configured_embedding_batch_size | Happy | batch size two, five passages | every inference batch bounded at two, all indexed | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_honors_the_configured_embedding_batch_size` |
+| U039 | requires_caption_capability_and_consent | Error | no server or render consent | disabled control; removing consent clears opt-in | Frontend | ✅ `frontend/src/components/__tests__/ai-search-settings.test.tsx — requires chat capability and render consent before enabling captions` |
+| U040 | preserves_new_input_when_a_debounced_url_update_lands | Edge | clear/type during an earlier browse URL transition | latest draft survives and only its suggestions render | Frontend | ✅ `frontend/src/components/__tests__/library-search.test.tsx — ignores late suggestions for a replaced query` |
+| U041 | saves_advanced_ranking_choices | Happy | admin changes lexical backend and weight | typed request persists values with other ranking fields intact | Frontend | ✅ `frontend/src/components/__tests__/ai-search-settings.test.tsx — saves advanced ranking choices explicitly` |
+| U042 | distinguishes_expired_and_invalid_cursors | Error | signed cursor generation or TTL changes; forged cursor | expired returns 409; malformed/context mismatch remains invalid | Unit / Integration | ✅ `unit/modules/search/test_cursors.py; integration/modules/search/test_retrieval.py::TestSearch::test_expires_cursors_after_generation_switch` |
+
+W8 checkpoint: 133 backend tests passed in the combined run; its one failing
+batch-count expectation omitted the verification canary and passed after
+correction. Retrieval/API checks passed 32 cases, with the stale Collection URL
+expectation corrected and its focused case passing. Six cursor unit tests pass.
+The UI pass ran 259 tests with one worker; 24 focused control tests, 29 result/cache
+tests and the real BGE/tiny-ONNX browser flows also passed. An overloaded combined
+UI run produced 13 timeout failures plus two diagnosed failures; all affected
+files subsequently passed. Lint, formatting, TypeScript and Pyright passed.
+The OpenAPI snapshot was reviewed and regenerated. The design detector reported
+no deterministic findings; desktop/mobile screenshots were inspected and the
+excerpt/clear-button corrections confirmed. These are stage checks, not the
+final full-suite, coverage, security or hardware acceptance gates.

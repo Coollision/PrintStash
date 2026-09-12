@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from urllib.parse import urlsplit
 
 from PIL import Image
 from printstash_core.inference import EmbeddingError, EmbeddingSpace
@@ -43,6 +44,7 @@ def read(row: InferenceEndpoint) -> EndpointRead:
         id=row.id,
         kind=row.kind,
         host=config.host,
+        base_url=config.base_url,
         model=config.model,
         revision=config.revision,
         model_repo=config.model_repo,
@@ -58,6 +60,10 @@ def read(row: InferenceEndpoint) -> EndpointRead:
             "json": "validated_json",
         }.get(row.dialect),
         has_credentials=bool(config.api_key.get_secret_value() or config.headers),
+        header_names=sorted(config.headers),
+        timeout_seconds=config.timeout_seconds,
+        max_input_characters=config.max_input_characters,
+        prefer_responses=config.prefer_responses,
     )
 
 
@@ -74,9 +80,39 @@ def create(session: Session, proposal: EndpointProposal) -> EndpointRead:
     # Bound stored endpoint versions as well as the live transport circuit map.
     if len(session.exec(select(InferenceEndpoint.id).limit(64)).all()) >= 64:
         raise OperationError("inference_endpoint_limit", kind=ErrorKind.CONFLICT)
-    endpoint = EndpointConfig(
-        **proposal.model_dump(exclude={"kind", "native_dimension", "supports_images"})
+    parameters = proposal.model_dump(
+        exclude={
+            "kind",
+            "native_dimension",
+            "supports_images",
+            "inherit_credentials_from_id",
+        }
     )
+    if proposal.inherit_credentials_from_id is not None:
+        source = session.get(InferenceEndpoint, proposal.inherit_credentials_from_id)
+        if source is None or source.kind != proposal.kind:
+            raise OperationError(
+                "inference_endpoint_unavailable", kind=ErrorKind.INVALID
+            )
+        original = load(source)
+        before, after = urlsplit(original.base_url), urlsplit(proposal.base_url)
+        if (
+            before.scheme,
+            before.hostname,
+            before.port or (443 if before.scheme == "https" else 80),
+        ) != (
+            after.scheme,
+            after.hostname,
+            after.port or (443 if after.scheme == "https" else 80),
+        ):
+            raise OperationError(
+                "inference_credential_origin_changed", kind=ErrorKind.INVALID
+            )
+        if "api_key" not in proposal.model_fields_set:
+            parameters["api_key"] = original.api_key
+        if "headers" not in proposal.model_fields_set:
+            parameters["headers"] = original.headers
+    endpoint = EndpointConfig(**parameters)
     dialect = None
     try:
         if proposal.kind == "embedding":
@@ -151,6 +187,10 @@ def embedding_provider(
         from app.core.config import settings
         from app.db.session import get_session_factory
         from app.modules.inference.model_cache import for_space
+        from app.modules.search.configuration import settings as search_settings
+
+        if not search_settings(session).local_models_enabled:
+            raise EmbeddingError("embedding_local_disabled")
 
         model = for_space(space)
         return LocalEmbeddingProvider(

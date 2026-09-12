@@ -481,3 +481,40 @@ class TestPruneOne:
             select(PassageVector.id).where(PassageVector.generation_id == first.id)
         ).all()
         generations.unpin(db_session, pin)
+
+
+class TestEstimate:
+    def test_estimates_generation_without_starting_work(
+        self, db_session, generation_setup, healthy_embeddings, make_document
+    ):
+        actor, endpoint = generation_setup
+        document = make_document("A newly indexed guide")
+        sync_subject(db_session, SearchSubject(SubjectType.DOCUMENT, document.id))
+        before = db_session.exec(select(IndexGeneration.id)).all()
+        result = generations.estimate(
+            db_session, GenerationProposal(endpoint_id=endpoint.id)
+        )
+        assert result.passages >= 1
+        assert result.estimated_bytes > 1024**2
+        assert result.existing_bytes == 0
+        assert result.fits_budget is True
+        assert result.estimated_seconds is None
+        assert db_session.exec(select(IndexGeneration.id)).all() == before
+        assert healthy_embeddings.requests == []
+
+    def test_reports_measured_generation_eta(self, db_session, generation_setup):
+        actor, endpoint = generation_setup
+        result = generations.prepare(
+            db_session, actor, GenerationProposal(endpoint_id=endpoint.id)
+        )
+        row = db_session.get(IndexGeneration, result.id)
+        row.created_at = utcnow() - timedelta(seconds=60)
+        row.last_activity_at = row.created_at + timedelta(seconds=60)
+        row.processed = 10
+        row.phase = "backfill"
+        db_session.add(row)
+        db_session.flush()
+        result = generations.read(db_session, row)
+        assert result.created_at == ensure_utc(row.created_at)
+        assert result.last_activity_at == ensure_utc(row.last_activity_at)
+        assert result.eta_seconds == result.eligible * 6

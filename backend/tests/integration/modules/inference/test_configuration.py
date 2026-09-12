@@ -7,6 +7,18 @@ from app.modules.inference import configuration
 
 
 class TestEmbeddingProvider:
+    def test_disables_local_queries_when_local_opt_in_is_off(self, db_session):
+        space = EmbeddingSpace(
+            model_key="test-local",
+            model_revision="v1",
+            dimension=4,
+            modality="text",
+            render_recipe="v1",
+            provider="onnx_cpu",
+        )
+        with pytest.raises(EmbeddingError, match="embedding_local_disabled"):
+            configuration.embedding_provider(db_session, space)
+
     def test_loads_the_exact_endpoint_version(
         self, db_session, make_inference_endpoint
     ):

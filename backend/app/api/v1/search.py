@@ -32,25 +32,9 @@ def require_search_user(
 def search_status(
     user: User = Depends(require_search_user), session: Session = Depends(get_session)
 ):
-    from app.modules.search import configuration, semantic
+    from app.modules.search.status import read
 
-    settings = configuration.settings(session)
-    try:
-        active = semantic.registry(session, settings)
-    except (ValueError, TypeError):
-        return SearchStatus(
-            enabled=settings.enabled,
-            semantic_ready=False,
-            legs=["lexical"],
-            generations=[],
-            degraded=["search_semantic_unavailable"],
-        )
-    return SearchStatus(
-        enabled=settings.enabled,
-        semantic_ready=bool(active),
-        legs=["lexical", *(leg.name for leg in active)],
-        generations=[leg.generation_id for leg in active],
-    )
+    return read(session, user)
 
 
 @router.get("", response_model=SearchResponse)

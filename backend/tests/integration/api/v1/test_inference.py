@@ -30,6 +30,101 @@ def embedding_endpoint():
 
 
 class TestCreateEndpoint:
+    def test_preserves_endpoint_credentials_when_editing_model(
+        self, client, auth_headers, embedding_endpoint, db_session
+    ):
+        original = client.post(
+            "/api/v1/config/ai-search/endpoints", json=PROPOSAL, headers=auth_headers
+        ).json()
+        proposal = {
+            key: value
+            for key, value in PROPOSAL.items()
+            if key not in {"api_key", "headers"}
+        }
+        response = client.post(
+            "/api/v1/config/ai-search/endpoints",
+            json=proposal
+            | {"model": "new-model", "inherit_credentials_from_id": original["id"]},
+            headers=auth_headers,
+        )
+        assert response.status_code == 201, response.text
+        endpoint = load(db_session.get(InferenceEndpoint, response.json()["id"]))
+        assert endpoint.api_key.get_secret_value() == PROPOSAL["api_key"]
+        assert endpoint.request_headers()["X-Test-Token"] == "test-header-secret"
+        assert endpoint.identity != original["config_hash"]
+        assert "test-api-key" not in response.text
+        assert "test-header-secret" not in response.text
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://another.local:11434/v1",
+            "https://inference.local:11434/v1",
+            "http://inference.local:11435/v1",
+        ],
+    )
+    def test_rejects_credential_inheritance_across_origins(
+        self, client, auth_headers, embedding_endpoint, db_session, url
+    ):
+        original = client.post(
+            "/api/v1/config/ai-search/endpoints", json=PROPOSAL, headers=auth_headers
+        ).json()
+        with patch(
+            "app.modules.inference.remote.post_json",
+            side_effect=AssertionError("unexpected egress"),
+        ):
+            response = client.post(
+                "/api/v1/config/ai-search/endpoints",
+                json={
+                    "base_url": url,
+                    "model": "new-model",
+                    "native_dimension": 4,
+                    "inherit_credentials_from_id": original["id"],
+                },
+                headers=auth_headers,
+            )
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "inference_credential_origin_changed"
+        assert len(db_session.exec(select(InferenceEndpoint)).all()) == 1
+
+    def test_clears_explicitly_replaced_credentials(
+        self, client, auth_headers, embedding_endpoint, db_session
+    ):
+        original = client.post(
+            "/api/v1/config/ai-search/endpoints", json=PROPOSAL, headers=auth_headers
+        ).json()
+        response = client.post(
+            "/api/v1/config/ai-search/endpoints",
+            json=PROPOSAL
+            | {
+                "inherit_credentials_from_id": original["id"],
+                "api_key": "",
+                "headers": {},
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["has_credentials"] is False
+        assert (
+            load(
+                db_session.get(InferenceEndpoint, original["id"])
+            ).api_key.get_secret_value()
+            == "test-api-key"
+        )
+
+    def test_rejects_missing_credential_source(self, client, auth_headers):
+        with patch(
+            "app.modules.inference.remote.post_json",
+            side_effect=AssertionError("unexpected egress"),
+        ):
+            response = client.post(
+                "/api/v1/config/ai-search/endpoints",
+                json=PROPOSAL | {"inherit_credentials_from_id": 999},
+                headers=auth_headers,
+            )
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "inference_endpoint_unavailable"
+
     def test_reports_a_probed_endpoint(self, client, auth_headers, embedding_endpoint):
         response = client.post(
             "/api/v1/config/ai-search/endpoints", json=PROPOSAL, headers=auth_headers
@@ -40,6 +135,7 @@ class TestCreateEndpoint:
             "id": 1,
             "kind": "embedding",
             "host": "inference.local",
+            "base_url": "http://inference.local:11434/v1",
             "model": "test-embedding",
             "revision": "configured-v1",
             "model_repo": None,
@@ -50,6 +146,10 @@ class TestCreateEndpoint:
             "dialect": None,
             "guarantee": None,
             "has_credentials": True,
+            "header_names": ["X-Test-Token"],
+            "timeout_seconds": 15.0,
+            "max_input_characters": 16384,
+            "prefer_responses": False,
         }
 
     def test_keeps_inference_credentials_encrypted(
@@ -163,9 +263,11 @@ class TestReadSettings:
         assert response.json() == {
             "settings": {
                 "enabled": False,
+                "lexical_backend": "auto",
                 "captions_enabled": False,
                 "nl_filters_enabled": False,
                 "local_models_enabled": False,
+                "download_enabled": False,
                 "send_rendered_images": False,
                 "send_query_images": False,
                 "chat_endpoint_id": None,
@@ -179,6 +281,7 @@ class TestReadSettings:
                 "semantic_floors": {},
             },
             "endpoints": [],
+            "environment_endpoints": [],
         }
 
     def test_discloses_hosts_without_credentials(
@@ -202,6 +305,49 @@ class TestReadSettings:
 
 
 class TestUpdateSettings:
+    def test_patches_settings_without_resetting_other_opt_ins(
+        self, client, auth_headers
+    ):
+        enabled = client.put(
+            "/api/v1/config/ai-search",
+            headers=auth_headers,
+            json={"enabled": True, "local_models_enabled": True},
+        )
+        assert enabled.status_code == 200
+        changed = client.patch(
+            "/api/v1/search/settings",
+            headers=auth_headers,
+            json={"lexical_backend": "ranked_like"},
+        )
+        assert changed.status_code == 200, changed.text
+        value = client.get("/api/v1/search/settings", headers=auth_headers).json()
+        assert value["settings"]["enabled"] is True
+        assert value["settings"]["local_models_enabled"] is True
+        assert value["settings"]["lexical_backend"] == "ranked_like"
+
+    @pytest.mark.parametrize(
+        "method,path,body",
+        [
+            ("GET", "/settings", None),
+            ("PATCH", "/settings", {"enabled": True}),
+            ("GET", "/generations", None),
+            ("GET", "/generations/1", None),
+            ("POST", "/generations", {"endpoint_id": 1}),
+            ("POST", "/generations/estimate", {"endpoint_id": 1}),
+            *[
+                ("POST", f"/generations/1/{action}", {"version_token": "a" * 32})
+                for action in ("activate", "cancel", "retry")
+            ],
+        ],
+    )
+    def test_protects_canonical_administration_routes(
+        self, client, user_headers, method, path, body
+    ):
+        response = client.request(
+            method, f"/api/v1/search{path}", headers=user_headers(), json=body
+        )
+        assert response.status_code == 403, response.text
+
     def test_persists_retrieval_opt_in(self, client, auth_headers):
         response = client.put(
             "/api/v1/config/ai-search", json={"enabled": True}, headers=auth_headers
@@ -240,6 +386,42 @@ class TestUpdateSettings:
 
 
 class TestProposeGeneration:
+    def test_exposes_generation_detail_and_actions_on_canonical_routes(
+        self, client, auth_headers, make_inference_endpoint
+    ):
+        endpoint = make_inference_endpoint()
+        assert (
+            client.patch(
+                "/api/v1/search/settings", headers=auth_headers, json={"enabled": True}
+            ).status_code
+            == 200
+        )
+        response = client.post(
+            "/api/v1/search/generations",
+            headers=auth_headers,
+            json={"endpoint_id": endpoint.id, "index_backend": "numpy"},
+        )
+        assert response.status_code == 202, response.text
+        proposal = response.json()
+        path = f"/api/v1/search/generations/{proposal['id']}"
+        assert client.get(path, headers=auth_headers).json() == proposal
+        assert client.get(
+            "/api/v1/search/generations", headers=auth_headers
+        ).json() == [proposal]
+        cancelled = client.post(
+            path + "/cancel",
+            headers=auth_headers,
+            json={"version_token": proposal["version_token"]},
+        )
+        assert cancelled.status_code == 200, cancelled.text
+        assert client.get(path, headers=auth_headers).json()["state"] == "cancelled"
+        assert (
+            client.get(
+                "/api/v1/search/generations/9999", headers=auth_headers
+            ).status_code
+            == 404
+        )
+
     def test_exposes_a_durable_build_job(
         self, client, auth_headers, make_inference_endpoint
     ):
