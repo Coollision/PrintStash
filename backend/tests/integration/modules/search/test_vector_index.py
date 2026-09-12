@@ -83,6 +83,48 @@ def native_units(
 
 
 class TestVectorIndex:
+    @pytest.mark.parametrize("backend", ["numpy", "sqlite_vec"])
+    @pytest.mark.parametrize(
+        "shape", ["limited", "offset", "joined", "distinct", "empty"]
+    )
+    def test_preserves_arbitrary_vector_scope_membership(
+        self, db_session, native_units, backend, shape
+    ):
+        from app.db.models import File
+
+        generation, contract, first, second = native_units
+        generation.index_backend = backend
+        db_session.add(generation)
+        scope = select(PassageVector.id)
+        if shape == "limited":
+            scope = scope.order_by(PassageVector.id.desc()).limit(1)
+        elif shape == "offset":
+            scope = scope.order_by(PassageVector.id).offset(1).limit(1)
+        elif shape == "joined":
+            scope = scope.join(File, File.id == PassageVector.file_id).where(
+                File.id == second.file_id
+            )
+        elif shape == "distinct":
+            scope = scope.where(PassageVector.id == first.id).distinct()
+        else:
+            scope = scope.where(PassageVector.id == -1)
+        expected = db_session.exec(scope).all()
+        result = vector_store.query(
+            db_session,
+            generation_id=generation.id,
+            space=contract,
+            vector=[1] + [0] * (contract.dimension - 1),
+            allowed_ids=scope,
+        )
+        assert [item.unit_id for item in result.items] == expected
+        assert expected == (
+            []
+            if shape == "empty"
+            else [first.id]
+            if shape == "distinct"
+            else [second.id]
+        )
+
     def test_recovers_from_rejected_portable_index_ddl(self, db_session, native_units):
         generation, _, _, _ = native_units
         generation.index_backend = "numpy"

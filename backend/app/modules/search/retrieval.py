@@ -27,7 +27,7 @@ from app.modules.search import (
     structured,
     visual_sources,
 )
-from app.modules.search.access import visible_passage_ids
+from app.modules.search.access import passage_in_scope, visible_passage_ids
 from app.modules.search.dependencies import SUBJECT_MODELS
 from app.modules.search.lexical_index import capability
 from app.modules.search.lexical_query import ordered_passages
@@ -284,7 +284,7 @@ def search(
             row.id: row
             for row in session.exec(
                 select(SearchPassage).where(
-                    SearchPassage.id.in_(ids), SearchPassage.id.in_(allowed)
+                    SearchPassage.id.in_(ids), passage_in_scope(allowed)
                 )
             ).all()
         }

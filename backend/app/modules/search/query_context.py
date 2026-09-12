@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from app.db.models import PassageVector, SearchPassage, User
 from app.modules.identity.rbac import accessible_collection_ids
 from app.modules.search import structured
-from app.modules.search.access import visible_passage_ids
+from app.modules.search.access import visible_passage_clause
 from app.modules.search.text_inputs import TextRecipe
 
 
@@ -71,7 +71,7 @@ def allowed_vectors(
                 PassageVector.subject_type == SearchPassage.subject_type,
                 PassageVector.subject_id == SearchPassage.subject_id,
                 SearchPassage.recipe_version == recipe.passage_version,
-                SearchPassage.id.in_(visible_passage_ids(session, user)),
+                visible_passage_clause(session, user),
                 SearchPassage.subject_type.in_([kind.value for kind in types]),
             )
         ),

@@ -172,3 +172,34 @@ class TestSearchRuntime:
             if not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+
+
+class TestPeriodicRepairBudget:
+    def test_keeps_periodic_repair_transactions_small(
+        self,
+        db_session,
+        make_model,
+        make_search_passage,
+    ):
+        from printstash_core.search.passages import SearchSubject
+        from sqlmodel import select
+
+        from app.db.models import SearchReconciliationState
+
+        ids = []
+        for index in range(40):
+            model = make_model(f"Stored passage {index}")
+            ids.append(model.id)
+            make_search_passage(SearchSubject(SubjectType.MODEL, model.id))
+        db_session.commit()
+        search.process_one(SubjectType.MODEL)
+        db_session.expire_all()
+        state = db_session.exec(
+            select(SearchReconciliationState).where(
+                SearchReconciliationState.subject_type == "model"
+            )
+        ).one()
+        assert state.partition_after_id > 0
+        assert state.orphan_after_id > 0
+        assert sum(id <= state.partition_after_id for id in ids) <= 8
+        assert sum(id <= state.orphan_after_id for id in ids) <= 8

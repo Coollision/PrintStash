@@ -547,7 +547,7 @@ internal persistence subcontracts below now pass. `core/` paths refer to
 | L051 | rejects_invalid_mirror_configuration | Error | HTTP, credentials or query in mirror base URL | rejected before download | Unit | ✅ `unit/modules/inference/test_model_acquisition.py::TestDownloadPolicy::test_rejects_invalid_mirror_configuration` |
 | L052 | serves_multiple_private_requests | Happy | two framed queries in one native worker | distinct correct native outputs with bounded framing | Integration | ✅ `integration/modules/inference/test_worker.py::TestNativeProtocol::test_serves_multiple_private_requests` |
 
-W7 measured corpus: hybrid recall@5 0.96875, BM25 0.875, ILIKE 0.625 (32 original engineering queries, real pinned BGE vectors). Both out-of-domain probes returned results at the generic 0.35 floor. This is not the separate human-labelled user evaluation. Physical ARM, broader candidate/visual benchmarks and the remaining stages are still pending.
+W7 measured corpus: hybrid recall@5 0.96875, BM25 0.875, ILIKE 0.625 (32 original engineering queries, real pinned BGE vectors). Both out-of-domain probes returned results at the generic 0.35 floor. This is not the separate human-labelled user evaluation. This was the W7 checkpoint; the later model, visual and performance sections record subsequent measurements. Physical ARM and independent human quality acceptance remain open.
 
 ## W8 operational controls and search UI
 
@@ -627,7 +627,7 @@ final full-suite, coverage, security or hardware acceptance gates.
 | VI012 | uses_only_ready_visual_fallbacks | Error | preferred profile unavailable | ready thumbnail leg or truthful text-only degradation | Integration | ✅ actual prepared thumbnail survives multiview failure |
 | VI013 | retrieves_models_using_current_vectors | Happy | VIEW-authorized Model-as-query | existing source vectors, self excluded, missing work bounded | Integration / E2E | ✅ current-vector/self-exclusion/missing-work API + browser |
 | VI014 | searches_images_from_accessible_ui | Happy | ready visual profile, desktop/mobile image selection | capability-gated controls, image results, clear/retry and disclosure | Frontend / Playwright | ✅ frontend tests + real-browser image flow; responsive screenshot correction |
-| VI015 | measures_real_visual_recipe_quality | Happy | frozen 32-object engineering corpus, real CLIP B/32 | measured recall/cost and reproducible vector replay, separately labelled limitations | Integration / Benchmark | ✅ real B/32 replay and study; human/photo/ARM acceptance remains ❌ |
+| VI015 | measures_real_visual_recipe_quality | Happy | frozen 32-object engineering corpus, real CLIP B/32 | measured recall/cost and reproducible vector replay, separately labelled limitations | Integration / Benchmark | ✅ real B/32 replay and study; independent human/ARM acceptance remains ❌; the later printed-photo section records the real photo result |
 
 | VI016 | rejects_unadmitted_image_body_before_parsing | Error | anonymous, disabled or saturated image request | stable error without parser/decode invocation | Integration | ✅ API admission tests |
 | VI017 | shares_render_and_resident_encoder_rss_budget | Error | renderer plus idle encoder exceeds ceiling | idle encoder evicted; oversized renderer rejected/reaped | Integration | ✅ worker-pool/native-render tests |
@@ -674,10 +674,10 @@ W10 focused evidence: 67 backend visual/point regression tests passed together;
 31 frontend settings/results tests passed. The real OpenShape browser flow passed,
 as did the PostgreSQL thumbnail/point publication test. The 40 affected repository
 hygiene checks passed after grouping/naming corrections. Frontend lint, typecheck
-and the deterministic design scan passed. Full branch coverage/security gates
-remain pending the remaining implementation stages. A broader, optional Pyright
-scan outside the repository's configured include list reported SQLModel typing
-and narrowing errors; it is not reported as a passing gate.
+and the deterministic design scan passed. These are historical W10 checks; the
+final verification section records branch-wide gates. A broader Pyright scan
+outside the configured include list reported SQLModel typing/narrowing errors;
+that separate scan is not reported as a passing gate.
 
 ### W11 — separate generated captions (implementation evidence)
 
@@ -950,9 +950,10 @@ Trash/restoration acceptance checks passed 14 tests.
 
 Frontend coverage: all 2,347 app tests passed (82.43% statements, 77.23% branches);
 domain measured 95.54%/93.20%, shared UI 98.78%/97.60%. The three improved app
-branch floors were raised, and every floor passed. Full backend coverage remains
-open; its first run hit physical storage-reserve failures and found issues fixed
-by the focused checks above.
+branch floors were raised, and every frontend floor passed. The initial backend
+run exposed storage-reserve and resource-server capacity issues; the later full
+resource lane passed 269 tests after those corrections. The final verification
+section below records the current backend coverage audit.
 
 ### Reproducible scale harness
 
@@ -1088,3 +1089,44 @@ CPU execution is also visible to the branch-coverage audit.
 | --- | --- | --- | --- | --- | --- | --- |
 | PH001 | retrieves the source Model from a real printed-part photograph | Happy | Attributed original Benchy photo, matching STL, 32 frozen distractors, pinned CLIP | Source Model in top 10 with multiview; opaque library metadata; original full-scene image | Integration/Measurement | ✅ `integration/modules/search/retrieval/test_visual_quality.py::TestPrintedPhotoRanking::test_replays_printed_photo_rank`; 9 visual/point/photo replay tests passed |
 | PH002 | preserves the measured thumbnail photo limitation | Edge | Same full-scene photo and distractors, thumbnail profile | Source Model ranks 13th; failure remains explicit | Integration/Measurement | ✅ `integration/modules/search/retrieval/test_visual_quality.py::TestPrintedPhotoRanking::test_replays_printed_photo_rank`; 9 visual/point/photo replay tests passed |
+
+### Bounded ranking at scale
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|---|---|---|---|---|---|
+| VK001 | preserves exact subject ranking across competitive replacements | Edge | Repeated typed Subjects, late best units, tied vectors, different block sizes and limits | Same unique Subjects and units as an independent full-sort oracle | Unit | ✅ core `tests/inference/test_vectors.py::TestCompetitiveRanking::test_preserves_exact_subject_ranking`; full core coverage: 1,903 passed |
+| VK002 | rejects corruption beyond an established ranking cutoff | Error | Full top-k already contains perfect matches; later malformed vectors | Validation error rather than silently skipping invalid stored data | Unit | ✅ core `tests/inference/test_vectors.py::TestCompetitiveRanking::test_rejects_corruption_beyond_a_full_cutoff` |
+| VK003 | bounds Model-card work to requested identities | Edge | Same one-Model result before and after adding 1,000 unrelated Models | Identical authorized result; SQLite work remains within twice the small-library baseline | Integration | ✅ `integration/modules/library/model_views/test_listing.py::TestReadItemsByIds::test_bounds_card_work_to_requested_identities` |
+| VK004 | bounds passage visibility work to candidate identities | Edge | One requested passage among 1,000 unrelated Models; live/hidden contributors | Same fresh authorization with bounded SQLite work | Integration | ✅ `integration/modules/search/test_access.py::TestVisiblePassageIds::test_bounds_visibility_work_to_candidate_identities` |
+| VK005 | bounds vector reauthorization to candidate identities | Edge | One result vector; 1,000 unrelated current passages | Same authorized vector; SQL work remains within twice the small-library baseline | Integration | ✅ `integration/modules/search/test_query_context.py::TestAllowedVectors::test_bounds_reauthorization_to_candidate_identities` |
+| VK006 | bounds rare lexical lookup work to matching passages | Edge | One matching passage before/after 1,000 unrelated current passages | Same authorized hit; SQL work stays within twice the small-library baseline | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestBoundedCandidates::test_bounds_rare_lookup_work_to_matching_passages` |
+| VK007 | preserves bounded passage-scope membership | Edge | Limited, joined, distinct or empty authorized ID query | Correlated membership returns exactly the original authorized set | Integration | ✅ `integration/modules/search/test_access.py::TestPassageInScope::test_preserves_bounded_scope_membership` |
+| BS007 | keeps periodic repair transactions small during browsing | Edge | Large already-indexed library; runtime repair tick | Checkpoints advance by at most eight Subjects per stream so queries can acquire a writer lease promptly | Integration | ✅ `integration/runtime/test_search.py::TestPeriodicRepairBudget::test_keeps_periodic_repair_transactions_small` |
+| VK008 | rechecks candidate contributor visibility on PostgreSQL | Edge | Live candidate with private, granted, then trashed contributor | Authorized vector IDs follow each current permission/liveness change | Integration | ✅ `integration/postgres/test_search_passages.py::TestCandidateVisibility::test_rechecks_contributor_visibility_on_postgres`; PostgreSQL owner suite: 11 passed |
+| VK009 | preserves arbitrary vector-scope membership | Edge | Limited, offset, joined, distinct or empty authorized ID query; portable/native backend | Only original scope members can be ranked; native and portable agree | Integration | ✅ `integration/modules/search/test_vector_index.py::TestVectorIndex::test_preserves_arbitrary_vector_scope_membership`; 274 owner/API/E2E checks and 11 PostgreSQL native checks passed |
+
+### Final verification after query-path corrections
+
+Backend coverage uses the complete main and resource lane data plus focused
+reruns against every changed source file; old line/branch data for those files
+is discarded before merging. Aggregate coverage is **94.10%**; all ten coverage
+floor checks pass, including every unpinned module. Shared vector storage is
+92.8% and retrieval is 90.99%. No floor was lowered.
+
+The main lane passed 12,291 tests and found one test-naming failure, subsequently
+fixed and verified by the complete hygiene rerun (**3,546 passed**). The complete
+resource lane passed **269 tests**. The final query-path runs passed **274**
+owner/API/E2E tests, **11** PostgreSQL passage tests, **11** PostgreSQL native-vector
+tests, **26** visual/shared-store tests and **7** embedding recovery tests.
+The earlier 80-test focused run's timing failure was corrected to measure the
+configured provider-admission budget; the unchanged 300 ms whole-request target
+is measured independently by the scale harness. Backend Ruff and configured
+Pyright pass. Core coverage passed **1,903 tests plus five floor checks**, at
+99.19%; its configured Pyright also passes. The previously completed frontend,
+locale and real-backend browser evidence above remains applicable because the
+final query-path corrections change no frontend code.
+
+Security review is recorded separately against the final branch snapshot.
+Performance measurements and remaining hardware/quality acceptance are tracked
+in [AI Search performance](ai-search-performance.md) and the explicit open rows
+in this matrix; passing correctness tests does not close those acceptance gates.

@@ -230,3 +230,49 @@ class TestLexicalQuery:
             ]
         finally:
             bind_content_search(previous)
+
+
+class TestBoundedCandidates:
+    def test_bounds_rare_lookup_work_to_matching_passages(
+        self,
+        db_session,
+        make_user,
+        make_model,
+        make_search_passage,
+    ):
+        from printstash_core.search.passages import SearchSubject, SubjectType
+
+        from app.modules.search.access import visible_passage_ids
+        from app.modules.search.lexical_query import ordered_passages
+        from app.modules.search.passages import sync_subject
+        from tests.fakes.sqlite_work import sqlite_work
+
+        actor = make_user(superuser=True)
+        target = make_model("UniqueNeedle")
+        sync_subject(db_session, SearchSubject(SubjectType.MODEL, target.id))
+        while lexical_index.rebuild_partition(db_session):
+            pass
+        db_session.commit()
+        statement = ordered_passages(
+            db_session, "UniqueNeedle", visible_passage_ids(db_session, actor)
+        )
+        with sqlite_work(db_session) as small:
+            before = db_session.exec(statement).all()
+        for _ in range(1000):
+            model = make_model("Stored passage")
+            make_search_passage(SearchSubject(SubjectType.MODEL, model.id))
+        state = lexical_index.state(db_session)
+        state.native_phase = "broken"
+        state.native_after_id = 0
+        db_session.add(state)
+        while lexical_index.rebuild_partition(db_session):
+            pass
+        db_session.commit()
+        statement = ordered_passages(
+            db_session, "UniqueNeedle", visible_passage_ids(db_session, actor)
+        )
+        with sqlite_work(db_session) as large:
+            after = db_session.exec(statement).all()
+        assert [row[0] for row in before] == [row[0] for row in after]
+        assert len(after) == 1
+        assert large.instructions <= max(1000, small.instructions * 2)

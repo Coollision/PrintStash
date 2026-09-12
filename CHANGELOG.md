@@ -45,6 +45,9 @@
 
 ### Fixed
 
+- AI Search bounds permission checks and Model-card loading to result identities,
+  avoids repeated full top-k sorting during portable vector scans, and keeps
+  periodic SQLite projection-repair transactions short during browsing.
 - Search backfill drains bounded batches between periodic pauses, removing the
   one-second delay per embedding batch while preserving maintenance and shutdown
   coordination. Settled active generations stop a burst without inference.

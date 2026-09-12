@@ -23,6 +23,7 @@ from app.db.models import (
     SearchLexicalTerm,
     SearchPassage,
 )
+from app.modules.search.access import passage_in_scope
 from app.modules.search.lexical_index import canonical_passage, capability
 
 
@@ -41,7 +42,7 @@ def ranked_like(query: str, allowed_ids):
         else_=10.0,
     )
     return select(SearchPassage.id.label("passage_id"), score.label("score")).where(
-        SearchPassage.id.in_(allowed_ids),
+        passage_in_scope(allowed_ids),
         or_(
             SearchPassage.title.ilike(pattern, escape="\\"),
             SearchPassage.tags_text.ilike(pattern, escape="\\"),
@@ -54,7 +55,7 @@ def _original_statement(
     session: Session, query: str, allowed_ids, *, force_like: bool = False
 ):
     allowed_ids = select(SearchPassage.id).where(
-        SearchPassage.id.in_(allowed_ids), canonical_passage()
+        passage_in_scope(allowed_ids), canonical_passage()
     )
     terms = query_terms(query)
     backend = "ranked_like" if force_like else capability(session)
@@ -69,7 +70,7 @@ def _original_statement(
             select(SearchPassage.id.label("passage_id"), score.label("score"))
             .join(fts, fts.c.rowid == SearchPassage.id)
             .where(
-                SearchPassage.id.in_(allowed_ids),
+                passage_in_scope(allowed_ids),
                 text("search_passages_fts MATCH :lexical_query"),
             )
             .params(lexical_query=fts_query(query))
@@ -95,7 +96,7 @@ def _original_statement(
         .join(SearchLexicalPosting, SearchLexicalPosting.passage_id == SearchPassage.id)
         .join(SearchLexicalTerm, SearchLexicalTerm.term == SearchLexicalPosting.term)
         .where(
-            SearchPassage.id.in_(allowed_ids),
+            passage_in_scope(allowed_ids),
             SearchLexicalPosting.term.in_(terms),
             SearchPassage.lexemes.op("@@")(func.to_tsquery("simple", tsquery)),
         )
@@ -109,7 +110,7 @@ def ranked_statement(
     from app.modules.search.expansion import with_expansion
 
     allowed = select(SearchPassage.id).where(
-        SearchPassage.id.in_(allowed_ids), canonical_passage()
+        passage_in_scope(allowed_ids), canonical_passage()
     )
     return with_expansion(
         session,

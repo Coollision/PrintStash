@@ -31,7 +31,9 @@ def read_items_by_ids(session: Session, user: User, model_ids: list[int]) -> lis
     rows = session.exec(
         select(Model).where(
             Model.id.in_(model_ids),
-            Model.id.in_(accessible_live_model_ids_stmt(session, user)),
+            Model.id.in_(
+                accessible_live_model_ids_stmt(session, user).where(Model.id.in_(model_ids))
+            ),
         )
     ).all()
     return _hydrate_list_rows(session, user, list(rows))

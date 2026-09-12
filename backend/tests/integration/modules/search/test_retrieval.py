@@ -390,7 +390,6 @@ class TestSearch:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://testserver"
         ) as client:
-            started = monotonic()
             pending = asyncio.create_task(
                 client.get(
                     "/api/v1/search",
@@ -403,6 +402,10 @@ class TestSearch:
             )
             try:
                 assert await asyncio.to_thread(entered.wait, 2)
+                # The configured inference deadline starts at provider admission.
+                # Cold SQL compilation/authentication precedes that budget; the
+                # separate scale benchmark measures the entire HTTP request.
+                admitted = monotonic()
                 health = await asyncio.wait_for(client.get("/api/v1/health"), 0.25)
                 assert health.status_code == 200, health.text
                 assert not pending.done()
@@ -410,7 +413,7 @@ class TestSearch:
                 assert response.status_code == 200, response.text
                 result = response.json()
                 assert not release.is_set()
-                assert monotonic() - started < 1.5
+                assert monotonic() - admitted < 1
                 assert [item["subject_id"] for item in result["items"]] == [model.id]
                 assert result["legs"] == ["lexical"]
                 assert result["degraded"] == ["search_semantic_unavailable"]

@@ -291,6 +291,14 @@ def query(
     generation = generation_for(session, generation_id, space, states=states)
     if not 1 <= max_scan <= 1_000_000 or not 1 <= limit <= 100:
         raise EmbeddingError("embedding_query_budget_invalid")
+    authorized = allowed_ids.subquery()
+    eligible = (
+        select(literal(1))
+        .select_from(authorized)
+        .where(authorized.c[0] == PassageVector.id)
+        .correlate(PassageVector)
+        .exists()
+    )
     statement = select(
         PassageVector.id,
         PassageVector.subject_type,
@@ -299,7 +307,7 @@ def query(
     ).where(
         PassageVector.generation_id == generation_id,
         PassageVector.native_dimension == space.dimension,
-        col(PassageVector.id).in_(allowed_ids),
+        eligible,
     )
     query_blob = normalize(vector, space.dimension)
     scoped_ids = statement.with_only_columns(PassageVector.id).order_by(

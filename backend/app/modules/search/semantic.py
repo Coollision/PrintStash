@@ -182,7 +182,9 @@ def retrieve(
                         select(PassageVector.id, PassageVector.passage_id).where(
                             PassageVector.id.in_(ids),
                             PassageVector.id.in_(
-                                allowed_vectors(session, user, leg, types, filters)
+                                allowed_vectors(
+                                    session, user, leg, types, filters
+                                ).where(PassageVector.id.in_(ids))
                             ),
                         )
                     ).all()

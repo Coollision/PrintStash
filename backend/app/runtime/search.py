@@ -36,7 +36,10 @@ def process_one(kind: SubjectType) -> int:
                     if model_cache.referenced(session, model)
                 )
             )
-            changed = reconcile_partition(session, kind)
+            # Projection repair shares SQLite's writer with interactive reader
+            # leases. Keep these transactions short; embedding bursts have their
+            # own separate batch budget below.
+            changed = reconcile_partition(session, kind, limit=8)
             rebuild_partition(session)
             repair_vectors(session)
             session.commit()

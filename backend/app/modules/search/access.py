@@ -46,8 +46,12 @@ def visible_subjects(session: Session, user: User):
 
 
 def visible_passage_ids(session: Session, user: User):
-    visible = visible_subjects(session, user)
-    return _passages_for_subjects(session, visible)
+    return select(SearchPassage.id).where(visible_passage_clause(session, user))
+
+
+def visible_passage_clause(session: Session, user: User):
+    """Correlate visibility to the caller's passage rows, including small result sets."""
+    return _passage_visibility(session, visible_subjects(session, user))
 
 
 def indexable_passage_ids(session: Session):
@@ -69,10 +73,12 @@ def indexable_passage_ids(session: Session):
         if table is Model:
             statement = statement.where(Model.hash != SENTINEL_MODEL_HASH)
         statements.append(statement)
-    return _passages_for_subjects(session, union_all(*statements).cte())
+    return select(SearchPassage.id).where(
+        _passage_visibility(session, union_all(*statements).cte())
+    )
 
 
-def _passages_for_subjects(session: Session, visible):
+def _passage_visibility(session: Session, visible):
     owner_visible = (
         select(visible.c.id)
         .where(
@@ -106,4 +112,21 @@ def _passages_for_subjects(session: Session, visible):
         .correlate(SearchPassage)
         .exists()
     )
-    return select(SearchPassage.id).where(and_(owner_visible, ~hidden_dependency))
+    return and_(owner_visible, ~hidden_dependency)
+
+
+def passage_in_scope(allowed_ids):
+    """Preserve an arbitrary ID set while allowing indexed candidate lookups.
+
+    An IN subquery can enumerate every visible passage even when the outer
+    ranker or response has only a few candidates. Correlation keeps any LIMIT,
+    DISTINCT or join inside the supplied scope and permits predicate pushdown.
+    """
+    scope = allowed_ids.subquery()
+    return (
+        select(literal(1))
+        .select_from(scope)
+        .where(scope.c[0] == SearchPassage.id)
+        .correlate(SearchPassage)
+        .exists()
+    )

@@ -378,3 +378,73 @@ class TestStructuredHistory:
                 ).all()[0][0]
                 == passage.id
             )
+
+
+class TestCandidateVisibility:
+    def test_rechecks_contributor_visibility_on_postgres(self, passage_engine):
+        import json
+
+        from printstash_core.inference import EmbeddingSpace
+
+        from app.core.time import utcnow
+        from app.modules.search.query_context import SemanticLeg, allowed_vectors
+        from app.modules.search.text_inputs import TextRecipe
+        from tests.factories import (
+            build_embedding_space,
+            build_index_generation,
+            build_passage_vector,
+            build_user,
+            grant_collection_role,
+        )
+
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            actor = build_user(session)
+            public = build_collection(session, "Public")
+            private = build_collection(session, "Private")
+            grant_collection_role(session, actor, public)
+            target = build_model(session, "Target", collection=public)
+            contributor = build_model(session, "Contributor", collection=private)
+            passage = build_search_passage(
+                session,
+                SearchSubject(SubjectType.MODEL, target.id),
+                access_dependencies_json=json.dumps([["model", contributor.id]]),
+            )
+            stored = build_embedding_space(
+                session,
+                modality="text",
+                profile="text",
+                recipe_json=TextRecipe().encode(),
+            )
+            generation = build_index_generation(session, stored)
+            vector = build_passage_vector(session, generation, passage=passage)
+            leg = SemanticLeg(
+                "semantic_text",
+                generation.id,
+                EmbeddingSpace(**json.loads(stored.config_json)),
+                0.1,
+                1,
+                1,
+            )
+            session.commit()
+            assert (
+                session.exec(
+                    allowed_vectors(session, actor, leg, (SubjectType.MODEL,))
+                ).all()
+                == []
+            )
+            grant_collection_role(session, actor, private)
+            session.commit()
+            assert session.exec(
+                allowed_vectors(session, actor, leg, (SubjectType.MODEL,))
+            ).all() == [vector.id]
+            contributor.deleted_at = utcnow()
+            session.add(contributor)
+            session.commit()
+            assert (
+                session.exec(
+                    allowed_vectors(session, actor, leg, (SubjectType.MODEL,))
+                ).all()
+                == []
+            )

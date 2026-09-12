@@ -44,8 +44,9 @@ uv run python -m tests.fakes.search_scale \
 
 Each run creates a separate installation, completes public setup, and calls the
 real search HTTP endpoint with normal authentication, authorization, lexical
-ranking, local ONNX inference and result materialization. Query vectors are not
-precomputed or retained between warm measurement queries. Pass-through timing
+ranking, local ONNX inference and result materialization. The query-vector cache
+is cleared before measuring the distinct frozen queries, so none uses a cached
+query vector. Pass-through timing
 records embedding, vector retrieval, fusion and Model materialization, as well
 as the entire request. The initial request and subsequent warmup are separate;
 the normal background warmer may finish during fixture construction, so the
@@ -89,3 +90,55 @@ exits nonzero when comparison fails.
 
 Physical Pi 5 backfill and independent human query/photo quality acceptance
 require separate measurements; these harnesses do not substitute for them.
+
+
+## Measured 500,000-vector feasibility on x86
+
+Measured on 2026-09-12 at `0364db751861bdecb122679ffa998181417c93d9`:
+Linux x86_64, QEMU/KVM, four virtual CPUs, 11,677 MiB RAM, one OpenBLAS thread,
+SQLite 3.53.1 and sqlite-vec 0.1.6. Existing user services remained running;
+no other test or benchmark was run concurrently. This is a VM measurement,
+not the physical ARM result required by S2.
+
+| Eligible vectors | Native p50 / p95 | Float scanner p50 / p95 | Native recall@10 |
+|---|---|---|---:|
+| 500,000 | 2.247 / 2.281 s | 6.870 / 6.957 s | 1.0 |
+| 50,000 (10% SQL scope) | 1.787 / 1.921 s | 1.826 / 1.887 s | 1.0 |
+
+All 32 seeded queries in each scope matched the float top 10 exactly. Building
+both tables took 182.22 seconds. The source database occupied 1,808,351,232 bytes;
+the durable-only restored database occupied 1,026,580,480 bytes, including
+768,000,000 bytes of vector payload. Snapshot copying took 9.60 seconds. The
+restored connection had no vector extension loaded; every row was digest-checked
+and both scopes returned the same neighbors. Peak process RSS was 68,536 KiB.
+The complete run took 621.76 seconds.
+
+The native index improved unrestricted retrieval but did not improve the
+restricted-scope p95 in this experiment. It stays opt-in. Neither result meets
+or substitutes for the separate 100,000-passage HTTP target: these timings have
+no query encoder, application authorization or response materialization.
+Raw timings, versions, input digest and source context are retained in
+`backend/tests/fixtures/search/sqlite-vec-500k-x86-{vectors,context}.json`.
+
+## Query-path corrections found by the 100k run
+
+The initial portable run was interrupted after repeated 8.3–8.7 second warm
+requests exposed a real regression; it is not a completed p95 measurement.
+Profiling found repeated worst-candidate sorting, whole-library permission scans
+for small result sets, and writer contention during periodic projection repair.
+The corrected scorer keeps a bounded competitive cutoff, while SQL preserves
+fresh owner/contributor visibility and restricts card/result checks to candidate
+identities. Periodic repair processes eight Subjects per stream per transaction;
+embedding bursts retain their independent batch budget.
+
+Regression tests compare the scorer against an independent full-sort oracle and
+measure SQLite instruction counts before/after adding 1,000 unrelated Models or
+Passages. Limited, joined, distinct and empty authorization scopes retain exact
+membership. PostgreSQL tests recheck contributor grants and trash state. The
+query-deadline regression measures its one-second tolerance from actual provider
+admission; cold SQL compilation/authentication belongs to the separate complete
+HTTP latency benchmark, whose 300 ms budget remains unchanged.
+
+Before the final vector-store correlation change, a complete 32-query native
+run measured p50 **4.059 s**, p95 **4.479 s** and first-request **5.557 s**. That
+failed run remains in the task's measurement output.
