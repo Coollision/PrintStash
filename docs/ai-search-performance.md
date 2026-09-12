@@ -78,7 +78,10 @@ backfill running throughout every loaded upload**. Baseline and loaded phases
 use fresh installations and the same ordered G-code corpus. Unique comments
 prevent duplicate detection from bypassing ingestion; each phase records the
 exact file hashes. The seeded library has 32 distinct texts, replicated to
-10,000 unembedded passages. Both phases warm the same local model beforehand.
+10,000 unembedded passages. Both phases warm the same local model beforehand. The loaded phase allows up
+to 900 seconds for initial full-library reconciliation before inference starts;
+that preparation duration is recorded separately as `backfill_startup_seconds`.
+It is outside the per-upload measurement and does not relax the 25% limit.
 
 The report contains per-upload completion latency, generation progress before
 and after each upload, and sampled RSS/CPU for the application and its worker
@@ -145,3 +148,34 @@ HTTP latency benchmark, whose 300 ms budget remains unchanged.
 Before the final vector-store correlation change, a complete 32-query native
 run measured p50 **4.059 s**, p95 **4.479 s** and first-request **5.557 s**. That
 failed run remains in the task's measurement output.
+
+## Final 100,000-passage HTTP measurements on x86
+
+The query implementation is `cb080c6af780103d3eb2e136f1f82f222a33b3b3`.
+The same four-vCPU QEMU/KVM host, 11,677 MiB RAM and one-thread pinned local BGE
+encoder were used. No correctness tests or other benchmarks ran during the
+measured queries; existing user services remained running. Each backend serves
+32 distinct uncached queries over 100,000 replicated Model identities with
+normal authentication, authorization, lexical ranking and Model cards.
+
+| Backend | Warm p50 | Warm p95 | First HTTP request | 300 ms p95 gate |
+|---|---:|---:|---:|---|
+| Portable NumPy | 2.348 s | 3.024 s | 9.825 s | Failed |
+| Optional sqlite-vec | 1.780 s | 2.320 s | 2.599 s | Failed |
+
+Portable results: [complete observations](../backend/tests/fixtures/search/search-100k-numpy-x86.json)
+and [source/hardware context](../backend/tests/fixtures/search/search-100k-x86-context.json).
+Native results: [complete observations](../backend/tests/fixtures/search/search-100k-native-x86.json).
+All 64 responses across both runs returned HTTP 200 with no leg errors and actual
+local query embedding. Native acceleration improves these measured timings but
+does not meet the target or justify enabling it by default. The fixed latency target remains unmet on this VM. This is a
+scale/performance result, not an independent 100,000-item relevance evaluation.
+
+The first 10,000-passage ingest attempt completed all 20 baseline uploads (p95
+222 ms) but exceeded the harness's original 120-second generation-start limit
+before any loaded uploads ran. Profiling one reconciliation partition found
+128 distinct Subjects, 3,205 SQL statements and 5.94 seconds with profiling
+active; only 0.27 seconds were in SQLite execution. Most measured cost was
+Python/ORM extraction and statement construction. The harness now records
+preparation separately and permits its bounded 900-second startup window. The
+failed attempt is not counted as a completed load comparison.

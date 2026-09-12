@@ -21,6 +21,7 @@ from tests.fakes.process_metrics import sample_processes
 from tests.fakes.search_scale import environment
 
 MAX_P95_INCREASE = 0.25
+GENERATION_STARTUP_SECONDS = 900
 
 
 def backfill_overlapped(observations) -> bool:
@@ -111,6 +112,7 @@ def phase(directory: Path, model: Path, *, count: int, uploads: int, loaded: boo
         )
         provider.validate(context=InferenceContext.bounded(120))
         generation_id = None
+        startup_seconds = None
 
         def generation():
             if generation_id is None:
@@ -120,6 +122,7 @@ def phase(directory: Path, model: Path, *, count: int, uploads: int, loaded: boo
             return response.json()
 
         if loaded:
+            startup_started = time.monotonic()
             proposal = client.post(
                 "/api/v1/search/generations",
                 json={
@@ -130,7 +133,7 @@ def phase(directory: Path, model: Path, *, count: int, uploads: int, loaded: boo
             )
             assert proposal.status_code == 202, proposal.text
             generation_id = proposal.json()["id"]
-            deadline = time.monotonic() + 120
+            deadline = time.monotonic() + GENERATION_STARTUP_SECONDS
             while time.monotonic() < deadline:
                 state = generation()
                 if state["processed"] > 0:
@@ -140,6 +143,7 @@ def phase(directory: Path, model: Path, *, count: int, uploads: int, loaded: boo
                 time.sleep(0.1)
             else:
                 raise AssertionError("backfill did not start")
+            startup_seconds = time.monotonic() - startup_started
         sample_processes(metrics)
         cpu_before = {pid: row["cpu_seconds"] for pid, row in metrics.items()}
         started = time.perf_counter()
@@ -194,6 +198,8 @@ def phase(directory: Path, model: Path, *, count: int, uploads: int, loaded: boo
             "seed_passages": count,
             "distinct_seed_texts": len(corpus),
             "onnx_threads": 1,
+            "backfill_startup_seconds": startup_seconds,
+            "backfill_startup_timeout_seconds": GENERATION_STARTUP_SECONDS,
             "model_space": provider.space.__dict__,
             "source_sha256": hashlib.sha256(original).hexdigest(),
             "requested_uploads": uploads,
