@@ -103,8 +103,8 @@ from upload timing. The raw result and sampled process metrics are retained in
 This failure motivated a regression test for per-vector publication: adding
 1,000 unrelated passages raised its SQLite work from 200 to 43,800 instructions
 while the publisher held the writer lock. The correction preserves source and
-lease fences while correlating eligibility to the current passage. A new loaded
-run is required before this acceptance row can pass.
+lease fences while correlating eligibility to the current passage. The follow-up measurements below retain both the intermediate failure and the
+foreground-priority result.
 
 Physical Pi 5 backfill and independent human query/photo quality acceptance
 require separate measurements; these harnesses do not substitute for them.
@@ -146,7 +146,7 @@ Profiling found repeated worst-candidate sorting, whole-library permission scans
 for small result sets, and writer contention during periodic projection repair.
 The corrected scorer keeps a bounded competitive cutoff, while SQL preserves
 fresh owner/contributor visibility and restricts card/result checks to candidate
-identities. Periodic repair processes eight Subjects per stream per transaction;
+identities. Periodic repair now processes one Subject per stream per transaction;
 embedding bursts retain their independent batch budget.
 
 Regression tests compare the scorer against an independent full-sort oracle and
@@ -161,7 +161,7 @@ Before the final vector-store correlation change, a complete 32-query native
 run measured p50 **4.059 s**, p95 **4.479 s** and first-request **5.557 s**. That
 failed run remains in the task's measurement output.
 
-## Final 100,000-passage HTTP measurements on x86
+## Earlier HTTP measurements and native-fixture correction
 
 The query implementation is `cb080c6af780103d3eb2e136f1f82f222a33b3b3`.
 The same four-vCPU QEMU/KVM host, 11,677 MiB RAM and one-thread pinned local BGE
@@ -173,15 +173,29 @@ normal authentication, authorization, lexical ranking and Model cards.
 | Backend | Warm p50 | Warm p95 | First HTTP request | 300 ms p95 gate |
 |---|---:|---:|---:|---|
 | Portable NumPy | 2.348 s | 3.024 s | 9.825 s | Failed |
-| Optional sqlite-vec | 1.780 s | 2.320 s | 2.599 s | Failed |
+| Optional sqlite-vec (incomplete native fixture) | 1.780 s | 2.320 s | 2.599 s | Invalid native-scale measurement |
 
 Portable results: [complete observations](../backend/tests/fixtures/search/search-100k-numpy-x86.json)
 and [source/hardware context](../backend/tests/fixtures/search/search-100k-x86-context.json).
 Native results: [complete observations](../backend/tests/fixtures/search/search-100k-native-x86.json).
 All 64 responses across both runs returned HTTP 200 with no leg errors and actual
-local query embedding. Native acceleration improves these measured timings but
-does not meet the target or justify enabling it by default. The fixed latency target remains unmet on this VM. This is a
-scale/performance result, not an independent 100,000-item relevance evaluation.
+local query embedding. A later cardinality audit found only **22 native rows**
+in that native-run database, despite 100,000 durable rows. A subsequent run
+measured p95 2.355 s but held only **14 native rows**. Both native timings are
+invalid for native-scale acceptance and cannot establish a speedup. The
+[second invalid result](../backend/tests/fixtures/search/search-100k-native-priority-incomplete-x86.json)
+is retained. The portable measurement remains valid and misses the unchanged
+300 ms target. Neither fixture supplies independent semantic labels.
+
+The fixture defect was an early-ready race: individual seed factory commits let
+normal background repair complete a small native table before direct bulk
+replica insertion. Calling repair again on a ready index does not repopulate it.
+The corrected query harness explicitly prepares the derivative after all direct
+fixture inserts, copies the measured full-dimension floats into the real native
+table, and asserts **durable and native counts before and after all queries**.
+This is query-fixture preparation; it does not measure production backfill
+throughput. Its regression reproduces early readiness and checks that all native
+IDs match the completed durable fixture.
 
 The first 10,000-passage ingest attempt completed all 20 baseline uploads (p95
 222 ms) but exceeded the harness's original 120-second generation-start limit
@@ -191,3 +205,35 @@ active; only 0.27 seconds were in SQLite execution. Most measured cost was
 Python/ORM extraction and statement construction. The harness now records
 preparation separately and permits its bounded 900-second startup window. The
 failed attempt is not counted as a completed load comparison.
+
+## Foreground-priority backfill follow-up
+
+Correlating publication eligibility reduced the fresh-install loaded p95 from
+735 ms to **469 ms**, but its 211 ms baseline still meant **2.22×**, above the
+unchanged 1.25× limit. All 40 uploads completed with actual backfill progress.
+Initial preparation took 813.37 seconds with correctness checks running during
+preparation only; that startup duration is not an uncontended benchmark. The
+[complete intermediate failure](../backend/tests/fixtures/search/ingest-backfill-10k-x86-bounded.json)
+is retained.
+
+Foreground admission now covers the complete mutating ASGI request, including
+upload staging and cleanup after its response. Search defers new background
+work during those requests, yields before text-vector publication without
+holding a database transaction or compute slot, and keeps ordinary repair
+transactions to one Subject. Restore admission and cancellation remain enforced.
+
+The subsequent comparison cloned the same stopped, partially indexed library
+for each phase: **10,020 passages**, including the prior twenty completed
+uploads. The baseline cancelled its building generation; the loaded phase
+resumed it. Both warmed the pinned local BGE model and ingested the same twenty
+new G-code payloads. All **40 uploads completed**, with loaded indexed vectors
+advancing **88 → 104** while the generation stayed in backfill throughout.
+Baseline/loaded median latency was **175/190 ms** and p95 was **227/233 ms**:
+**1.025×**, passing the unchanged 1.25× comparison. No correctness tests or other
+benchmarks ran during the timed uploads.
+
+[The complete prepared-fixture result](../backend/tests/fixtures/search/ingest-backfill-10k-x86-priority.json)
+records every payload hash, observation, process sample and production-source
+digest. This follow-up measures ingestion during resumed backfill; it does not
+repeat fresh-install preparation, establish physical ARM performance, or erase
+the earlier failures. AI remains optional and disabled by default.

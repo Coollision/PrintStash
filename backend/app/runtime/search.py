@@ -25,7 +25,10 @@ logger = get_logger(__name__)
 
 
 def process_one(kind: SubjectType) -> int:
-    if not maintenance.begin_mutating_operation():
+    if (
+        maintenance.foreground_mutations_pending()
+        or not maintenance.begin_mutating_operation()
+    ):
         return 0
     try:
         with get_session_factory().scoped_session() as session:
@@ -39,7 +42,7 @@ def process_one(kind: SubjectType) -> int:
             # Projection repair shares SQLite's writer with interactive reader
             # leases. Keep these transactions short; embedding bursts have their
             # own separate batch budget below.
-            changed = reconcile_partition(session, kind, limit=8)
+            changed = reconcile_partition(session, kind, limit=1)
             rebuild_partition(session)
             repair_vectors(session)
             session.commit()
@@ -71,7 +74,10 @@ async def run_search() -> None:
 
 
 def _index_one() -> bool:
-    if not maintenance.begin_mutating_operation():
+    if (
+        maintenance.foreground_mutations_pending()
+        or not maintenance.begin_mutating_operation()
+    ):
         return False
     try:
         return IndexProcessor(get_session_factory()).work_one()

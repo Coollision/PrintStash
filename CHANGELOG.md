@@ -45,6 +45,8 @@
 
 ### Fixed
 
+- Search backfill yields to complete user write requests, including upload staging
+  and cleanup, without holding a database transaction while waiting.
 - AI Search bounds permission checks and Model-card loading to result identities,
   avoids repeated full top-k sorting during portable vector scans, and keeps
   periodic SQLite projection-repair transactions short during browsing.

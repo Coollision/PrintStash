@@ -52,6 +52,73 @@ def environment(directory: Path, model: Path, backend: str):
         os.environ[f"VAULT_{key}"] = str(target)
 
 
+def index_rows(session, generation, *, count):
+    """Reject a scale report whose serving derivative lacks fixture vectors."""
+    from sqlalchemy import func, table
+    from sqlmodel import select
+
+    from app.db.models import PassageVector
+    from app.modules.search import vector_index
+
+    durable_count = session.exec(
+        select(func.count(PassageVector.id)).where(
+            PassageVector.generation_id == generation.id
+        )
+    ).one()
+    assert durable_count == count, (durable_count, count)
+    if generation.index_backend == "sqlite_vec":
+        name = vector_index.table_name(generation.id, "sqlite")
+        native_count = session.execute(
+            select(func.count()).select_from(table(name))
+        ).scalar_one()
+        assert native_count == count, (native_count, count)
+    return durable_count
+
+
+def prepare_indexes(session, generation, *, count):
+    """Finish derivatives after direct fixture inserts, before timing requests."""
+    from app.modules.search import lexical_index, vector_index
+
+    while lexical_index.rebuild_partition(session, limit=1024):
+        pass
+    assert lexical_index.capability(session) == "fts5"
+    # Factory saves commit seed rows, so normal background repair can mark a
+    # small derivative ready before bulk fixture insertion finishes. Those
+    # direct fixture inserts intentionally bypass production publication.
+    # Recreate the derivative explicitly, then prove its actual cardinality.
+    vector_index.prepare(session, generation)
+    if generation.index_backend == "sqlite_vec":
+        from sqlalchemy import column, insert, table
+        from sqlmodel import select
+
+        from app.db.models import PassageVector
+
+        assert generation.index_state == "building", generation.index_error
+        # This is a query-cardinality fixture, not a backfill throughput run.
+        # Its measured, full-dimension float blobs are copied unchanged into
+        # the real extension table; production inference is measured separately.
+        assert generation.quantization == "float32"
+        name = vector_index.table_name(generation.id, "sqlite")
+        native = table(name, column("rowid"), column("embedding"))
+        session.execute(
+            insert(native).from_select(
+                ["rowid", "embedding"],
+                select(PassageVector.id, PassageVector.vector_blob).where(
+                    PassageVector.generation_id == generation.id,
+                    PassageVector.native_dimension == generation.index_dimension,
+                ),
+            )
+        )
+        generation.index_state = "ready"
+        session.add(generation)
+        session.flush()
+    else:
+        while vector_index.rebuild_partition(session, generation, limit=1024):
+            pass
+    assert generation.index_state == "ready", generation.index_error
+    return index_rows(session, generation, count=count)
+
+
 def measure(directory: Path, *, count: int, backend: str, query_count: int):
     import numpy as np
     from fastapi.testclient import TestClient
@@ -68,7 +135,6 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
     from app.modules.inference.query import QueryRunner, close_queries
     from app.modules.search import (
         configuration,
-        lexical_index,
         retrieval,
         vector_index,
         vector_store,
@@ -147,12 +213,7 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
                     vector_blob=measured.blob(passage.text),
                 )
             replicas = replicate_models(session, models, generation, count=count)
-            while lexical_index.rebuild_partition(session, limit=1024):
-                pass
-            assert lexical_index.capability(session) == "fts5"
-            while vector_index.rebuild_partition(session, generation, limit=1024):
-                pass
-            assert generation.index_state == "ready", generation.index_error
+            indexed_count = prepare_indexes(session, generation, count=count)
             assert vector_index.serving_backend(generation) == backend
             session.commit()
             provider = embedding_provider(session, measured.space)
@@ -247,6 +308,8 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
                         ),
                     }
                 )
+        with sessions.scoped_session() as session:
+            final_indexed_count = index_rows(session, generation, count=count)
         durations = [row["seconds"] for row in observations]
         p95 = float(np.percentile(durations, 95))
         result = {
@@ -255,6 +318,8 @@ def measure(directory: Path, *, count: int, backend: str, query_count: int):
             "cpu_affinity": sorted(os.sched_getaffinity(0)),
             "passages": count,
             "distinct_texts": len(corpus),
+            "verified_index_rows_before_queries": indexed_count,
+            "verified_index_rows_after_queries": final_indexed_count,
             "corpus_sha256": measured.payload["corpus_sha256"],
             "queries_sha256": measured.payload["queries_sha256"],
             "query_count": len(queries),

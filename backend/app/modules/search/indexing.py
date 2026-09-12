@@ -34,6 +34,7 @@ from app.modules.search.access import passage_in_scope
 from app.modules.search.reconciliation import reconcile_partition
 from app.modules.search.text_inputs import document_input
 from app.modules.storage.capacity import CapacityManager, CapacityReservationHandle
+from app.runtime import maintenance
 from app.runtime.jobs import registry
 
 MAX_ATTEMPTS = 3
@@ -291,6 +292,16 @@ class IndexProcessor:
     def __init__(self, sessions: SessionFactory):
         self.sessions = sessions
 
+    def _wait_for_foreground(self, context: InferenceContext) -> None:
+        # No database transaction or compute slot is held here. A full ASGI
+        # mutation includes upload staging and terminal cleanup, which sit
+        # outside the persisted ingest job's pending/running interval.
+        while maintenance.foreground_mutations_pending():
+            context.remaining()
+            if maintenance.restore_in_progress():
+                raise EmbeddingError("inference_cancelled")
+            time.sleep(0.01)
+
     def _context(self, generation_id: int, token: str) -> InferenceContext:
         checked_at = 0.0
         cancelled = False
@@ -406,6 +417,8 @@ class IndexProcessor:
             session.commit()
 
     def work_one(self) -> bool:
+        if maintenance.foreground_mutations_pending():
+            return False
         with self.sessions.scoped_session() as session:
             if generations.prune_one(session):
                 return True
@@ -542,6 +555,7 @@ class IndexProcessor:
                 )
                 if vector is None:
                     continue
+                self._wait_for_foreground(context)
                 with self.sessions.scoped_session() as session:
                     publish(
                         session,

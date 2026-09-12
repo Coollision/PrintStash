@@ -437,5 +437,10 @@
   "peak_rss_kib": 270372,
   "child_peak_rss_kib": 270372,
   "cpu_seconds": 138.4570938,
-  "wall_seconds": 134.41027592500905
+  "wall_seconds": 134.41027592500905,
+  "measurement_context": {
+    "valid_native_100k_measurement": false,
+    "native_rows_observed_after_run": 22,
+    "reason": "Seed factory commits allowed background repair to mark the native derivative ready before direct bulk fixture insertion. The original harness verified durable cardinality and ready state but omitted native cardinality. Timings are retained as invalid native-scale evidence; the corrected harness explicitly repopulates and verifies both counts."
+  }
 }

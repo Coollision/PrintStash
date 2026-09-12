@@ -21,6 +21,76 @@ from app.schemas.search_generations import GenerationProposal
 from tests.fakes.sqlite_work import sqlite_work
 
 
+class TestForegroundPriority:
+    def test_defers_direct_indexing_during_foreground_writes(
+        self, db_session, generation_setup, healthy_embeddings
+    ):
+        from app.runtime import maintenance
+
+        actor, endpoint = generation_setup
+        proposal = generations.prepare(
+            db_session,
+            actor,
+            GenerationProposal(endpoint_id=endpoint.id, index_backend="numpy"),
+        )
+        assert maintenance.begin_mutating_operation(foreground=True)
+        try:
+            assert not indexing.IndexProcessor(get_session_factory()).work_one()
+            assert healthy_embeddings.requests == []
+            assert db_session.exec(select(PassageVector)).all() == []
+            assert db_session.get(IndexGeneration, proposal.id).lease_token is None
+        finally:
+            maintenance.end_mutating_operation(foreground=True)
+
+    @pytest.mark.parametrize("reason", ["cancelled", "restore"])
+    def test_cancels_a_foreground_wait_promptly(self, db_session, reason):
+        from printstash_core.inference import EmbeddingError
+        from printstash_core.inference.context import InferenceContext
+
+        from app.runtime import maintenance
+
+        processor = indexing.IndexProcessor(get_session_factory())
+        assert maintenance.begin_mutating_operation(foreground=True)
+        if reason == "restore":
+            maintenance.hold_restore_maintenance()
+        try:
+            context = InferenceContext.bounded(
+                1, cancelled=lambda: reason == "cancelled"
+            )
+            with pytest.raises(EmbeddingError, match="inference_cancelled"):
+                processor._wait_for_foreground(context)
+            assert db_session.exec(select(PassageVector)).all() == []
+        finally:
+            maintenance.end_restore_maintenance()
+            maintenance.end_mutating_operation(foreground=True)
+
+    def test_resumes_after_foreground_writes_finish(self, db_session):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+
+        from printstash_core.inference.context import InferenceContext
+
+        from app.runtime import maintenance
+
+        entered = Event()
+        processor = indexing.IndexProcessor(get_session_factory())
+        context = InferenceContext.bounded(3, cancelled=lambda: entered.set() or False)
+        assert maintenance.begin_mutating_operation(foreground=True)
+        released = False
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            waiting = executor.submit(processor._wait_for_foreground, context)
+            try:
+                assert entered.wait(2)
+                assert not waiting.done()
+                maintenance.end_mutating_operation(foreground=True)
+                released = True
+                waiting.result(timeout=2)
+            finally:
+                if not released:
+                    maintenance.end_mutating_operation(foreground=True)
+        assert not maintenance.foreground_mutations_pending()
+
+
 class TestPublicationWork:
     def test_bounds_publication_authorization_to_the_current_source(
         self,

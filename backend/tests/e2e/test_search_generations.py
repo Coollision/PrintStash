@@ -9,12 +9,13 @@ from datetime import timedelta
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import event
 from sqlmodel import select
 
 from app.core.config import _overlay
 from app.core.time import utcnow
 from app.db.models import IndexGeneration, PassageVector
-from app.db.session import get_session_factory
+from app.db.session import _set_sqlite_pragmas, get_session_factory
 from app.modules.inference.query import close_queries
 from app.modules.inference.transport import close_client
 from app.runtime.jobs import JobRegistry
@@ -75,11 +76,16 @@ def wait_for_embedding_call():
 
 
 @pytest_asyncio.fixture
-async def indexing_server(api, superuser_headers):
+async def indexing_server(api, superuser_headers, e2e_db):
     # Deployment configuration: optional native acceleration is installed and
     # explicitly enabled. No network/inference/worker implementation is replaced.
     previous = _overlay.get("search_native_vectors_enabled", False)
     _overlay["search_native_vectors_enabled"] = True
+    # The E2E engine is created independently of the production engine. Every
+    # connection, including one opened while the worker yields to HTTP writes,
+    # must receive the same installed-extension and SQLite configuration hook.
+    engine = e2e_db.get_bind()
+    event.listen(engine, "connect", _set_sqlite_pragmas)
     fake = InferenceFake()
     server = start_server(fake.app())
     worker = asyncio.create_task(run_search())
@@ -115,6 +121,7 @@ async def indexing_server(api, superuser_headers):
         close_queries()
         close_client()
         server.stop()
+        event.remove(engine, "connect", _set_sqlite_pragmas)
         _overlay["search_native_vectors_enabled"] = previous
 
 
@@ -153,7 +160,7 @@ class TestSearchGenerationLifecycle:
         )
         assert proposal.status_code == 202, proposal.text
         active = await wait_for_active(proposal.json()["id"])
-        assert active["index_state"] == "ready"
+        assert active["index_state"] == "ready", active
         vector = e2e_db.exec(select(PassageVector)).one()
         vector_id, original = vector.id, vector.vector_blob
         subject_id = vector.subject_id

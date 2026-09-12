@@ -13,6 +13,15 @@ from app.runtime import maintenance, search
 
 
 class TestSearchRuntime:
+    def test_defers_search_work_during_foreground_writes(self, db_session):
+        assert maintenance.begin_mutating_operation(foreground=True)
+        try:
+            assert search.process_one(SubjectType.DOCUMENT) == 0
+            assert search._index_one() is False
+            assert db_session.exec(select(SearchReconciliationState)).all() == []
+        finally:
+            maintenance.end_mutating_operation(foreground=True)
+
     def test_defers_burst_work_during_restore(self, db_session):
         maintenance.hold_restore_maintenance()
         try:
@@ -201,5 +210,5 @@ class TestPeriodicRepairBudget:
         ).one()
         assert state.partition_after_id > 0
         assert state.orphan_after_id > 0
-        assert sum(id <= state.partition_after_id for id in ids) <= 8
-        assert sum(id <= state.orphan_after_id for id in ids) <= 8
+        assert sum(id <= state.partition_after_id for id in ids) <= 1
+        assert sum(id <= state.orphan_after_id for id in ids) <= 1

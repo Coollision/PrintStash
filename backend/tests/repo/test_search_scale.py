@@ -10,7 +10,7 @@ from app.db.models.search import (
     SearchLexicalState,
     SearchLexicalTerm,
 )
-from app.modules.search import lexical_index
+from app.modules.search import lexical_index, vector_index
 from app.modules.search.passages import sync_subject
 from app.modules.search.retrieval import search
 from tests.factories import (
@@ -21,9 +21,37 @@ from tests.factories import (
     build_user,
 )
 from tests.factories.search_scale import replicate_models
+from tests.fakes.search_scale import prepare_indexes
 
 
 class TestReplicateModels:
+    def test_rebuilds_the_complete_native_benchmark_fixture(
+        self, db_session, monkeypatch
+    ):
+        from sqlalchemy import column, table
+
+        from app.core.config import _overlay
+
+        monkeypatch.setitem(_overlay, "search_native_vectors_enabled", True)
+        generation = build_index_generation(
+            db_session, build_embedding_space(db_session), index_backend="sqlite_vec"
+        )
+        seed = build_model(db_session, "Boat", description="Calibration boat")
+        sync_subject(db_session, SearchSubject(SubjectType.MODEL, seed.id))
+        passage = db_session.exec(select(SearchPassage)).one()
+        build_passage_vector(db_session, generation, passage=passage)
+        assert vector_index.prepare(db_session, generation)
+        while vector_index.rebuild_partition(db_session, generation):
+            pass
+        assert generation.index_state == "ready"
+        replicate_models(db_session, [seed], generation, count=10)
+        assert prepare_indexes(db_session, generation, count=10) == 10
+        name = vector_index.table_name(generation.id, "sqlite")
+        native = table(name, column("rowid"))
+        assert set(db_session.execute(select(native.c.rowid)).scalars()) == set(
+            db_session.exec(select(PassageVector.id)).all()
+        )
+
     def test_builds_an_unembedded_backfill_corpus(self, db_session):
         actor = build_user(db_session, superuser=True)
         seed = build_model(db_session, "Assembly bracket")

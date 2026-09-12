@@ -275,7 +275,7 @@ the matching Model in the top 10 with multiview; the thumbnail profile misses
 that target. One photograph does not establish broad photo recall. Contract VLM tests establish protocol and lifecycle behavior,
 not the quality of a particular caption or query-parsing model.
 
-The [coverage matrix](ai-search-coverage.md#final-verification-after-query-path-corrections)
+The [coverage matrix](ai-search-coverage.md)
 records completed correctness, coverage and browser checks; security review is
 recorded separately against the final branch snapshot. The
 [performance report](ai-search-performance.md) separates the measured
