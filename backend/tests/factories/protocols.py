@@ -77,6 +77,7 @@ from app.db.models import (
     SimilarityRun,
     StorageConnection,
     StorageConnectionPurpose,
+    SubjectCaption,
     SystemConfig,
     Tag,
     User,
@@ -566,6 +567,10 @@ class MakeInferenceEndpoint(Protocol):
 
 class MakeSearchPassage(Protocol):
     def __call__(self, subject: SearchSubject, **overrides: Any) -> SearchPassage: ...
+
+
+class MakeSubjectCaption(Protocol):
+    def __call__(self, subject: SearchSubject, **overrides: Any) -> SubjectCaption: ...
 
 
 class MakePassageVector(Protocol):

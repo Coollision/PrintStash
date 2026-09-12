@@ -28,7 +28,9 @@ def read(session: Session) -> SearchSettingsRead:
     )
 
 
-def update(session: Session, value: SearchSettings) -> SearchSettingsRead:
+def update(
+    session: Session, value: SearchSettings, *, actor_id: int | None = None
+) -> SearchSettingsRead:
     endpoint = (
         session.get(InferenceEndpoint, value.chat_endpoint_id)
         if value.chat_endpoint_id
@@ -48,6 +50,8 @@ def update(session: Session, value: SearchSettings) -> SearchSettingsRead:
         )
     row = get_or_create(session, commit=False)
     row.ai_search_settings_json = value.model_dump_json()
+    if actor_id is not None:
+        row.ai_search_configured_by = actor_id
     session.add(row)
     audit.record(
         session,

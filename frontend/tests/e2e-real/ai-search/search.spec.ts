@@ -252,3 +252,51 @@ test("builds the optional local point profile for geometry search", async ({ pag
     if (modelId) await page.request.delete(`${API}/api/v1/models/${modelId}`);
   }
 });
+
+test("edits and dismisses a separately searchable caption", async ({ page }, testInfo) => {
+  const name = `Caption source ${Date.now()}`;
+  const phrase = `zygomatic${Date.now()}`;
+  let id: number | undefined;
+  try {
+    await uploadModel(page, name, { mesh: true, gcode: false });
+    const href = await modelCard(page, name).getAttribute("href");
+    id = Number(href!.split("/").at(-1));
+    const response = await page.request.patch(`${API}/api/v1/models/${id}`, {
+      data: { description: "Human description remains separate." },
+    });
+    expect(response.ok()).toBe(true);
+    await page.goto(`/models/${id}`);
+    const caption = page.getByRole("region", { name: "AI caption", exact: true });
+    await caption.getByRole("button", { name: "Edit caption" }).click();
+    await caption.getByRole("textbox", { name: "Caption text" }).fill(`${phrase} mounting fixture`);
+    await caption.getByRole("button", { name: "Save caption" }).click();
+    await expect(caption.getByText("Edited", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Human description remains separate.", { exact: true }),
+    ).toBeVisible();
+    for (const [label, width, height] of [
+      ["desktop", 1280, 900],
+      ["mobile", 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await caption.scrollIntoViewIfNeeded();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: testInfo.outputPath(`caption-${label}.png`), fullPage: true });
+    }
+    await page.goto(`/search?q=${phrase}`);
+    await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+    await page.goto(`/models/${id}`);
+    await caption.getByRole("button", { name: "Dismiss caption" }).click();
+    await expect(caption.getByText("Dismissed", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(caption.getByText("Dismissed", { exact: true })).toBeVisible();
+    await page.goto(`/search?q=${phrase}`);
+    await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
+    const model: ModelRead = await (await page.request.get(`${API}/api/v1/models/${id}`)).json();
+    expect(model.description).toBe("Human description remains separate.");
+  } finally {
+    if (id) await page.request.delete(`${API}/api/v1/models/${id}`);
+  }
+});

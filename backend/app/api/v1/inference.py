@@ -42,16 +42,26 @@ def read_settings(session: Session = Depends(get_session)):
 
 
 @router.put("", response_model=SearchSettingsRead)
-def update_settings(body: SearchSettings, session: Session = Depends(get_session)):
-    return configuration.update(session, body)
+def update_settings(
+    body: SearchSettings,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    return configuration.update(session, body, actor_id=user.id)
 
 
 @search_router.patch("/settings", response_model=SearchSettingsRead)
-def patch_settings(body: SearchSettings, session: Session = Depends(get_session)):
+def patch_settings(
+    body: SearchSettings,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     merged = configuration.settings(session).model_dump() | body.model_dump(
         exclude_unset=True
     )
-    return configuration.update(session, SearchSettings.model_validate(merged))
+    return configuration.update(
+        session, SearchSettings.model_validate(merged), actor_id=user.id
+    )
 
 
 @router.post("/endpoints", response_model=EndpointRead, status_code=201)

@@ -2618,6 +2618,195 @@
         "title": "CandidateSelection",
         "type": "object"
       },
+      "CaptionPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "edit",
+              "dismiss",
+              "reset",
+              "generate"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "version_token": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Token"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "CaptionPatch",
+        "type": "object"
+      },
+      "CaptionRead": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "can_generate": {
+            "title": "Can Generate",
+            "type": "boolean"
+          },
+          "edited_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited By"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "model_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Revision"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "running",
+                  "ready",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "recipe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "generated",
+                  "edited",
+                  "dismissed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "version_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Token"
+          }
+        },
+        "required": [
+          "can_edit",
+          "can_generate"
+        ],
+        "title": "CaptionRead",
+        "type": "object"
+      },
       "CaptureFieldDraft": {
         "additionalProperties": false,
         "properties": {
@@ -6318,10 +6507,17 @@
             "title": "Local Model Id"
           },
           "passage_recipe_version": {
-            "default": 1,
-            "minimum": 1.0,
-            "title": "Passage Recipe Version",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passage Recipe Version"
           },
           "profile": {
             "default": "semantic_text",
@@ -40902,6 +41098,126 @@
         "summary": "Declare Failure Domain",
         "tags": [
           "storage"
+        ]
+      }
+    },
+    "/api/v1/subjects/{subject_type}/{subject_id}/caption": {
+      "get": {
+        "operationId": "read_caption_api_v1_subjects__subject_type___subject_id__caption_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subject_type",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SubjectType"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subject_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Subject Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Read Caption",
+        "tags": [
+          "search"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_caption_api_v1_subjects__subject_type___subject_id__caption_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subject_type",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SubjectType"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subject_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Subject Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptionPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Patch Caption",
+        "tags": [
+          "search"
         ]
       }
     },

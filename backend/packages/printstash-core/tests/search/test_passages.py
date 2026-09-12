@@ -188,3 +188,35 @@ class TestRenderPassages:
         assert len(passages) == 1
         assert passages[0].text == ""
         assert not passages[0].truncated
+
+
+class TestCaptionRecipe:
+    def test_preserves_v1_hashes_when_a_caption_exists(self):
+        plain = PassageContent(title="Human title", description="Human description")
+        captioned = PassageContent(
+            title="Human title",
+            description="Human description",
+            caption="AI geometry label",
+        )
+        assert render_passages(captioned, recipe_version=1) == render_passages(plain)
+
+    def test_renders_caption_as_a_separate_v2_field(self):
+        content = PassageContent(
+            title="Human title",
+            description="Human description",
+            caption="AI geometry label",
+        )
+        result = render_passages(content, recipe_version=2)
+        assert "AI caption: AI geometry label" in result[0].text
+        assert "Description: Human description" in result[0].text
+        assert (
+            result[0].content_hash
+            != render_passages(content, recipe_version=1)[0].content_hash
+        )
+
+    def test_bounds_caption_text_in_the_passage(self):
+        result = render_passages(
+            PassageContent(title="Object", caption="x" * 5000), recipe_version=2
+        )
+        assert result[0].truncated
+        assert len(result[0].text.split("AI caption: ")[1].splitlines()[0]) == 2048

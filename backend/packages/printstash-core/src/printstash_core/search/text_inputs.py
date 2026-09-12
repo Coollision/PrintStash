@@ -19,7 +19,7 @@ class TextRecipe:
         if (
             self.recipe != "semantic-text-v1"
             or type(self.passage_version) is not int
-            or self.passage_version != RECIPE_VERSION
+            or self.passage_version not in (1, 2)
             or type(self.max_input_characters) is not int
             or not 128 <= self.max_input_characters <= 16384
             or (

@@ -8,6 +8,7 @@ from app.api.v1 import (
     artifact_uploads,
     auth,
     backup,
+    captions,
     config,
     documents,
     external_libraries,
@@ -63,6 +64,7 @@ api_router.include_router(multipart_models.router)
 api_router.include_router(multipart_builds.router)
 api_router.include_router(saved_views.router)
 api_router.include_router(search.router)
+api_router.include_router(captions.router)
 api_router.include_router(inference.router)
 api_router.include_router(inference.search_router)
 api_router.include_router(inference_models.router)

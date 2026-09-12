@@ -22,6 +22,7 @@ from app.db.models import (
     SearchLexicalPosting,
     SearchLexicalState,
     SearchLexicalTerm,
+    SubjectCaption,
 )
 from app.db.models.search import (
     SearchDependency,
@@ -118,3 +119,19 @@ def build_search_generation_lease(
         "expires_at": utcnow() + timedelta(minutes=3),
     }
     return save(session, SearchGenerationLease(**(defaults | overrides)))
+
+
+def build_subject_caption(
+    session: Session, subject: SearchSubject, **overrides: Any
+) -> SubjectCaption:
+    """A caption belongs to one real Subject; dismissal is durable state."""
+    defaults = {
+        "subject_type": subject.subject_type.value,
+        "subject_id": subject.subject_id,
+        subject.subject_type.value + "_id": subject.subject_id,
+        "version_token": uuid4().hex,
+        "state": "generated",
+        "phase": "ready",
+        "text": "A printable object",
+    }
+    return save(session, SubjectCaption(**(defaults | overrides)))

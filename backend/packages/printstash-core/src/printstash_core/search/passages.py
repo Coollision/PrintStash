@@ -60,6 +60,7 @@ class PassageContent:
     parts: tuple[str, ...] = ()
     choices: tuple[str, ...] = ()
     body: str = ""
+    caption: str = ""
 
 
 @dataclass(frozen=True)
@@ -92,12 +93,16 @@ def _clean(text: str) -> str:
     ).strip()
 
 
-def render_passages(content: PassageContent) -> tuple[RenderedPassage, ...]:
+def render_passages(
+    content: PassageContent, *, recipe_version: int = RECIPE_VERSION
+) -> tuple[RenderedPassage, ...]:
     """Render labelled metadata once per passage with overlapping body windows.
 
     Metadata has a separate budget, so filenames cannot consume the entire
     description allowance. Every discarded input is reported via ``truncated``.
     """
+    if type(recipe_version) is not int or recipe_version not in (1, 2):
+        raise ValueError("search_recipe_unavailable")
     truncated = False
     lines: list[str] = []
     fields: tuple[tuple[str, str | tuple[str, ...]], ...] = (
@@ -112,6 +117,9 @@ def render_passages(content: PassageContent) -> tuple[RenderedPassage, ...]:
         ("Multipart Parts", content.parts),
         ("Model Choices", content.choices),
     )
+    if recipe_version == 2:
+        truncated |= len(content.caption) > 2048
+        fields += (("AI caption", content.caption[:2048]),)
     for label, raw in fields:
         if isinstance(raw, tuple):
             truncated |= len(raw) > MAX_FIELD_ITEMS
@@ -165,7 +173,7 @@ def render_passages(content: PassageContent) -> tuple[RenderedPassage, ...]:
             chunk_index=index,
             text=text[:MAX_PASSAGE_CHARS],
             content_hash=hashlib.sha256(
-                f"{RECIPE_VERSION}\0{text[:MAX_PASSAGE_CHARS]}".encode()
+                f"{recipe_version}\0{text[:MAX_PASSAGE_CHARS]}".encode()
             ).hexdigest(),
             truncated=truncated,
         )

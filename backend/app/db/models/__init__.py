@@ -38,6 +38,7 @@ from .capacity import CapacityAdmissionEvent as CapacityAdmissionEvent
 from .capacity import CapacityLock as CapacityLock
 from .capacity import CapacityReservation as CapacityReservation
 from .capacity import StorageInventorySample as StorageInventorySample
+from .captions import SubjectCaption as SubjectCaption
 from .identity import (
     ApiKey as ApiKey,
 )

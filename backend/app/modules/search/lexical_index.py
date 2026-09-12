@@ -13,6 +13,7 @@ from sqlalchemy import delete, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from app.db.derived_objects import SEARCH_FTS as FTS_NAME
@@ -171,9 +172,8 @@ def replace(
                 total_length=SearchLexicalState.total_length + length - old_length,
             )
         )
-    if not deleted:
-        row.token_count = length
-        session.add(row)
+    row.token_count = length
+    session.add(row)
     session.flush()
     if session.get_bind().dialect.name != "sqlite" or current.native_phase not in {
         "building",
@@ -213,7 +213,7 @@ def rebuild_partition(session: Session, *, limit: int = 64) -> int:
                 return 0
             rows = session.exec(
                 select(SearchPassage)
-                .where(SearchPassage.id > current.native_after_id)
+                .where(SearchPassage.id > current.native_after_id, canonical_passage())
                 .order_by(SearchPassage.id)
                 .limit(limit)
             ).all()
@@ -248,3 +248,20 @@ def capability(session: Session) -> str:
     except DBAPIError:
         return "ranked_like"
     return "fts5"
+
+
+def canonical_passage():
+    """Only the newest supported recipe per authorized segment enters BM25."""
+    newer = aliased(SearchPassage)
+    return (
+        ~select(newer.id)
+        .where(
+            newer.subject_type == SearchPassage.subject_type,
+            newer.subject_id == SearchPassage.subject_id,
+            newer.visibility_segment_key == SearchPassage.visibility_segment_key,
+            newer.recipe_version.in_((1, 2)),
+            newer.recipe_version > SearchPassage.recipe_version,
+        )
+        .correlate(SearchPassage)
+        .exists()
+    )

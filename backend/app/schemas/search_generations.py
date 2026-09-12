@@ -16,7 +16,7 @@ class GenerationProposal(BaseModel):
     aggregation: Literal["mean", "max"] = "mean"
     query_prefix: str | None = Field(default=None, max_length=256)
     document_prefix: str | None = Field(default=None, max_length=256)
-    passage_recipe_version: int = Field(default=1, ge=1)
+    passage_recipe_version: int | None = Field(default=None, ge=1, le=2)
     index_backend: Literal["auto", "numpy", "sqlite_vec", "pgvector"] = "auto"
     index_dimension: int | None = Field(default=None, ge=1, le=4096)
     quantization: Literal["float32", "int8", "binary"] = "float32"

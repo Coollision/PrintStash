@@ -22,7 +22,9 @@
   generation-aware cache pruning and real-model regression vectors. The search UI
   adds lexical suggestions, hybrid result pages, accessible evidence, and admin
   controls for endpoint secrets, model acquisition and index lifecycles. The
-  remaining AI Search stages are in development under #166.
+  remaining AI Search stages are in development under #166. Separate generated
+  captions add explicit render consent, editable/dismissible Model UI, durable
+  human-decision protections and caption-aware lexical/semantic passages.
 - PostgreSQL supports the existing backup API through verified portable snapshots.
   A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
   cyclic library references and native vector bytes without re-embedding.

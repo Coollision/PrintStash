@@ -290,7 +290,7 @@ targets; the separate human-labelled evaluation is still pending.
 
 W5 connects transactional content invalidation to durable embedding work and
 maintains distinct active/building text-prefix recipes. Coexistence of different
-passage-template versions remains tracked with the caption recipe work.
+passage-template versions is implemented by the caption v2 recipe below.
 The local text acquisition/runtime path is implemented. Candidate benchmarks,
 UI, visual profiles, captions, sparse expansion and natural-language filters
 remain in progress.
@@ -439,3 +439,43 @@ the pinned BGE weights locally. Tiny fixtures establish wiring and lifecycle
 behavior; real-model quality measurements are recorded separately in
 [the model study](ai-search-model-study.md). Visual retrieval, captions, structured
 NL filters and lexical expansion are still subsequent stages.
+
+
+## Separate captions (W11)
+
+Captions use an independently enabled image-capable chat endpoint and explicit
+permission to send rendered previews. A bounded background lane renders one
+384-pixel JPEG from a live Model's mesh, then requests a closed-schema caption.
+It never sends an original Artifact, human description, point cloud or query
+image. The endpoint can run on the same machine or on a configured remote host.
+Natural-language query parsing can remain disabled.
+
+`GET/PATCH /api/v1/subjects/{type}/{id}/caption` owns separately stored text for
+all four Subject types. VIEW permits reading; EDIT permits editing, dismissal
+and explicit generation/reset. Automatic generation currently requires a Model
+with a supported mesh preview; the other Subject types support separate manual
+caption text and report that no automatic preview is available. Model detail
+shows Generated/Edited/Dismissed labels and preserves the human description.
+
+A dismissal is a durable tombstone. Neither a sweep nor an endpoint/source
+change regenerates it. Edited text also survives automatic work. An explicit
+reset is the only generation action that replaces either decision. Version,
+source hash, current geometry, access and consent checks reject late results.
+Work uses durable 180-second leases, a 120-second operation budget and at most
+three attempts; retry state survives restart. Caption provenance includes the
+endpoint identity, model/revision, source hash, recipe digest and editor. The
+recipe covers media rendering, JPEG settings, instruction and output schema.
+Audit events record actions and versions without copying caption text.
+
+Passage recipe v1 retains its original hashes. Recipe v2 adds a separately
+labelled, bounded caption field. Both can coexist during semantic rebuilding;
+only the newest supported recipe per visibility segment enters lexical ranking
+and BM25 statistics. Edits/dismissals refresh passages and remove obsolete
+native/derived vectors in the same transaction. Existing semantic-text indexes
+receive one automatic v2 blue/green proposal, preserving the serving v1 index;
+an administrator's explicit rollback is respected. New text proposals select v2
+when captions exist or are enabled. There is no duplicate caption vector profile.
+
+Stage evidence is in [the coverage matrix](ai-search-coverage.md). The real HTTP
+workflow uses a local contract VLM server, so it validates payloads and lifecycle,
+not generated-caption quality.

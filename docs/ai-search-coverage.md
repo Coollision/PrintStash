@@ -53,8 +53,8 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A045 | falls back to the thumbnail profile when rendering is unavailable | Error | render capability off | profile degrades with a visible reason | Integration | ❌ missing |
 | A046 | embeds an uploaded query image without storing it | Error | image query | results returned; nothing written to storage | Integration | ❌ missing |
 | A047 | rejects an oversized or non-image query upload | Error | 50 MB / a zip | 413/415; no embedding attempted | Integration | ❌ missing |
-| A048 | keeps a machine caption out of the user description field | Edge | caption generated | `description` unchanged; caption in its own row | Integration | ❌ missing |
-| A049 | stops regenerating a dismissed caption | Edge | caption dismissed | not regenerated on the next pass | Integration | ❌ missing |
+| A048 | keeps a machine caption out of the user description field | Edge | caption generated | `description` unchanged; caption in its own row | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_generated_text_separate_from_human_description` |
+| A049 | stops regenerating a dismissed caption | Edge | caption dismissed | not regenerated on the next pass | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_dismissal_when_the_endpoint_changes` |
 | A050 | reaches labelled semantic retrieval quality | Happy | Modelo real preplaced o corpus vectorial real versionado | recall@5 hybrid >=0.9 y lexical >=0.6; critical | Integration | ✅ `integration/modules/search/retrieval/test_text_quality.py::TestTextQuality::test_measures_real_text_retrieval_quality` |
 | A051 | reaches visual recall on stripped descriptions | Happy | Modelo visual real y corpus held-out description-stripped | recall@10 >=0.7; critical | Integration | ❌ missing |
 | A052 | switches the model end to end with no search downtime | Happy | seeded library, model change | search answers throughout; new results after the flip (`critical`) | E2E | ❌ missing |
@@ -70,7 +70,7 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A062 | parses natural language into typed filters | Happy | benchy printed last month under 3 hours | Filtros de fecha/duración/outcome válidos más residual benchy | Integration | ❌ missing |
 | A063 | rejects a parsed field outside the filter vocabulary | Error | provider emits an unknown field | discarded; query still runs | Integration | ❌ missing |
 | A064 | keeps natural-language parsing off by default | Error | chat endpoint configured, switch untouched | no parse attempted; plain hybrid search | Integration | ❌ missing |
-| A065 | runs captions with natural-language parsing disabled | Edge | one generative use on, the other off | Caption generado sin invocar parsing de consultas | Integration | ❌ missing |
+| A065 | runs captions with natural-language parsing disabled | Edge | one generative use on, the other off | Caption generado sin invocar parsing de consultas | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_generated_text_separate_from_human_description` |
 | A066 | honours a per-user opt-out of query parsing | Error | user preference off, instance on | no parse for that user; others unaffected | Integration | ❌ missing |
 | A067 | retains_all_four_subject_types | Happy | Model/Collection/Multipart/Document | Resultados discriminados y autorizados por owner | Integration | ❌ missing |
 | A068 | indexes_every_model_context_field | Happy | Nombre/desc/tags/path/files/Revision/provenance; contexto opcional solo si está registrado | Passage contiene field list completa y autorizada de su receta, sin requerir Family | Integration | ❌ missing |
@@ -125,9 +125,9 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A117 | strips_query_image_exif | Edge | Foto con GPS/orientation | Provider recibe imagen orientada sin EXIF | Contract | ❌ missing |
 | A118 | avoids_query_upload_disk_spooling | Error | Multipart a través del proxy configurado | Sin archivo temporal persistido del upload | E2E | ❌ missing |
 | A119 | degrades_visual_only_to_ready_generation | Error | Pointcloud/multiview capability falla | Siguiente rung listo o texto con motivo real | Integration | ❌ missing |
-| A120 | preserves_edited_caption_on_worker_completion | Edge | Usuario edita durante llamada VLM | Caption humana editada no sobrescrita | Integration | ❌ missing |
-| A121 | removes_dismissed_caption_from_search | Edge | Dismiss de caption ya indexada | No contribuye a resultados posteriores | Integration | ❌ missing |
-| A122 | keeps_caption_disabled_by_default | Error | Chat endpoint configurado | No generación sin switch caption | Integration | ❌ missing |
+| A120 | preserves_edited_caption_on_worker_completion | Edge | Usuario edita durante llamada VLM | Caption humana editada no sobrescrita | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_fences_a_late_completion[edit]` |
+| A121 | removes_dismissed_caption_from_search | Edge | Dismiss de caption ya indexada | No contribuye a resultados posteriores | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_one_lexical_recipe_during_semantic_coexistence` |
+| A122 | keeps_caption_disabled_by_default | Error | Chat endpoint configurado | No generación sin switch caption | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_defaults_off_with_a_configured_endpoint` |
 | A123 | runs_nl_filters_with_caption_disabled | Happy | Solo NL habilitado | Parse funciona sin generar captions | Integration | ❌ missing |
 | A124 | filters_one_qualifying_print_job | Edge | Un job cumple fecha; otro duración | Model excluido si ninguno cumple conjunto | Integration | ❌ missing |
 | A125 | handles_print_date_timezone_boundaries | Edge | Mes pasado con DST y bordes de medianoche | Límites UTC de calendario correctos | Unit | ❌ missing |
@@ -675,3 +675,43 @@ and the deterministic design scan passed. Full branch coverage/security gates
 remain pending the remaining implementation stages. A broader, optional Pyright
 scan outside the repository's configured include list reported SQLModel typing
 and narrowing errors; it is not reported as a passing gate.
+
+### W11 — separate generated captions (implementation evidence)
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|----------------------|----------|----------------------|-----------------------------|------|--------|
+| CAP001 | preserves human descriptions during caption generation | Happy | Opted-in image chat endpoint; mesh Model with description | Caption in separate row; description unchanged | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_generated_text_separate_from_human_description` |
+| CAP002 | requires image-render consent before generation | Error | Chat configured but caption or image consent off | No render or outbound completion | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_rechecks_consent_after_rendering` |
+| CAP003 | contains malformed caption output | Error | Extra fields, oversized, empty or non-string caption | No partial caption; bounded retry status | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_bounds_invalid_output_retries` |
+| CAP004 | keeps dismissal durable across source or endpoint changes | Edge | Dismissed caption; later sweep | Tombstone survives; no regeneration | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_dismissal_when_the_endpoint_changes` |
+| CAP005 | protects an edit against late worker completion | Edge | User saves while VLM runs | Edited text retained; late response discarded | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_fences_a_late_completion[edit]` |
+| CAP006 | protects dismissal against late worker completion | Edge | User dismisses while VLM runs | Empty caption retained; late response discarded | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_fences_a_late_completion[dismiss]` |
+| CAP007 | rejects caption changes without Subject EDIT | Error | VIEW-only or hidden Subject | 403/404; no text or state mutation | Integration | ✅ `integration/api/v1/test_captions.py::TestCaptionAPI::test_enforces_subject_edit_permissions` |
+| CAP008 | regenerates caption Passages synchronously | Happy | Caption edited | New lexical match immediately; old native vector invalidated | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_one_lexical_recipe_during_semantic_coexistence` |
+| CAP009 | removes dismissed text from every current search leg | Edge | Previously indexed caption | No lexical or semantic match from dismissed caption | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_one_lexical_recipe_during_semantic_coexistence` |
+| CAP010 | preserves recipe-v1 identity alongside caption recipe-v2 | Edge | Active v1 index while v2 builds | Old hashes and readers valid; v2 includes caption | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_upgrades_active_text_to_caption_recipe` |
+| CAP011 | counts one lexical recipe per source segment | Edge | Both passage versions exist | No duplicate BM25 document or term counts | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_one_lexical_recipe_during_semantic_coexistence` |
+| CAP012 | fences changed geometry before caption publication | Edge | File hash or live state changes during completion | No stale caption publication | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_rejects_stale_source_completion` |
+| CAP013 | resumes expired caption leases after restart | Edge | Worker stops during inference | One bounded retry; duplicate publication prevented | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_reclaims_an_expired_lease_after_restart` |
+| CAP014 | bounds poison-caption retries | Error | Endpoint repeatedly fails | Three attempts then failed status; Model remains usable | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_bounds_remote_timeout_retries` |
+| CAP015 | runs captions independently from query parsing | Happy | Caption opt-in true; NL parsing false | Caption generated without parsing queries | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_generated_text_separate_from_human_description` |
+| CAP016 | labels edited or generated captions in the Model UI | Happy | Existing caption, en/es | Separate labelled text; authorized controls | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx — saves an edit with the displayed version; explains unavailable generation in Spanish` |
+| CAP017 | renders caption content as untrusted text | Error | HTML/script-like completion | Text visible; no executable markup | Frontend unit | ✅ `frontend/src/components/__tests__/subject-caption.test.tsx — shows text safely to a viewer without edit controls` |
+| CAP018 | edits and dismisses through the browser | Happy | Real Model and caption API | Edited text visible; dismissal removes search contribution | Playwright | ✅ `frontend/tests/e2e-real/ai-search/search.spec.ts — edits and dismisses a separately searchable caption` |
+| CAP019 | upgrades existing libraries without changing human content | Happy | Existing Models/Documents and configuration | Additive schema; rows retained through upgrade | Integration | ✅ `integration/db/migrations/test_captions_migration.py::TestCaptionMigration::test_preserves_existing_library_content` |
+| CAP020 | retains captions for all four Subject identities | Happy | Model, Collection, Multipart Model, Document | Separate typed caption rows; owner deletion cannot attach text to a reused ID | Integration | ✅ `integration/db/models/test_captions.py::TestSubjectCaption` |
+| CAP021 | sends a rendered preview through the real HTTP chat adapter | Happy | Real STL renderer, local contract VLM | Bounded 384px JPEG only; searchable separate caption; dismissal removes it | E2E | ✅ `e2e/test_search_captions.py::TestCaptionWorkflow::test_generates_a_searchable_caption_without_changing_human_text` |
+| CAP022 | coalesces duplicate generation requests | Edge | Same Subject/input/recipe requested twice | One row and unchanged version/lease | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_one_task_for_repeated_generation_requests` |
+| CAP023 | removes generated claims in the source transaction | Edge | Geometry hash changes | Caption text and lexical match disappear before regeneration | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_invalidates_generated_claims_when_geometry_changes` |
+| CAP024 | preserves PostgreSQL BM25 statistics across caption dismissal | Edge | Real PostgreSQL, v1+v2 passages | One document; caption match disappears; human match retained | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_indexes_one_caption_recipe_with_bm25` |
+
+| CAP025 | terminates a final expired lease after restart | Error | Third attempt interrupted | Failed status, no fourth inference call | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_finishes_an_exhausted_lease_after_restart` |
+
+W11 evidence: 70 backend regression tests passed together, with four additional
+freshness/idempotency/timeout tests passing separately; the final caption-owner
+suite passed all 25 tests, including exhausted-lease recovery. Core passage/recipe suite:
+44 passed. Caption UI: 5 passed; real-backend Playwright: 1 passed (desktop and
+mobile screenshots inspected). PostgreSQL caption check: 1 passed. Repository
+hygiene/migration checks: 3,484 passed. These are stage checks; full branch gates
+remain for final closure. The VLM end-to-end test uses a contract server and makes
+no claim about caption quality from an actual language model.

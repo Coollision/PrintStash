@@ -162,7 +162,7 @@ class TestSyncSubject:
         model = make_model("Dragon")
         subject = SearchSubject(SubjectType.MODEL, model.id)
         old = make_search_passage(
-            subject, recipe_version=RECIPE_VERSION + 1, text="Other recipe"
+            subject, recipe_version=RECIPE_VERSION + 2, text="Other recipe"
         )
 
         sync_subject(db_session, subject)

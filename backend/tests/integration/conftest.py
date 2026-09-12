@@ -75,6 +75,7 @@ from tests.factories.protocols import (
     MakeSimilarityObservation,
     MakeSimilarityRun,
     MakeStorageConnection,
+    MakeSubjectCaption,
     MakeSystemConfig,
     MakeUser,
     MakeVaultGeneration,
@@ -628,6 +629,11 @@ def make_search_passage(db_session: Session) -> MakeSearchPassage:
 
 
 @pytest.fixture
+def make_subject_caption(db_session: Session) -> MakeSubjectCaption:
+    return _bound(factories.build_subject_caption, db_session)
+
+
+@pytest.fixture
 def make_inference_endpoint(db_session: Session) -> MakeInferenceEndpoint:
     return _bound(factories.build_inference_endpoint, db_session)
 
@@ -652,6 +658,7 @@ __all__ += [
     "make_index_generation",
     "make_passage_vector",
     "make_search_passage",
+    "make_subject_caption",
 ]
 
 

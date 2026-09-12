@@ -353,11 +353,13 @@ async def lifespan(app: FastAPI):
     from app.db.projections import bind_content_projection
     from app.modules.search.lexical_query import LibrarySearch
     from app.modules.search.projection import LibraryProjection
+    from app.runtime.captions import run_captions
     from app.runtime.search import run_search
 
     previous_search = bind_content_search(LibrarySearch())
     previous_projection = bind_content_projection(LibraryProjection())
     app.state.search_task = asyncio.create_task(run_search())
+    app.state.captions_task = asyncio.create_task(run_captions())
     printer_provider_registry = build_provider_registry()
     app.state.printer_provider_registry = printer_provider_registry
     provider_builder = partial(get_provider_client, registry=printer_provider_registry)
@@ -409,6 +411,7 @@ async def lifespan(app: FastAPI):
     logger.info("shutting down printer hub")
     await _cancel_tasks(
         app.state.search_task,
+        app.state.captions_task,
         app.state.gc_task,
         app.state.external_scan_task,
         app.state.automatic_backup_task,

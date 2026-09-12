@@ -227,3 +227,40 @@ class TestSearchPassages:
             assert [
                 row.subject_id for row in search(session, viewer, "Assembly").items
             ] == [aggregate.id]
+
+    def test_indexes_one_caption_recipe_with_bm25(self, passage_engine):
+        from app.db.models import SearchLexicalState
+        from app.modules.search.captions import patch
+        from app.modules.search.lexical_index import rebuild_partition
+        from app.modules.search.lexical_query import ordered_passages
+        from app.schemas.captions import CaptionPatch
+        from tests.factories import build_subject_caption, build_user
+
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            actor = build_user(session, superuser=True)
+            model = build_model(session, "Human title")
+            subject = SearchSubject(SubjectType.MODEL, model.id)
+            build_subject_caption(
+                session, subject, state="edited", text="Zygomatic mount"
+            )
+            sync_subject(session, subject)
+            rebuild_partition(session)
+            session.commit()
+            allowed = select(SearchPassage.id)
+            assert (
+                len(session.exec(ordered_passages(session, "zygomatic", allowed)).all())
+                == 1
+            )
+            assert (
+                len(session.exec(ordered_passages(session, "human", allowed)).all())
+                == 1
+            )
+            assert session.get(SearchLexicalState, 1).document_count == 1
+            patch(session, actor, subject, CaptionPatch(action="dismiss"))
+            assert (
+                session.exec(ordered_passages(session, "zygomatic", allowed)).all()
+                == []
+            )
+            assert session.get(SearchLexicalState, 1).document_count == 1

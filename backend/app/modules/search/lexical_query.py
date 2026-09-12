@@ -23,7 +23,7 @@ from app.db.models import (
     SearchLexicalTerm,
     SearchPassage,
 )
-from app.modules.search.lexical_index import capability
+from app.modules.search.lexical_index import canonical_passage, capability
 
 
 def escaped_like(value: str) -> str:
@@ -53,6 +53,9 @@ def ranked_like(query: str, allowed_ids):
 def ranked_statement(
     session: Session, query: str, allowed_ids, *, force_like: bool = False
 ):
+    allowed_ids = select(SearchPassage.id).where(
+        SearchPassage.id.in_(allowed_ids), canonical_passage()
+    )
     terms = query_terms(query)
     backend = "ranked_like" if force_like else capability(session)
     if not query.strip():

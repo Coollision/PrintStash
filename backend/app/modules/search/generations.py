@@ -32,6 +32,8 @@ from app.db.models import (
     SearchIndexFailure,
     SearchPassage,
     SearchReconciliationState,
+    SubjectCaption,
+    SystemConfig,
     User,
 )
 from app.db.session import get_session_factory
@@ -364,6 +366,12 @@ def prepare(
 
 def proposal_space(session: Session, proposal: GenerationProposal) -> Space:
     """Resolve an immutable proposal without inference, jobs or database writes."""
+    passage_version = proposal.passage_recipe_version or (
+        2
+        if configuration.settings(session).captions_enabled
+        or session.exec(select(SubjectCaption.id).limit(1)).first() is not None
+        else 1
+    )
     if proposal.local_model_id:
         from app.modules.inference import model_cache
         from app.modules.inference.manifest import (
@@ -398,7 +406,7 @@ def proposal_space(session: Session, proposal: GenerationProposal) -> Space:
         original = model.manifest.space()
         recipe = replace(
             TextRecipe.for_space(original),
-            passage_version=proposal.passage_recipe_version,
+            passage_version=passage_version,
         )
         space = replace(
             original,
@@ -418,7 +426,7 @@ def proposal_space(session: Session, proposal: GenerationProposal) -> Space:
     model_capabilities = capabilities_for_identity(
         endpoint.model_repo, endpoint.revision, endpoint_row.native_dimension
     )
-    recipe = TextRecipe(proposal.passage_recipe_version, endpoint.max_input_characters)
+    recipe = TextRecipe(passage_version, endpoint.max_input_characters)
     space = Space(
         model_key=endpoint.model,
         model_revision=endpoint.revision,
@@ -765,4 +773,85 @@ def prune_one(session: Session) -> bool:
     session.commit()
     if not ids and row.reservation_id:
         CapacityManager(get_session_factory()).release(row.reservation_id)
+    return True
+
+
+def ensure_caption_recipe(session: Session) -> bool:
+    """One automatic v2 blue/green proposal; failed builds remain reviewable.
+
+    Existing v1 vectors keep serving. An explicit administrator rollback is
+    respected: a previous v2 proposal prevents repeated automatic proposals.
+    """
+    config = session.get(SystemConfig, 1)
+    if config is None or not configuration.settings(session).enabled:
+        return False
+    if (
+        not configuration.settings(session).captions_enabled
+        and session.exec(select(SubjectCaption.id).limit(1)).first() is None
+    ):
+        return False
+    generations = (
+        select(IndexGeneration)
+        .join(EmbeddingSpace)
+        .where(EmbeddingSpace.profile == "semantic_text")
+    )
+    if (
+        session.exec(
+            generations.where(
+                (IndexGeneration.state == "building")
+                | EmbeddingSpace.recipe_json.contains('"passage_version":2')
+            ).limit(1)
+        ).first()
+        is not None
+    ):
+        return False
+    active = session.exec(
+        generations.where(IndexGeneration.state == "active").limit(1)
+    ).first()
+    if active is None:
+        return False
+    actor_id = config.ai_search_configured_by or active.actor_id
+    actor = session.get(User, actor_id) if actor_id else None
+    if actor is None or not actor.is_active or not actor.is_superuser:
+        return False
+    space = contract(session, active)
+    provider = {}
+    if space.provider == "onnx_cpu":
+        if not configuration.settings(session).local_models_enabled:
+            return False
+        from app.modules.inference import model_cache
+
+        recipe = TextRecipe.for_space(space)
+        model = next(
+            (
+                entry
+                for entry in model_cache.inventory()
+                if entry.manifest.space().modality == "text"
+                and TextRecipe.for_space(entry.manifest.space()).encoder_manifest_sha256
+                == recipe.encoder_manifest_sha256
+            ),
+            None,
+        )
+        if model is None:
+            return False
+        provider["local_model_id"] = model.id
+    else:
+        endpoint = session.exec(
+            select(InferenceEndpoint).where(
+                InferenceEndpoint.config_hash == space.provider_config_hash
+            )
+        ).first()
+        if endpoint is None:
+            return False
+        provider["endpoint_id"] = endpoint.id
+    proposal = GenerationProposal(
+        **provider,
+        passage_recipe_version=2,
+        query_prefix=space.query_prefix,
+        document_prefix=space.document_prefix,
+        index_backend=active.index_backend,
+        index_dimension=active.index_dimension,
+        quantization=active.quantization,
+    )
+    prepare(session, actor, proposal)
     return True
