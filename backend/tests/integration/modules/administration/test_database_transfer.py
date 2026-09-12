@@ -95,6 +95,81 @@ def databases(tmp_path):
 
 
 class TestDatabaseTransfer:
+    def test_refuses_unknown_tables_in_a_transfer_destination(self, databases):
+        source, target, *_ = databases
+        with target.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE unknown_table (id INTEGER PRIMARY KEY)"
+            )
+
+        with pytest.raises(
+            DatabaseTransferError, match="database_transfer_target_schema_unknown"
+        ):
+            transfer(source, target, dry_run=False)
+
+        assert inspect(target).get_table_names() == ["unknown_table"]
+
+    @pytest.mark.parametrize(
+        "operation,batch",
+        [("transfer", 0), ("transfer", 1025), ("snapshot", 0), ("snapshot", 1025)],
+    )
+    def test_refuses_invalid_transfer_batches(self, databases, operation, batch):
+        from app.modules.administration.database_transfer import snapshot_postgres
+
+        source, target, *_ = databases
+        operation_call, left, right = (
+            (transfer, source, target)
+            if operation == "transfer"
+            else (snapshot_postgres, target, source)
+        )
+
+        with pytest.raises(
+            DatabaseTransferError, match="database_transfer_batch_invalid"
+        ):
+            operation_call(left, right, batch_size=batch)
+
+        assert inspect(target).get_table_names() == []
+
+    @pytest.mark.parametrize("operation", ["transfer", "snapshot"])
+    def test_refuses_unsupported_transfer_dialects(self, databases, operation):
+        from app.modules.administration.database_transfer import snapshot_postgres
+
+        source, target, *_ = databases
+        operation_call = transfer if operation == "transfer" else snapshot_postgres
+
+        with pytest.raises(
+            DatabaseTransferError, match="database_transfer_dialects_invalid"
+        ):
+            operation_call(source, source)
+
+        assert inspect(target).get_table_names() == []
+
+    @pytest.mark.parametrize(
+        "change,code",
+        [
+            (
+                "CREATE TABLE unknown_table (id INTEGER PRIMARY KEY)",
+                "database_transfer_source_schema_unknown",
+            ),
+            (
+                "UPDATE alembic_version SET version_num='0118'",
+                "database_transfer_source_upgrade_required",
+            ),
+        ],
+        ids=["unknown-table", "old-schema"],
+    )
+    def test_refuses_unknown_or_outdated_transfer_sources(
+        self, databases, change, code
+    ):
+        source, target, *_ = databases
+        with source.begin() as connection:
+            connection.exec_driver_sql(change)
+
+        with pytest.raises(DatabaseTransferError, match=code):
+            transfer(source, target, dry_run=False)
+
+        assert inspect(target).get_table_names() == []
+
     @pytest.mark.parametrize("quantization", ["int8", "binary"])
     def test_copies_compressed_generations_between_databases(
         self, databases, monkeypatch, quantization

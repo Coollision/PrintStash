@@ -51,6 +51,145 @@ def proposal(model, **kwargs):
 
 
 class TestVisualIndex:
+    def test_ignores_visual_legs_for_nonmodel_queries(
+        self, db_session, visual_setup, advance_generation
+    ):
+        from printstash_core.search.passages import SubjectType
+
+        from app.modules.search import semantic, visual_query
+
+        actor, encoder, _, _ = visual_setup
+        generation = generations.prepare(db_session, actor, proposal(encoder))
+        advance_generation(generation.id)
+        leg = next(
+            leg
+            for leg in semantic.registry(db_session, configuration.settings(db_session))
+            if leg.name == "multiview"
+        )
+
+        result = visual_query.retrieve(
+            db_session,
+            actor.id,
+            actor.auth_version,
+            "bracket",
+            leg,
+            types=(SubjectType.DOCUMENT,),
+        )
+
+        assert result.available is True
+        assert result.visual_matches == ()
+
+    def test_refuses_remote_endpoints_for_visual_input(
+        self, db_session, visual_setup, advance_generation
+    ):
+        from dataclasses import replace
+
+        from printstash_core.search.passages import SubjectType
+
+        from app.modules.search import semantic, visual_query
+
+        actor, encoder, _, _ = visual_setup
+        generation = generations.prepare(db_session, actor, proposal(encoder))
+        advance_generation(generation.id)
+        leg = next(
+            leg
+            for leg in semantic.registry(db_session, configuration.settings(db_session))
+            if leg.name == "multiview"
+        )
+        leg = replace(leg, space=replace(leg.space, provider="openai_compatible"))
+
+        result = visual_query.retrieve(
+            db_session,
+            actor.id,
+            actor.auth_version,
+            "bracket",
+            leg,
+            types=tuple(SubjectType),
+        )
+
+        assert result.available is False
+        assert result.error_code == "embedding_image_unavailable"
+
+    def test_refuses_incomplete_visual_worker_batches(self, db_session, visual_setup):
+        from printstash_core.inference import EmbeddingError
+
+        actor, encoder, _, _ = visual_setup
+        generations.prepare(db_session, actor, proposal(encoder))
+        generation_id, token = indexing.claim(db_session)
+        source = visual_index.pending(
+            db_session, db_session.get(IndexGeneration, generation_id)
+        )
+
+        with pytest.raises(EmbeddingError, match="embedding_view_count_mismatch"):
+            visual_index.publish(
+                db_session,
+                generation_id,
+                token,
+                source,
+                ((1.0, 0, 0),) * 5,
+                (1.0, 0, 0),
+            )
+
+        assert db_session.exec(select(PassageVector)).all() == []
+
+    def test_discards_stale_visual_worker_failures(self, db_session, visual_setup):
+        actor, encoder, _, file = visual_setup
+        generations.prepare(db_session, actor, proposal(encoder))
+        generation_id, token = indexing.claim(db_session)
+        source = visual_index.pending(
+            db_session, db_session.get(IndexGeneration, generation_id)
+        )
+        file.sha256 = "e" * 64
+        db_session.add(file)
+        db_session.commit()
+
+        visual_index.record_failure(
+            db_session, generation_id, token, source, "embedding_render_failed"
+        )
+
+        assert db_session.exec(select(SearchIndexFailure)).all() == []
+
+    def test_sanitizes_visual_failure_details(self, db_session, visual_setup):
+        actor, encoder, _, _ = visual_setup
+        generations.prepare(db_session, actor, proposal(encoder))
+        generation_id, token = indexing.claim(db_session)
+        source = visual_index.pending(
+            db_session, db_session.get(IndexGeneration, generation_id)
+        )
+
+        visual_index.record_failure(
+            db_session, generation_id, token, source, "/private/render-path"
+        )
+
+        assert (
+            db_session.exec(select(SearchIndexFailure)).one().error_code
+            == "embedding_render_failed"
+        )
+
+    def test_retrieves_visual_matches_from_a_valid_image_upload(
+        self, client, db_session, visual_setup, advance_generation
+    ):
+        from PIL import Image
+
+        from tests.factories import bearer
+
+        actor, encoder, model, _ = visual_setup
+        generation = generations.prepare(db_session, actor, proposal(encoder))
+        advance_generation(generation.id)
+        body = io.BytesIO()
+        Image.new("RGB", (32, 32), "gray").save(body, "PNG")
+
+        response = client.post(
+            "/api/v1/search/image",
+            headers=bearer(actor) | {"Content-Type": "image/png"},
+            content=body.getvalue(),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.headers["Cache-Control"] == "no-store"
+        assert response.json()["items"][0]["subject_id"] == model.id
+        assert response.json()["items"][0]["evidence"]
+
     def test_respects_an_independent_consumers_render_permit(
         self, db_session, visual_setup, monkeypatch
     ):

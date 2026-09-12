@@ -53,6 +53,24 @@ def delayed_model(warm_model, monkeypatch, tmp_path):
 
 
 class TestModelWarmup:
+    @pytest.mark.parametrize("invalid", ["metadata", "stopped"])
+    def test_skips_unusable_active_models(self, db_session, warm_model, invalid):
+        from app.db.models import EmbeddingSpace
+
+        _, generation = warm_model
+        processor = ModelWarmup(get_session_factory())
+        if invalid == "stopped":
+            processor.stop()
+        else:
+            stored = db_session.get(EmbeddingSpace, generation.space_id)
+            stored.config_json = "{"
+            db_session.add(stored)
+            db_session.commit()
+        try:
+            assert processor.work_one() is False
+        finally:
+            processor.stop()
+
     def test_preserves_the_loader_during_cold_queries(self, db_session, delayed_model):
         processor, provider, entered, release, processes = delayed_model
         runner = QueryRunner()

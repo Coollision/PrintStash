@@ -31,6 +31,72 @@ def installed(cache):
 
 
 class TestModelCache:
+    @pytest.mark.parametrize("create", [False, True], ids=["open", "create"])
+    def test_rejects_a_file_in_place_of_the_cache(self, tmp_path, create):
+        path = tmp_path / "cache"
+        path.write_text("preserve")
+
+        with pytest.raises(EmbeddingError, match="embedding_cache_unavailable"):
+            model_cache.safe_directory(path, create=create)
+
+        assert path.read_text() == "preserve"
+
+    @pytest.mark.parametrize(
+        "body",
+        [b"{}", b"[]", b"{", b"x" * (256 * 1024 + 1)],
+        ids=["missing-key", "wrong-shape", "invalid-json", "oversized"],
+    )
+    def test_rejects_invalid_cached_manifests(self, cache, body):
+        (cache / "manifest.json").write_bytes(body)
+
+        with pytest.raises(
+            EmbeddingError, match="embedding_manifest_(invalid|unavailable)"
+        ):
+            model_cache.inspect(cache)
+
+        assert (cache / "manifest.json").read_bytes() == body
+
+    def test_bounds_the_model_inventory(self, cache):
+        directories = [cache / str(index) for index in range(65)]
+        [directory.mkdir() for directory in directories]
+
+        with pytest.raises(EmbeddingError, match="embedding_cache_entry_limit"):
+            model_cache.inventory()
+
+        assert all(directory.is_dir() for directory in directories)
+
+    def test_bounds_files_during_capacity_calculation(self, db_session, cache):
+        staging = cache / ".staging"
+        staging.mkdir()
+        files = [staging / str(index) for index in range(1025)]
+        [path.touch() for path in files]
+
+        with pytest.raises(EmbeddingError, match="embedding_cache_entry_limit"):
+            model_cache.make_room(db_session, 1)
+
+        assert all(path.exists() for path in files)
+
+    def test_refuses_cache_symlinks_during_capacity_calculation(
+        self, db_session, cache, tmp_path
+    ):
+        outside = tmp_path / "outside"
+        outside.write_text("preserve")
+        (cache / ".unknown").symlink_to(outside)
+
+        with pytest.raises(EmbeddingError, match="embedding_cache_path_invalid"):
+            model_cache.make_room(db_session, 1)
+
+        assert outside.read_text() == "preserve"
+
+    def test_bounds_waiting_for_a_pinned_model_cache(self, cache):
+        with model_cache.cache_lock(exclusive=True):
+            with pytest.raises(EmbeddingError, match="embedding_compute_busy"):
+                with model_cache.cache_lock():
+                    pytest.fail("a reader cannot acquire an exclusively held cache")
+
+        with model_cache.cache_lock() as root:
+            assert root == cache
+
     def test_discovers_preplaced_models_offline(self, installed):
         model = model_cache.verify(installed.id)
         assert model.manifest.model_key == "text-contract"

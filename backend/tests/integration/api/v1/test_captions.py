@@ -9,6 +9,28 @@ from tests.factories import bearer
 
 class TestCaptionAPI:
     @pytest.mark.parametrize(
+        "payload",
+        [
+            {"action": "edit"},
+            {"action": "edit", "text": " \n\t"},
+            {"action": "dismiss", "text": "unexpected"},
+            {"action": "reset", "text": "unexpected"},
+            {"action": "generate", "text": "unexpected"},
+        ],
+    )
+    def test_rejects_inconsistent_edits(
+        self, client, db_session, make_model, auth_headers, payload
+    ):
+        model = make_model()
+        response = client.patch(
+            f"/api/v1/subjects/model/{model.id}/caption",
+            headers=auth_headers,
+            json=payload,
+        )
+        assert response.status_code == 422, response.text
+        assert db_session.exec(select(SubjectCaption)).all() == []
+
+    @pytest.mark.parametrize(
         "kind", ["model", "collection", "multipart_model", "document"]
     )
     def test_enforces_subject_edit_permissions(

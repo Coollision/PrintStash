@@ -8,6 +8,30 @@ from tests.factories.embeddings import text_embedding_assets
 
 
 class TestInferenceModels:
+    def test_removes_an_unreferenced_local_model(
+        self, client, auth_headers, tmp_path, monkeypatch
+    ):
+        directory = text_embedding_assets(tmp_path / "cache" / "preplaced")
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", directory.parent)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        identity = model_cache.inspect(directory).id
+
+        response = client.delete(
+            f"/api/v1/inference/models/{identity}", headers=auth_headers
+        )
+
+        assert response.status_code == 204, response.text
+        assert not directory.exists()
+        assert model_cache.inventory() == ()
+
+    def test_rejects_validation_of_a_missing_local_model(self, client, auth_headers):
+        response = client.post(
+            f"/api/v1/inference/models/{'f' * 64}/validate", headers=auth_headers
+        )
+
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "embedding_model_not_found"
+
     def test_curated_visual_catalog_pins_the_complete_encoder(
         self, client, auth_headers
     ):

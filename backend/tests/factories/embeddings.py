@@ -117,6 +117,56 @@ def local_embedding_assets(directory: Path, *, family: str = "clip") -> Path:
     return directory
 
 
+def onnx_external_tensor_graph(container: str) -> bytes:
+    """Hostile tensor locations for the pure graph admission contract."""
+    import onnx
+    from onnx import TensorProto, helper
+
+    tensor = helper.make_tensor("external", TensorProto.FLOAT, [1], [1])
+    tensor.ClearField("float_data")
+    tensor.data_location = TensorProto.EXTERNAL
+    tensor.external_data.add(key="location", value="/private/must-not-be-read.bin")
+    sparse = onnx.SparseTensorProto()
+    sparse.values.CopyFrom(tensor)
+    sparse.indices.CopyFrom(helper.make_tensor("indices", TensorProto.INT64, [1], [0]))
+    sparse.dims.append(1)
+    graph = helper.make_graph([], "untrusted", [], [])
+    if container == "initializer":
+        graph.initializer.append(tensor)
+    elif container == "sparse_initializer":
+        graph.sparse_initializer.append(sparse)
+    else:
+        attribute = onnx.AttributeProto(name="untrusted")
+        if container in ("graph", "graphs"):
+            child = helper.make_graph([], "nested", [], [], [tensor])
+            if container == "graph":
+                attribute.type = onnx.AttributeProto.GRAPH
+                attribute.g.CopyFrom(child)
+            else:
+                attribute.type = onnx.AttributeProto.GRAPHS
+                attribute.graphs.append(child)
+        elif container == "tensor":
+            attribute.type = onnx.AttributeProto.TENSOR
+            attribute.t.CopyFrom(tensor)
+        elif container == "tensors":
+            attribute.type = onnx.AttributeProto.TENSORS
+            attribute.tensors.append(tensor)
+        elif container == "sparse_tensor":
+            attribute.type = onnx.AttributeProto.SPARSE_TENSOR
+            attribute.sparse_tensor.CopyFrom(sparse)
+        elif container == "sparse_tensors":
+            attribute.type = onnx.AttributeProto.SPARSE_TENSORS
+            attribute.sparse_tensors.append(sparse)
+        else:
+            raise ValueError("unknown_tensor_container")
+        node = helper.make_node("Identity", [], [])
+        node.attribute.append(attribute)
+        graph.node.append(node)
+    return helper.make_model(
+        graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=9
+    ).SerializeToString()
+
+
 def text_embedding_assets(directory: Path, *, pooling: str = "cls") -> Path:
     """Original CC0 token embeddings expose pooling and mask errors explicitly."""
     import numpy as np

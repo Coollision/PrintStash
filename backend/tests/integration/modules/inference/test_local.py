@@ -20,6 +20,60 @@ def assets(tmp_path):
 
 
 class TestLocalProvider:
+    @pytest.mark.parametrize("threads", [0, 5], ids=["zero", "over-cap"])
+    def test_refuses_invalid_local_thread_budgets(self, db_session, assets, threads):
+        with pytest.raises(EmbeddingError, match="embedding_thread_budget_invalid"):
+            LocalEmbeddingProvider(
+                get_session_factory(), assets, "two-tower-contract", threads
+            )
+
+    @pytest.mark.parametrize(
+        "mode, code",
+        [
+            ("json", "embedding_output_invalid"),
+            ("identity", "embedding_output_mismatch"),
+            ("vectors", "embedding_output_mismatch"),
+            ("truncations", "embedding_output_mismatch"),
+            ("oversized", "embedding_output_budget"),
+            ("trailing", "embedding_output_invalid"),
+            ("exit", "embedding_inference_failed"),
+        ],
+    )
+    def test_rejects_malformed_native_worker_replies(
+        self, db_session, assets, monkeypatch, mode, code
+    ):
+        import subprocess
+        import sys
+
+        from app.modules.inference.worker_pool import pool
+        from tests.fakes import faulty_embedding_worker
+
+        provider = LocalEmbeddingProvider(
+            get_session_factory(), assets, "two-tower-contract", 1
+        )
+        monkeypatch.setattr(
+            provider,
+            "_spawn",
+            lambda: subprocess.Popen(
+                [sys.executable, faulty_embedding_worker.__file__, mode],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            ),
+        )
+
+        try:
+            with pytest.raises(EmbeddingError, match=code):
+                provider.embed((EmbeddingInput("text", text="red"),), provider.space)
+        finally:
+            pool.close()
+
+        db_session.expire_all()
+        assert all(
+            row.lease_token is None
+            for row in db_session.exec(select(ThumbnailRenderSlot))
+        )
+
     def test_yields_background_admission_to_waiting_queries(
         self, db_session, assets, monkeypatch
     ):

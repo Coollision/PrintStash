@@ -1,6 +1,7 @@
 """Pinned model-file protocol over a real TLS socket, with controlled faults."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,6 +18,7 @@ class ModelHost:
     entry: RegistryEntry
     fault: str | None = None
     calls: list[str] = field(default_factory=list)
+    before_reply: Callable[[], None] | None = None
 
     @classmethod
     def from_directory(cls, directory: Path):
@@ -39,6 +41,8 @@ class ModelHost:
         @app.get("/{repository:path}/resolve/{revision}/{filename}")
         def download(repository: str, revision: str, filename: str):
             self.calls.append(filename)
+            if self.before_reply is not None:
+                self.before_reply()
             if (
                 repository != self.entry.manifest.repository
                 or revision != self.entry.manifest.model_revision

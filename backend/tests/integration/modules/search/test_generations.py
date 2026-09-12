@@ -41,7 +41,92 @@ def retired_vector_batch(
     return generation
 
 
+@pytest.fixture
+def local_caption_upgrade(db_session, warm_model, make_user, make_model):
+    from app.modules.search import captions
+    from app.schemas.captions import CaptionPatch
+
+    model, generation = warm_model
+    actor = make_user(superuser=True)
+    subject = SearchSubject(SubjectType.MODEL, make_model("Captioned bracket").id)
+    configuration.update(
+        db_session,
+        SearchSettings(enabled=True, local_models_enabled=True),
+        actor_id=actor.id,
+    )
+    captions.patch(
+        db_session, actor, subject, CaptionPatch(action="edit", text="Mounting bracket")
+    )
+    db_session.commit()
+    return actor, model, generation
+
+
+class TestEnsureCaptionRecipe:
+    def test_upgrades_an_active_local_text_generation_for_captions(
+        self, db_session, local_caption_upgrade
+    ):
+        from app.modules.search.text_inputs import TextRecipe
+
+        _, _, previous = local_caption_upgrade
+
+        assert generations.ensure_caption_recipe(db_session) is True
+        assert generations.ensure_caption_recipe(db_session) is False
+
+        rows = db_session.exec(
+            select(IndexGeneration).order_by(IndexGeneration.id)
+        ).all()
+        assert [(row.id, row.state) for row in rows[:1]] == [(previous.id, "active")]
+        assert len(rows) == 2
+        assert rows[1].state == "building"
+        assert (
+            TextRecipe.for_space(
+                generations.contract(db_session, rows[1])
+            ).passage_version
+            == 2
+        )
+
+    @pytest.mark.parametrize(
+        "missing", ["local-consent", "model", "actor", "active-generation"]
+    )
+    def test_defers_a_local_caption_upgrade_without_its_prerequisites(
+        self, db_session, local_caption_upgrade, missing
+    ):
+        actor, model, previous = local_caption_upgrade
+        if missing == "local-consent":
+            configuration.update(
+                db_session,
+                SearchSettings(enabled=True, local_models_enabled=False),
+                actor_id=actor.id,
+            )
+        elif missing == "model":
+            (model.directory / "manifest.json").unlink()
+        elif missing == "actor":
+            actor.is_active = False
+            db_session.add(actor)
+        else:
+            previous.state = "retired"
+            db_session.add(previous)
+        db_session.commit()
+
+        assert generations.ensure_caption_recipe(db_session) is False
+
+        assert db_session.exec(select(IndexGeneration.id)).all() == [previous.id]
+
+
 class TestPrepare:
+    @pytest.mark.parametrize("profile", ["thumbnail", "multiview", "point_cloud"])
+    def test_rejects_incompatible_generation_modalities(
+        self, db_session, warm_model, profile
+    ):
+        model, _ = warm_model
+
+        with pytest.raises(OperationError, match="embedding_alignment_unavailable"):
+            generations.proposal_space(
+                db_session, GenerationProposal(local_model_id=model.id, profile=profile)
+            )
+
+        assert len(db_session.exec(select(IndexGeneration)).all()) == 1
+
     def test_admits_a_small_logical_index_budget(self, db_session, generation_setup):
         actor, endpoint = generation_setup
         configuration.update(

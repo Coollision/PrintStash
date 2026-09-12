@@ -1,5 +1,6 @@
 """Human actions fence late VLM results and synchronously invalidate search."""
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -49,6 +50,86 @@ def caption_setup(
 
 
 class TestCaptions:
+    def test_fails_queued_captions_whose_source_was_trashed(
+        self, db_session, caption_setup
+    ):
+        actor, subject, file, _ = caption_setup
+        captions.patch(db_session, actor, subject, CaptionPatch(action="generate"))
+        file.deleted_at = utcnow()
+        db_session.add(file)
+        db_session.commit()
+        provider = CaptionProvider()
+
+        assert (
+            CaptionProcessor(
+                get_session_factory(),
+                provider_factory=lambda *_: provider,
+                image_renderer=rendered_preview,
+            ).work_one()
+            is True
+        )
+
+        db_session.expire_all()
+        row = captions.lookup(db_session, subject)
+        assert (row.phase, row.error_code, row.text) == (
+            "failed",
+            "caption_source_changed",
+            "",
+        )
+        assert provider.requests == []
+
+    def test_records_unexpected_caption_renderer_failures_safely(
+        self, db_session, caption_setup
+    ):
+        actor, subject, _, _ = caption_setup
+        provider = CaptionProvider()
+
+        def broken_renderer(*_args):
+            raise RuntimeError("private-render-path")
+
+        result = CaptionProcessor(
+            get_session_factory(),
+            provider_factory=lambda *_: provider,
+            image_renderer=broken_renderer,
+        ).work_one()
+
+        assert result is True
+        db_session.expire_all()
+        caption = captions.read(db_session, actor, subject)
+        assert (caption.phase, caption.error_code, caption.text) == (
+            "pending",
+            "caption_generation_failed",
+            "",
+        )
+        assert provider.requests == []
+
+    def test_finishes_exhausted_durable_caption_jobs(self, db_session, caption_setup):
+        from app.db.models import BackgroundJob
+        from app.runtime.jobs import registry
+
+        actor, subject, _, _ = caption_setup
+        captions.patch(db_session, actor, subject, CaptionPatch(action="generate"))
+        row = captions.lookup(db_session, subject)
+        job_id = registry.create(actor.id, kind="ai_caption", session=db_session)
+        row.job_id = job_id
+        row.phase, row.attempts, row.lease_token = "running", 3, "a" * 32
+        row.lease_expires_at = utcnow() - timedelta(seconds=1)
+        db_session.add(row)
+        db_session.commit()
+
+        assert not CaptionProcessor(get_session_factory()).work_one()
+
+        db_session.expire_all()
+        assert (
+            captions.read(db_session, actor, subject).error_code
+            == "caption_attempts_exhausted"
+        )
+        job = db_session.get(BackgroundJob, job_id)
+        assert (job.state, json.loads(job.status_json)["error"]) == (
+            "failed",
+            "caption_attempts_exhausted",
+        )
+
     def test_fences_caption_egress_after_actor_loss(self, db_session, caption_setup):
         from app.db.models import User
 

@@ -30,6 +30,15 @@ def embedding_endpoint():
 
 
 class TestCreateEndpoint:
+    def test_rejects_an_unconfigured_environment_import(self, client, auth_headers):
+        response = client.post(
+            "/api/v1/config/ai-search/endpoints/from-environment/embedding",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "inference_environment_unconfigured"
+
     def test_preserves_endpoint_credentials_when_editing_model(
         self, client, auth_headers, embedding_endpoint, db_session
     ):
@@ -318,9 +327,36 @@ class TestReadSettings:
 
 
 class TestUpdateSettings:
-    def test_audits_search_policy_changes(
-        self, client, db_session, make_user
+    @pytest.mark.parametrize("kind", ["missing", "embedding"])
+    def test_rejects_an_unusable_chat_endpoint(
+        self, client, auth_headers, make_inference_endpoint, kind
     ):
+        endpoint_id = make_inference_endpoint().id if kind == "embedding" else 999999
+        response = client.put(
+            "/api/v1/config/ai-search",
+            headers=auth_headers,
+            json={"chat_endpoint_id": endpoint_id},
+        )
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "inference_chat_unavailable"
+        saved = client.get("/api/v1/config/ai-search", headers=auth_headers)
+        assert saved.json()["settings"]["chat_endpoint_id"] is None
+
+    def test_rejects_an_unavailable_sparse_model(self, client, auth_headers):
+        response = client.put(
+            "/api/v1/config/ai-search",
+            headers=auth_headers,
+            json={
+                "local_models_enabled": True,
+                "sparse_expansion_enabled": True,
+                "sparse_model_id": "f" * 64,
+            },
+        )
+        assert response.status_code == 400, response.text
+        saved = client.get("/api/v1/config/ai-search", headers=auth_headers)
+        assert saved.json()["settings"]["sparse_expansion_enabled"] is False
+
+    def test_audits_search_policy_changes(self, client, db_session, make_user):
         from tests.factories import bearer
 
         actor = make_user(superuser=True)
@@ -421,6 +457,55 @@ class TestUpdateSettings:
 
 
 class TestProposeGeneration:
+    @pytest.mark.parametrize("suffix", ["", "/estimate"], ids=["proposal", "estimate"])
+    def test_rejects_unknown_local_generation_models(
+        self, client, auth_headers, db_session, tmp_path, monkeypatch, suffix
+    ):
+        from app.core.config import _overlay
+
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", tmp_path)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        response = client.patch(
+            "/api/v1/search/settings",
+            headers=auth_headers,
+            json={"enabled": True, "local_models_enabled": True},
+        )
+        assert response.status_code == 200, response.text
+
+        response = client.post(
+            "/api/v1/search/generations" + suffix,
+            headers=auth_headers,
+            json={"local_model_id": "f" * 64, "index_backend": "numpy"},
+        )
+
+        assert response.status_code == 400, response.text
+        assert response.json()["detail"] == "embedding_model_not_found"
+        assert db_session.exec(select(IndexGeneration)).all() == []
+
+    def test_estimates_a_proposed_local_generation(
+        self, client, auth_headers, db_session, tmp_path, monkeypatch
+    ):
+        from app.core.config import _overlay
+        from app.modules.inference import model_cache
+        from tests.factories.embeddings import text_embedding_assets
+
+        directory = text_embedding_assets(tmp_path / "cache" / "model")
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", directory.parent)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        model = model_cache.inspect(directory)
+
+        response = client.post(
+            "/api/v1/search/generations/estimate",
+            headers=auth_headers,
+            json={"local_model_id": model.id, "index_backend": "numpy"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["fits_budget"] is True
+        assert response.json()["estimated_bytes"] >= 0
+        assert response.json()["estimated_seconds"] is None
+        assert db_session.exec(select(IndexGeneration)).all() == []
+
     def test_exposes_the_canonical_generation_lifecycle(
         self, client, auth_headers, make_inference_endpoint
     ):

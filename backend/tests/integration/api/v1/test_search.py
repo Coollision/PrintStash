@@ -18,6 +18,39 @@ def projection():
 
 
 class TestSearch:
+    @pytest.mark.asyncio
+    async def test_rejects_an_actor_revoked_during_image_upload(
+        self, db_session, make_user
+    ):
+        from io import BytesIO
+
+        from fastapi import Request, Response
+        from PIL import Image
+
+        from app.api.v1.search import search_image
+        from app.core.errors import OperationError
+        from app.modules.search import configuration
+        from app.schemas.inference import SearchSettings
+
+        actor = make_user(superuser=True)
+        configuration.update(db_session, SearchSettings(enabled=True))
+        db_session.commit()
+        body = BytesIO()
+        Image.new("RGB", (1, 1), "gray").save(body, "PNG")
+
+        async def receive():
+            actor.is_active = False
+            db_session.add(actor)
+            db_session.commit()
+            return {"type": "http.request", "body": body.getvalue(), "more_body": False}
+
+        request = Request(
+            {"type": "http", "headers": [(b"content-type", b"image/png")]}, receive
+        )
+
+        with pytest.raises(OperationError, match="search_user_required"):
+            await search_image(request, Response(), limit=30, cursor=None, user=actor)
+
     @pytest.mark.parametrize(
         "kind,expected", [("bytes", 413), ("pixels", 413), ("zip", 415)]
     )

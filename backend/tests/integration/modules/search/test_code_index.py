@@ -206,6 +206,37 @@ class TestRankingRecall:
 
 
 class TestShortlist:
+    def test_rejects_foreign_compressed_table_claims(
+        self, db_session, compressed_generation
+    ):
+        from printstash_core.inference import EmbeddingError
+
+        generation, transform, first, _ = compressed_generation
+        original = generation.vector_table_name
+        generation.vector_table_name = "code_gen_999999"
+
+        with pytest.raises(EmbeddingError, match="embedding_index_unavailable"):
+            code_index.replace(db_session, generation, transform, first)
+        with pytest.raises(EmbeddingError, match="embedding_index_unavailable"):
+            code_index.shortlist(
+                db_session,
+                generation,
+                transform,
+                first.vector_blob,
+                select(PassageVector.id),
+                limit=1,
+            )
+
+        generation.vector_table_name = original
+        assert code_index.shortlist(
+            db_session,
+            generation,
+            transform,
+            first.vector_blob,
+            select(PassageVector.id),
+            limit=1,
+        ) == (first.id,)
+
     def test_filters_before_compressed_scoring(self, db_session, compressed_generation):
         generation, transform, first, second = compressed_generation
 

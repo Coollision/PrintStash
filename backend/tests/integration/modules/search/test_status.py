@@ -1,14 +1,48 @@
 """Capability and backlog reporting obey the same subject visibility as search."""
 
+import pytest
 from printstash_core.search.passages import SearchSubject, SubjectType
 
-from app.db.models import IndexGeneration
+from app.db.models import EmbeddingSpace, IndexGeneration
 from app.modules.search import generations
 from app.modules.search.passages import sync_subject
 from app.schemas.search_generations import GenerationProposal
 
 
 class TestStatus:
+    @pytest.mark.parametrize("broken", ["{", "[]"])
+    def test_degrades_corrupt_active_metadata(
+        self, db_session, warm_model, make_user, broken
+    ):
+        from app.modules.search.status import read
+
+        _, generation = warm_model
+        actor = make_user(superuser=True)
+        stored = db_session.get(EmbeddingSpace, generation.space_id)
+        stored.config_json = broken
+        db_session.add(stored)
+        db_session.commit()
+        result = read(db_session, actor)
+        assert result.legs == ["lexical"]
+        assert result.degraded == ["search_semantic_unavailable"]
+        assert result.semantic_ready is False
+
+    def test_reports_a_missing_local_runtime(
+        self, db_session, warm_model, make_user, monkeypatch
+    ):
+        from app.modules.search import status
+
+        original = status.importlib.util.find_spec
+        monkeypatch.setattr(
+            status.importlib.util,
+            "find_spec",
+            lambda name: None if name == "onnxruntime" else original(name),
+        )
+        result = status.read(db_session, make_user(superuser=True))
+        assert result.legs == ["lexical"]
+        assert result.degraded == ["search_semantic_unavailable"]
+        assert result.semantic_ready is False
+
     def test_reports_only_usable_active_capabilities(
         self, db_session, generation_setup, healthy_embeddings, advance_generation
     ):

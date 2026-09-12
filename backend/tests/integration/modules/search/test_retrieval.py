@@ -9,7 +9,7 @@ from sqlmodel import select
 from app.core.errors import OperationError
 from app.db.models import Document, PassageVector, SearchGenerationLease
 from app.modules.inference.query import close_queries
-from app.modules.search import configuration, generations
+from app.modules.search import configuration, generations, semantic
 from app.modules.search.retrieval import search
 from app.schemas.inference import SearchSettings
 from app.schemas.search_generations import GenerationProposal
@@ -45,6 +45,167 @@ def hybrid_library(
 
 
 class TestSearch:
+    @pytest.mark.parametrize(
+        "revoke,available", [(False, True), (True, False)], ids=["withdrawn", "revoked"]
+    )
+    def test_reauthorizes_retries_after_vector_withdrawal(
+        self, db_session, hybrid_library, monkeypatch, revoke, available
+    ):
+        from sqlmodel import delete
+
+        actor, *_ = hybrid_library
+        leg = semantic.registry(db_session, configuration.settings(db_session))[0]
+        query = semantic.vector_store.query
+        calls = []
+
+        def withdraw(session, **kwargs):
+            result = query(session, **kwargs)
+            calls.append(len(result.items))
+            session.exec(
+                delete(PassageVector).where(
+                    PassageVector.id.in_([item.unit_id for item in result.items])
+                )
+            )
+            if revoke:
+                actor.is_active = False
+                session.add(actor)
+            session.commit()
+            return result
+
+        monkeypatch.setattr(semantic.vector_store, "query", withdraw)
+        result = semantic.retrieve(
+            db_session,
+            actor.id,
+            actor.auth_version,
+            "assembly",
+            leg,
+            types=tuple(SubjectType),
+        )
+
+        assert result.available is available
+        assert result.passages == ()
+        assert calls[0] > 0
+        assert len(calls) <= 2
+        assert db_session.exec(select(SearchGenerationLease)).all() == []
+
+    def test_rejects_unavailable_source_models(self, db_session, hybrid_library):
+        actor, *_ = hybrid_library
+
+        with pytest.raises(OperationError, match="search_model_unavailable"):
+            search(db_session, actor, "", source_model_id=999999)
+
+    @pytest.mark.parametrize("limit", [0, 101], ids=["zero", "over-cap"])
+    def test_bounds_direct_result_limits(self, db_session, hybrid_library, limit):
+        actor, *_ = hybrid_library
+
+        with pytest.raises(ValueError, match="search_page_limit"):
+            search(db_session, actor, "part", limit=limit)
+
+    def test_rejects_nonimage_upload_inputs(self, db_session, hybrid_library):
+        from printstash_core.inference import EmbeddingInput
+
+        actor, *_ = hybrid_library
+
+        with pytest.raises(ValueError, match="search_image_required"):
+            search(db_session, actor, "", image=EmbeddingInput("text", text="part"))
+
+    def test_drops_semantic_output_after_consent_revocation(
+        self, db_session, hybrid_library, healthy_embeddings
+    ):
+        actor, *_ = hybrid_library
+        leg = semantic.registry(db_session, configuration.settings(db_session))[0]
+
+        def revoke():
+            configuration.update(db_session, SearchSettings(enabled=False))
+            db_session.commit()
+
+        healthy_embeddings.before_reply = revoke
+        result = semantic.retrieve(
+            db_session,
+            actor.id,
+            actor.auth_version,
+            "instructions",
+            leg,
+            types=tuple(SubjectType),
+        )
+
+        assert result.available is False
+        assert result.passages == ()
+        assert len(healthy_embeddings.requests) == 1
+        assert db_session.exec(select(SearchGenerationLease)).all() == []
+
+    def test_reuses_text_vectors_for_model_queries(
+        self, db_session, hybrid_library, healthy_embeddings
+    ):
+        actor, _, _, document, model = hybrid_library
+        result = search(db_session, actor, "", source_model_id=model.id)
+        assert [(item.subject_type, item.subject_id) for item in result.items] == [
+            ("document", document.id)
+        ]
+        assert result.semantic_ready is True
+        assert "semantic_text" in result.legs
+        assert healthy_embeddings.requests == []
+
+    @pytest.mark.parametrize(
+        "revocation", ["missing", "inactive", "auth_version", "consent"]
+    )
+    def test_denies_stale_semantic_admission(
+        self, db_session, hybrid_library, healthy_embeddings, revocation
+    ):
+        actor, *_ = hybrid_library
+        leg = semantic.registry(db_session, configuration.settings(db_session))[0]
+        user_id, auth_version = actor.id, actor.auth_version
+        if revocation == "missing":
+            user_id += 1000
+        elif revocation == "inactive":
+            actor.is_active = False
+            db_session.add(actor)
+        elif revocation == "auth_version":
+            auth_version += 1
+        else:
+            configuration.update(db_session, SearchSettings(enabled=False))
+        db_session.commit()
+        result = semantic.retrieve(
+            db_session, user_id, auth_version, "Benchy", leg, types=tuple(SubjectType)
+        )
+        assert result.available is False
+        assert result.passages == ()
+        assert healthy_embeddings.requests == []
+        assert db_session.exec(select(SearchGenerationLease)).all() == []
+
+    @pytest.mark.parametrize(
+        "invalid, code",
+        [
+            ("image", "embedding_image_unavailable"),
+            ("long", "embedding_input_limit_exceeded"),
+        ],
+    )
+    def test_rejects_incompatible_semantic_inputs(
+        self, db_session, hybrid_library, healthy_embeddings, invalid, code
+    ):
+        from printstash_core.inference import EmbeddingInput
+
+        from app.modules.search.text_inputs import TextRecipe
+
+        actor, *_ = hybrid_library
+        leg = semantic.registry(db_session, configuration.settings(db_session))[0]
+        value = (
+            EmbeddingInput("image", rgb=b"\0\0\0", width=1, height=1)
+            if invalid == "image"
+            else "x" * (TextRecipe.for_space(leg.space).max_input_characters + 1)
+        )
+        result = semantic.retrieve(
+            db_session,
+            actor.id,
+            actor.auth_version,
+            value,
+            leg,
+            types=tuple(SubjectType),
+        )
+        assert result.available is False
+        assert result.error_code == code
+        assert healthy_embeddings.requests == []
+
     def test_reauthorizes_cached_query_vectors(
         self, db_session, hybrid_library, healthy_embeddings
     ):

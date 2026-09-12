@@ -83,6 +83,117 @@ def native_units(
 
 
 class TestVectorIndex:
+    def test_recovers_from_rejected_portable_index_ddl(self, db_session, native_units):
+        generation, _, _, _ = native_units
+        generation.index_backend = "numpy"
+        generation.quantization = "int8"
+        generation.transform_json = IndexTransform(3, 3, "int8").metadata()
+        connection = db_session.connection().connection.driver_connection
+        connection.set_authorizer(
+            lambda action, *_: (
+                sqlite3.SQLITE_DENY
+                if action == sqlite3.SQLITE_CREATE_TABLE
+                else sqlite3.SQLITE_OK
+            )
+        )
+
+        try:
+            assert vector_index.prepare(db_session, generation) is False
+        finally:
+            connection.set_authorizer(None)
+
+        assert generation.index_error == "embedding_portable_index_unavailable"
+        assert len(db_session.exec(select(PassageVector)).all()) == 2
+
+    def test_refuses_foreign_native_table_claims(self, db_session, native_units):
+        generation, _, first, _ = native_units
+        original = generation.vector_table_name
+        generation.vector_table_name = "vec_gen_999999"
+
+        assert (
+            vector_index.shortlist(
+                db_session,
+                generation,
+                first.vector_blob,
+                select(PassageVector.id),
+                limit=1,
+            )
+            is None
+        )
+        vector_index.remove(db_session, generation, first.id)
+
+        assert (
+            db_session.execute(text(f"SELECT count(*) FROM {original}")).scalar_one()
+            == 2
+        )
+
+    def test_tolerates_native_table_loss_during_content_deletion(
+        self, db_session, native_units
+    ):
+        generation, _, first, _ = native_units
+        db_session.execute(text(f"DROP TABLE {generation.vector_table_name}"))
+
+        assert vector_index.remove(db_session, generation, first.id) is None
+
+        assert len(db_session.exec(select(PassageVector)).all()) == 2
+        assert db_session.is_active
+
+    def test_degrades_a_lost_portable_index_during_writes(
+        self, db_session, compressed_native_units
+    ):
+        from app.modules.search import code_index
+
+        generation, _, first, _, _ = compressed_native_units
+        generation.index_backend = "numpy"
+        generation.quantization = "int8"
+        generation.index_dimension = 8
+        generation.transform_json = IndexTransform(8, 8, "int8").metadata()
+        assert vector_index.prepare(db_session, generation)
+        db_session.execute(text(f"DROP TABLE {code_index.table_name(generation.id)}"))
+
+        vector_index.replace(db_session, generation, first)
+
+        assert generation.index_state == "unavailable"
+        assert generation.index_error == "embedding_portable_index_unavailable"
+        assert len(db_session.exec(select(PassageVector)).all()) == 2
+
+    @pytest.mark.parametrize("limit", [0, 2049], ids=["zero", "over-cap"])
+    def test_refuses_invalid_native_query_budgets(
+        self, db_session, native_units, limit
+    ):
+        generation, _, first, _ = native_units
+
+        with pytest.raises(EmbeddingError, match="embedding_query_budget_invalid"):
+            vector_index.shortlist(
+                db_session,
+                generation,
+                first.vector_blob,
+                select(PassageVector.id),
+                limit=limit,
+            )
+
+    @pytest.mark.parametrize("limit", [0, 1025], ids=["zero", "over-cap"])
+    def test_refuses_invalid_native_rebuild_budgets(
+        self, db_session, native_units, limit
+    ):
+        generation, *_ = native_units
+
+        with pytest.raises(EmbeddingError, match="embedding_rebuild_budget_invalid"):
+            vector_index.rebuild_partition(db_session, generation, limit=limit)
+
+    def test_degrades_when_sqlite_extension_loading_fails(
+        self, db_session, native_units, monkeypatch
+    ):
+        generation, *_ = native_units
+        monkeypatch.setattr(
+            vector_index, "load_sqlite_vector_extension", lambda _: False
+        )
+
+        assert vector_index.prepare(db_session, generation) is False
+
+        assert generation.index_error == "embedding_sqlite_vec_unavailable"
+        assert len(db_session.exec(select(PassageVector)).all()) == 2
+
     def test_rebuilds_compressed_derivatives_without_inference(
         self, db_session, compressed_native_units
     ):

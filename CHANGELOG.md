@@ -43,6 +43,9 @@
 
 ### Fixed
 
+- Family browsing uses recent changes when relevance scores are unavailable,
+  preserving valid cursors for collapsed cards and the Families list.
+
 - Restoring AI Search backups no longer requires optional vector extensions to
   inspect unversioned databases. Durable vectors remain searchable through the
   portable backend while native acceleration is disabled.

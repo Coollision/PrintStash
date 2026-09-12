@@ -7,7 +7,8 @@ import pytest
 from printstash_core.inference import EmbeddingError
 
 from app.db.session import get_session_factory
-from app.modules.inference.sparse import LocalSparseProvider
+from app.modules.inference.manifest import read_manifest
+from app.modules.inference.sparse import LocalSparseProvider, SparseNativeProvider
 from tests.factories.embeddings import sparse_embedding_assets
 from tests.paths import BACKEND_DIR
 
@@ -19,6 +20,16 @@ def sparse_provider(db_session, tmp_path):
 
 
 class TestSparse:
+    @pytest.mark.parametrize("threads", [0, True, 5])
+    def test_rejects_invalid_worker_budgets(self, sparse_provider, threads):
+        with pytest.raises(EmbeddingError, match="embedding_thread_budget_invalid"):
+            LocalSparseProvider(
+                get_session_factory(),
+                sparse_provider.directory,
+                "sparse-contract",
+                threads,
+            )
+
     def test_preserves_continuous_expansion_weights(self, sparse_provider):
         result = sparse_provider.expand("bicycle bracket")
         weights = {term.term: term.weight for term in result.terms}
@@ -67,11 +78,9 @@ class TestSparse:
         else:
             manifest[change] += 1
         path.write_text(json.dumps(manifest))
-        changed = LocalSparseProvider(
-            get_session_factory(), sparse_provider.directory, "sparse-contract", 1
-        )
+        contract = read_manifest(sparse_provider.directory, "sparse-contract")
         with pytest.raises(EmbeddingError, match="embedding_" + code):
-            changed.validate()
+            SparseNativeProvider(sparse_provider.directory, contract, 1)
 
     def test_refuses_dense_generation_identity(self, sparse_provider):
         with pytest.raises(EmbeddingError, match="embedding_sparse_not_dense"):

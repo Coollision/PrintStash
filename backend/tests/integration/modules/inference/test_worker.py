@@ -117,6 +117,7 @@ class TestNativeProtocol:
         import math
 
         from printstash_core.inference.points import canary_input
+
         from tests.factories.embeddings import (
             point_embedding_assets,
             sparse_embedding_assets,

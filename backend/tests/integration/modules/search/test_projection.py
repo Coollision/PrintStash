@@ -18,6 +18,37 @@ def projection():
 
 
 class TestContentProjection:
+    def test_refreshes_every_member_of_a_large_collection(
+        self, projection, db_session, make_collection, make_model
+    ):
+        collection = make_collection("Before")
+        models = [
+            make_model(f"Part {index}", collection=collection) for index in range(129)
+        ]
+        content_changed(db_session, "collection", [collection.id])
+        collection.name = "After"
+        collection.path = "after"
+        db_session.add(collection)
+
+        content_changed(db_session, "collection", [collection.id])
+
+        rows = db_session.exec(
+            select(SearchPassage).where(SearchPassage.subject_type == "model")
+        ).all()
+        assert {row.subject_id for row in rows} == {model.id for model in models}
+        assert all("after" in row.text and "before" not in row.text for row in rows)
+
+    def test_projects_a_newly_attached_provenance_source(
+        self, projection, db_session, make_model, make_provenance_source
+    ):
+        model = make_model("Unnamed")
+        content_changed(db_session, "model", [model.id])
+        source = make_provenance_source(model, tags=["Flexible hinge"])
+
+        content_changed(db_session, "provenance", [source.id])
+
+        assert "Flexible hinge" in db_session.exec(select(SearchPassage.text)).one()
+
     def test_preserves_content_when_projection_fails(
         self, db_session, make_model, make_user
     ):
