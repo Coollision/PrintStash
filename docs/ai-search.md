@@ -194,6 +194,8 @@ work. Status reports eligible/indexed/quarantined counts, provider-budget
 truncation and the background job.
 
 Activation checks the proposal token and current coverage under database locks.
+SQLite obtains its writer lock before verification reads, preventing a competing
+WAL writer from invalidating the cutover snapshot.
 Retired generations retain floats for the rollback interval (24 hours by
 default), and live reader leases postpone pruning. The lease duration exceeds
 the maximum inference deadline. Capacity admission includes existing vectors
@@ -488,11 +490,14 @@ explicit canary-validation transaction for first adoption; later writes join
 the caller's transaction. External `algorithm_version` belongs to the consumer
 and never changes the inference Space hash.
 
-An installed-app test physically removes Similar Models, exercises public
-Search, and embeds/publishes/queries a Document through a preplaced ONNX provider
-and the shared store. Another installation test removes inference too and keeps
-manual library/Family work usable. Optional composition omits unavailable AI
-routes and tasks; the Model-query shortcut returns a capability error.
+An installed-app test physically removes Similar Models and the Families package,
+runs the real Alembic migration chain, uploads a Model, creates the other three
+Subject types, and serves lexical/semantic Search through a local ONNX contract
+model. A float-to-int8 replacement keeps the serving generation available.
+Search and ordinary Model projections do not load unavailable Family annotations;
+explicit Family filters fail closed when the capability is absent. Another
+installation test removes inference too and keeps manual library/Family work
+usable. Optional composition omits unavailable routes and tasks.
 
 Compatible v1 rows retain IDs, keys, hashes, dimensions and exact BLOB bytes
 through the additive vector migration. Existing generations are adopted only

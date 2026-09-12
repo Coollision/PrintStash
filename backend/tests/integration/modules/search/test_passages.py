@@ -172,17 +172,32 @@ class TestSyncSubject:
         assert len(db_session.exec(select(SearchPassage)).all()) == 2
 
     def test_removes_every_recipe_for_a_trashed_subject(
-        self, db_session, make_model, make_search_passage
+        self,
+        db_session,
+        make_model,
+        make_search_passage,
+        make_embedding_space,
+        make_index_generation,
+        make_passage_vector,
+        make_user,
     ):
+        from app.db.models import PassageVector
+        from app.modules.search.retrieval import search
+
+        actor = make_user(superuser=True)
         model = make_model("Dragon", trashed=True)
         subject = SearchSubject(SubjectType.MODEL, model.id)
-        make_search_passage(subject)
-        make_search_passage(subject, recipe_version=RECIPE_VERSION + 1)
+        generation = make_index_generation(make_embedding_space())
+        for version in (RECIPE_VERSION, RECIPE_VERSION + 1):
+            passage = make_search_passage(subject, recipe_version=version)
+            make_passage_vector(generation, passage=passage)
 
         changes = sync_subject(db_session, subject)
 
         assert changes == PassageChanges(removed=2)
         assert db_session.exec(select(SearchPassage)).all() == []
+        assert db_session.exec(select(PassageVector)).all() == []
+        assert search(db_session, actor, "Stored passage").items == []
 
     def test_removes_passages_for_a_purged_subject(
         self, db_session, make_model, make_search_passage
@@ -198,7 +213,12 @@ class TestSyncSubject:
         assert changes == PassageChanges(removed=1)
         assert db_session.exec(select(SearchPassage)).all() == []
 
-    def test_restores_passages_for_a_restored_subject(self, db_session, make_model):
+    def test_restores_passages_for_a_restored_subject(
+        self, db_session, make_model, make_user
+    ):
+        from app.modules.search.retrieval import search
+
+        actor = make_user(superuser=True)
         model = make_model("Dragon", trashed=True)
         subject = SearchSubject(SubjectType.MODEL, model.id)
         sync_subject(db_session, subject)
@@ -209,6 +229,11 @@ class TestSyncSubject:
 
         assert changes == PassageChanges(inserted=1)
         assert db_session.exec(select(SearchPassage.text)).one() == "Title: Dragon"
+        db_session.commit()
+        result = search(db_session, actor, "Dragon", mode="lexical")
+        assert [(item.subject_type, item.subject_id) for item in result.items] == [
+            ("model", model.id)
+        ]
 
     def test_rolls_projection_back_with_content(self, db_session, make_model):
         model = make_model("Dragon")

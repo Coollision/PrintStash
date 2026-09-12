@@ -43,6 +43,10 @@
 
 ### Fixed
 
+- AI Search activation acquires the SQLite writer lock before verification, so
+  concurrent worker commits cannot invalidate the cutover snapshot. Search and
+  ordinary Model results start without the optional Families annotation package.
+
 - Caption text and unsaved edits now clear when the signed-in account changes,
   including account changes received from another browser tab.
 

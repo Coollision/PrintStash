@@ -4,18 +4,33 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
-from tests.factories.embeddings import local_embedding_assets
+import pytest
+
+from tests.factories.embeddings import local_embedding_assets, text_embedding_assets
 from tests.paths import BACKEND_DIR
 
 
 class TestSearchIndependence:
-    def test_runs_without_the_similarity_package(self, tmp_path):
+    @pytest.mark.parametrize(
+        "removed_features",
+        [("similarity",), ("similarity", "families")],
+        ids=["similarity", "similarity-families"],
+    )
+    def test_runs_without_related_feature_packages(self, tmp_path, removed_features):
         isolated = tmp_path / "installation"
         shutil.copytree(
             BACKEND_DIR / "app",
             isolated / "app",
-            ignore=lambda _directory, names: set(names) & {"__pycache__", "similarity"},
+            ignore=lambda _directory, names: (
+                set(names) & {"__pycache__", *removed_features}
+            ),
+        )
+        shutil.copytree(
+            BACKEND_DIR / "alembic",
+            isolated / "alembic",
+            ignore=shutil.ignore_patterns("__pycache__"),
         )
         assets = local_embedding_assets(tmp_path / "preplaced-model")
         environment = {
@@ -31,6 +46,7 @@ class TestSearchIndependence:
             "VAULT_EMBEDDING_ONNX_THREADS": "1",
             "VAULT_EMBEDDING_DOWNLOAD_ENABLED": "false",
             "VAULT_AI_SEARCH_ENABLED": "false",
+            "TEST_REMOVED_FEATURES": ",".join(removed_features),
         }
         for key in (
             "DATA_DIR",
@@ -43,6 +59,7 @@ class TestSearchIndependence:
             directory = tmp_path / key.lower()
             directory.mkdir()
             environment[f"VAULT_{key}"] = str(directory)
+        text_embedding_assets(Path(environment["VAULT_EMBEDDING_CACHE_DIR"]) / "text")
         result = subprocess.run(
             [sys.executable, "-m", "tests.fakes.independent_search_consumer"],
             cwd=isolated,

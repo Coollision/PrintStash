@@ -143,7 +143,7 @@ def filtered_with_rank(session: Session, user: User, filters: ModelFilters):
         or filters.family_role is not None
         or filters.in_family is not None
     ):
-        from .families import membership_rows
+        from .extensions import membership_rows
 
         memberships = membership_rows(session, user)
         if filters.in_family is not None:

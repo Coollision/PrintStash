@@ -360,7 +360,7 @@ class IndexProcessor:
         with self.sessions.scoped_session() as session:
             if not generations.lock_owned(session, generation_id, token):
                 return
-            generations._lock_cutover(session)
+            generations._lock_cutover(session, generation_id)
             generation = session.exec(
                 select(IndexGeneration).where(*generations.owned(generation_id, token))
             ).first()

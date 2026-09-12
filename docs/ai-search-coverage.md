@@ -2,7 +2,10 @@
 
 Work in progress for #166, based on the [owner’s independent plan](https://gist.github.com/xiao-villamor/e4daf5562e6a0819c4b7ce3a915bc19c) and [jorgehermo9’s attachment](https://gist.github.com/jorgehermo9/0b348e4411c0b455be7964a1de5f588c). One branch and one eventual PR. No AI Search availability claim yet.
 
-The branch implements W1–W8 and W14, including local text acquisition and the search/settings UI. Active/building text-prefix recipes receive fresh vectors; coexistence of different passage-template versions is still tracked in A072. The BGE regression corpus meets numeric recall targets; candidate measurements are recorded separately. The human-labelled evaluation and later stages remain unfinished.
+The branch implements W1–W15, including W4b and W14. The matrix below retains
+original acceptance rows alongside detailed stage evidence. Unresolved rows are
+acceptance work, including scale/hardware measurements and independent human/photo
+quality evaluation; implementation alone does not mark them complete.
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 |---|---|---|---|---|---|---|
@@ -11,8 +14,8 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A003 | caps the number of chunks for an oversized document | Edge | body far above the cap | chunk count == cap; no error | Unit | ✅ `core/search/test_passages.py::TestRenderPassages::test_caps_the_number_of_chunks_for_an_oversized_document` |
 | A004 | changes the content hash when an indexed field changes | Happy | model description edited | `content_hash` differs; stale vectors deleted | Integration | ✅ `integration/modules/search/test_passages.py::TestSyncSubject::test_invalidates_vectors_when_indexed_content_changes` |
 | A005 | leaves the content hash untouched for a non-indexed edit | Edge | `updated_at` bumped, fields equal | hash unchanged; no re-embed enqueued | Integration | ✅ `integration/modules/search/test_passages.py::TestSyncSubject::test_preserves_vectors_for_nonindexed_edits` |
-| A006 | removes passages when a subject is trashed | Edge | model trashed | no passages; no vectors; not returned by search | Integration | ❌ missing |
-| A007 | restores passages when a subject is restored | Edge | trashed model restored | passages exist again; searchable | Integration | ❌ missing |
+| A006 | removes passages when a subject is trashed | Edge | model trashed | no passages; no vectors; not returned by search | Integration | ✅ `integration/modules/search/test_passages.py::TestSyncSubject::test_removes_every_recipe_for_a_trashed_subject` |
+| A007 | restores passages when a subject is restored | Edge | trashed model restored | passages exist again; searchable | Integration | ✅ `integration/modules/search/test_passages.py::TestSyncSubject::test_restores_passages_for_a_restored_subject` |
 | A008 | re-derives a passage the mutation seam missed | Error | row updated bypassing the seam | watermark sweep repairs it | Integration | ✅ `integration/modules/search/test_reconciliation.py::TestReconciliation::test_repairs_a_body_change_without_a_timestamp` |
 | A009 | ranks an exact title match above a body mention | Happy | two models, FTS5 | ordering asserted | Integration | ✅ `integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_ranks_exact_title_above_body` |
 | A010 | ranks the controlled BM25 fixture consistently on PostgreSQL | Happy | Mismo tokenizer, corpus y pesos; postgres marker | Orden de referencia BM25, no ts_rank etiquetado como BM25 | Integration | ✅ `integration/postgres/test_search_passages.py::TestSearchPassages::test_ranks_postgres_with_real_bm25` |
@@ -67,20 +70,20 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A059 | falls back to parse-and-repair without schema support | Error | probe reports no schema, no tools | usable result; reduced guarantee reported | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_repairs_json_once` |
 | A060 | probes the Responses API dialect without assuming it | Edge | endpoint lacking it | detected absent; chat-completions used | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_probes_responses_without_assuming_availability` |
 | A061 | never logs the chat API key | Error | chat provider error path | key absent from logs, status and response | Integration | ❌ missing |
-| A062 | parses natural language into typed filters | Happy | benchy printed last month under 3 hours | Filtros de fecha/duración/outcome válidos más residual benchy | Integration | ❌ missing |
-| A063 | rejects a parsed field outside the filter vocabulary | Error | provider emits an unknown field | discarded; query still runs | Integration | ❌ missing |
-| A064 | keeps natural-language parsing off by default | Error | chat endpoint configured, switch untouched | no parse attempted; plain hybrid search | Integration | ❌ missing |
+| A062 | parses natural language into typed filters | Happy | benchy printed last month under 3 hours | Filtros de fecha/duración/outcome válidos más residual benchy | Integration | ✅ `integration/modules/search/test_parsing.py::TestParse::test_normalizes_real_duration_with_absolute_calendar_bounds` |
+| A063 | rejects a parsed field outside the filter vocabulary | Error | provider emits an unknown field | discarded; query still runs | Integration | ✅ `integration/modules/search/test_parsing.py::TestParse::test_rejects_untrusted_filters` |
+| A064 | keeps natural-language parsing off by default | Error | chat endpoint configured, switch untouched | no parse attempted; plain hybrid search | Integration | ✅ `integration/modules/search/test_parsing.py::TestParse::test_keeps_parsing_off_with_a_configured_chat_endpoint` |
 | A065 | runs captions with natural-language parsing disabled | Edge | one generative use on, the other off | Caption generado sin invocar parsing de consultas | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_generated_text_separate_from_human_description` |
-| A066 | honours a per-user opt-out of query parsing | Error | user preference off, instance on | no parse for that user; others unaffected | Integration | ❌ missing |
-| A067 | retains_all_four_subject_types | Happy | Model/Collection/Multipart/Document | Resultados discriminados y autorizados por owner | Integration | ❌ missing |
+| A066 | honours a per-user opt-out of query parsing | Error | user preference off, instance on | no parse for that user; others unaffected | Integration | ✅ `integration/modules/search/test_parsing.py::TestParse::test_requires_both_optins_before_egress[user]; TestPreferences::test_keeps_personal_preferences_isolated` |
+| A067 | retains_all_four_subject_types | Happy | Model/Collection/Multipart/Document | Resultados discriminados y autorizados por owner | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages` |
 | A068 | indexes_every_model_context_field | Happy | Nombre/desc/tags/path/files/Revision/provenance; contexto opcional solo si está registrado | Passage contiene field list completa y autorizada de su receta, sin requerir Family | Integration | ❌ missing |
-| A069 | indexes_binary_document_metadata_only | Edge | PDF con body no extraído | Search encuentra nombre/filename, no promete texto completo | Integration | ❌ missing |
+| A069 | indexes_binary_document_metadata_only | Edge | PDF con body no extraído | Search encuentra nombre/filename, no promete texto completo | Integration | ✅ `integration/modules/search/test_sources.py::TestProjectSubject::test_indexes_only_binary_document_metadata` |
 | A070 | repairs_ancestor_context_changes | Edge | Rename/move Collection sin tocar Model.updated_at | Passages descendientes corregidos por watermark | Integration | ❌ missing |
-| A071 | repairs_deleted_contributor_links | Edge | Borrado de relación sin seam | Sweep elimina contribución obsoleta | Integration | ❌ missing |
-| A072 | retains_active_recipe_during_reindex | Edge | Nueva recipe mientras active antigua | Ambas recetas coherentes hasta flip | Integration | ❌ missing |
+| A071 | repairs_deleted_contributor_links | Edge | Borrado de relación sin seam | Sweep elimina contribución obsoleta | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_refreshes_removed_relationships` |
+| A072 | retains_active_recipe_during_reindex | Edge | Nueva recipe mientras active antigua | Ambas recetas coherentes hasta flip | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_upgrades_active_text_to_caption_recipe` |
 | A073 | does_not_leak_hidden_contributor_text | Error | Multipart visible con Model Choice oculto; contributor opcional de prueba | Ni ranking ni snippets/vector accesible dependen de texto oculto | Integration | ❌ missing |
 | A074 | applies_permission_revocation_immediately | Error | Permiso cambia tras index/cache | Resultado y evidence ocultos en consulta siguiente | Integration | ✅ `integration/modules/search/test_retrieval.py::TestSearch::test_reauthorizes_cached_query_vectors` |
-| A075 | rolls_back_lexical_projection_with_mutation | Error | Transacción de Model falla | Sin Passage/FTS huérfano | Integration | ❌ missing |
+| A075 | rolls_back_lexical_projection_with_mutation | Error | Transacción de Model falla | Sin Passage/FTS huérfano | Integration | ✅ `integration/modules/search/test_projection.py::TestContentProjection::test_rolls_back_a_content_notification` |
 | A076 | keeps_ingest_searchable_when_fts_fails | Error | FTS no disponible en commit | Texto durable encuentra upload vía ranked fallback | Integration | ❌ missing |
 | A077 | escapes_lexical_query_syntax | Error | Comillas, operadores, %, _, unicode | Sin SQL/FTS injection ni 500 | Integration | ❌ missing |
 | A078 | updates_bm25_corpus_statistics | Edge | Create/edit/delete Passage; ambos motores | Ranking y df/longitudes coherentes | Integration | ❌ missing |
@@ -94,7 +97,7 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A086 | rescales_quantized_shortlist_with_float_vectors | Happy | Index int8/binary; float source | Top-k dentro de tolerancia medida del baseline | Integration | ✅ `integration/modules/search/test_code_index.py::TestRankingRecall::test_measures_compressed_ranking_recall` |
 | A087 | retains_native_vectors_after_truncation | Edge | Generación 128 de Space 1024 | Floats de 1024 siguen disponibles para rebuild | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_preserves_native_floats_when_switching_to_reviewed_mrl` |
 | A088 | switches_index_backend_without_embedding | Happy | NumPy↔sqlite-vec o pgvector↔NumPy | Flip continuo; ningún nuevo input recibido por fake provider | E2E | ✅ `e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_serves_continuous_readers_during_a_transform_switch` |
-| A089 | serves_queries_during_startup_rebuild | Edge | Restart con derivados ausentes | Búsqueda sirve antes de completar rebuild | E2E | ❌ missing |
+| A089 | serves_queries_during_startup_rebuild | Edge | Restart con derivados ausentes | Búsqueda sirve antes de completar rebuild | E2E | ✅ `e2e/test_search_local.py::TestLocalSearch::test_keeps_search_available_during_restart_warmup` |
 | A090 | preserves_inflight_generation_readers | Edge | Activate durante query antigua | Query completa con su Space; cleanup espera drain | Integration | ✅ `integration/modules/search/test_retrieval.py::TestSearch::test_preserves_an_inflight_generation` |
 | A091 | refuses_insufficient_swap_capacity | Error | Cache/disco no admite old+new | 409/resource code; active utilizable | Integration | ✅ `integration/modules/search/test_generations.py::TestPrepare::test_rejects_capacity_overcommit` |
 | A092 | rejects_stale_backfill_publication | Edge | Passage cambia durante inference | No vector viejo publicado como current | Integration | ✅ `integration/modules/search/test_indexing.py::TestIndexProcessor::test_rejects_source_edits_during_inference` |
@@ -106,7 +109,7 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A098 | probes_chat_tool_calling_fallback | Happy | Endpoint tools sin json_schema | Objeto validado con guarantee reportada | Contract | ❌ missing |
 | A099 | rejects_invalid_chat_schema_output | Error | Endpoint devuelve key extra/type erróneo | Nada ejecutado como filtro; fallback limpio | Contract | ❌ missing |
 | A100 | bounds_chat_parse_repair | Error | JSON inválido repetido | Se detiene en límite; no loop de llamadas | Contract | ✅ `contract/modules/inference/test_chat.py::TestRemoteChatProvider::test_rejects_a_failed_repair` |
-| A101 | opens_circuit_after_provider_failures | Error | Endpoint devuelve fallos repetidos | Operaciones se degradan dentro del deadline | Contract | ❌ missing |
+| A101 | opens_circuit_after_provider_failures | Error | Endpoint devuelve fallos repetidos | Operaciones se degradan dentro del deadline | Contract | ✅ `contract/modules/inference/test_remote.py::TestRemoteEmbeddingProvider::test_opens_a_failed_endpoint_circuit` |
 | A102 | requires_declared_image_embedding_contract | Error | Endpoint solo compatible texto | Imagen unavailable, no payload adivinado | Contract | ❌ missing |
 | A103 | separates_remote_modality_consent | Error | Texto consentido, visual/caption no | No imágenes recibidas por fake host | Contract | ❌ missing |
 | A104 | never_sends_raw_geometry_to_provider | Error | Consulta/componente de malla | Recorder contiene solo modalidades permitidas | Contract | ❌ missing |
@@ -128,7 +131,7 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A120 | preserves_edited_caption_on_worker_completion | Edge | Usuario edita durante llamada VLM | Caption humana editada no sobrescrita | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_fences_a_late_completion[edit]` |
 | A121 | removes_dismissed_caption_from_search | Edge | Dismiss de caption ya indexada | No contribuye a resultados posteriores | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_keeps_one_lexical_recipe_during_semantic_coexistence` |
 | A122 | keeps_caption_disabled_by_default | Error | Chat endpoint configurado | No generación sin switch caption | Integration | ✅ `integration/modules/search/test_captions.py::TestCaptions::test_defaults_off_with_a_configured_endpoint` |
-| A123 | runs_nl_filters_with_caption_disabled | Happy | Solo NL habilitado | Parse funciona sin generar captions | Integration | ❌ missing |
+| A123 | runs_nl_filters_with_caption_disabled | Happy | Solo NL habilitado | Parse funciona sin generar captions | Integration | ✅ `integration/modules/search/test_parsing.py::TestParse::test_normalizes_real_duration_with_absolute_calendar_bounds` |
 | A124 | filters_one_qualifying_print_job | Edge | Un job cumple fecha; otro duración | Model excluido si ninguno cumple conjunto | Integration | ❌ missing |
 | A125 | handles_print_date_timezone_boundaries | Edge | Mes pasado con DST y bordes de medianoche | Límites UTC de calendario correctos | Unit | ❌ missing |
 | A126 | does_not_use_estimated_duration_as_actual | Edge | Slicer duration cumple; actual_duration_s null | Filtro de duración real no incluye el Model | Integration | ❌ missing |
@@ -142,12 +145,12 @@ The branch implements W1–W8 and W14, including local text acquisition and the 
 | A134 | measures_query_p95_on_100k_passages | Happy | 4-core, Space default, corpus etiquetado | p95 end-to-end <300ms; el gate falla si supera objetivo | E2E | ❌ missing |
 | A135 | measures_pi5_default_backfill_budget | Happy | 100k Passages y default real | Backfill <1h; el gate falla si supera objetivo | E2E | ❌ missing |
 | A136 | versions_sparse_expansion_independently | Edge | Toggle/model de expansión cambia | Lexical original sigue disponible durante rebuild | Integration | ❌ missing |
-| A137 | measures_sparse_expansion_cost | Happy | Corpus con expansión opt-in | Tamaño y recall comparados con lexical base | Integration | ❌ missing |
+| A137 | measures_sparse_expansion_cost | Happy | Corpus con expansión opt-in | Tamaño y recall comparados con lexical base | Integration | ✅ `integration/modules/inference/preplaced_sparse.py::TestPreplacedSparse::test_measures_the_pinned_sparse_profile` |
 | A138 | localizes_ai_search_states | Edge | en/es; pending/degraded/empty/caption/NL | Texto traducido, foco y controles accesibles | Frontend unit | ❌ missing |
 | A139 | roundtrips_search_schema_with_existing_data | Happy | Upgrade/downgrade/upgrade; SQLite/PostgreSQL poblados | Tablas/config nuevas reversibles; datos previos conservados | Integration | ❌ missing |
 | A140 | switches_visual_profile_independently | Happy | Text active mientras se cambia perfil visual | Text Generation intacta; visual flip propio | Integration | ❌ missing |
 | A141 | measures_profile_rung_quality_gain | Happy | Mismo held-out corpus y modelo por recipe | Cada rung ofrecido mejora métrica sobre anterior; salida S1 documentada | Integration | ❌ missing |
-| A142 | delivers_search_without_related_features | Happy | Main con esta PR; modules similarity y families ausentes | Migración, upload, búsqueda y swap funcionan con los cuatro Subject types propios | E2E | ❌ missing |
+| A142 | delivers_search_without_related_features | Happy | Main con esta PR; modules similarity y families ausentes | Migración, upload, búsqueda y swap funcionan con los cuatro Subject types propios | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages[similarity-families]` |
 
 `critical-capabilities.json` gains `ai-search-model-swap-no-downtime` (row 52), `ai-search-retrieval-quality` (rows 50–51) and `ai-search-disabled-degradation` (rows 11 and 20). Coverage floors are raised for both new modules in the same PR, per the two-sided floor rule.
 
@@ -719,8 +722,8 @@ no claim about caption quality from an actual language model.
 
 | ID | Behaviour | Case | Setup | Observable expectation | Tier | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| IC001 | runs Search without the Similar Models package | Happy | Isolated installed app, package removed, preplaced ONNX | Public Search works; native provider/store consumer works; no similarity imports | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_the_similarity_package` |
-| IC002 | keeps external algorithm versions outside Space identity | Edge | Consumer changes ranking version | Same Space, generation, IDs and native bytes reused | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_the_similarity_package` |
+| IC001 | runs Search without the Similar Models package | Happy | Isolated installed app, package removed, preplaced ONNX | Public Search works; native provider/store consumer works; no similarity imports | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages` |
+| IC002 | keeps external algorithm versions outside Space identity | Edge | Consumer changes ranking version | Same Space, generation, IDs and native bytes reused | E2E | ✅ `e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages` |
 | IC003 | publishes portable nullable owner columns | Error | PostgreSQL consumer source with SQL NULL passage ID | Successful native upsert, no text-to-integer failure | Integration | ✅ `integration/postgres/test_vector_index.py::TestPostgresVectorIndex::test_publishes_nullable_owner_columns_from_a_consumer` |
 | IC004 | rejects mismatched immutable metadata during adoption | Error | Corrupt mirrored Space profile/provider/model/recipe/prefix | Stable corruption error; no adoption | Integration | ✅ `integration/modules/search/test_vector_store.py::TestVectorStore::test_refuses_corrupt_immutable_metadata; integration/modules/similarity/test_vector_sources.py::TestGenerationLifecycle::test_refuses_adoption_of_corrupt_space` |
 | IC005 | rejects unauthorized independent consumer publication | Error | Source filtered by an outsider's VIEW scope | No vector written | Integration | ✅ `integration/modules/search/test_vector_store.py::TestVectorStore::test_scopes_an_independent_consumer_to_view_permissions` |
@@ -924,3 +927,29 @@ browser flow passed drag-and-drop, camera-picker submission, clearing, related
 Models, and desktop/mobile overflow assertions. Both viewport screenshots were
 inspected. Filter controls passed 9 tests in an isolated run; earlier contention
 caused timeout failures, so the complete frontend lane remains to be rerun.
+
+### Related feature availability
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|----------------------|----------|----------------------|-----------------------------|------|--------|
+| AF001 | omits Family annotations when unavailable | Edge | Families package absent | no Family routes or annotations; ordinary Model remains usable | Integration | ✅ `integration/bootstrap/test_optional_features.py::TestOptionalFeatures::test_omits_family_annotations_when_the_package_is_absent` |
+| AF002 | rejects unavailable Family filters | Error | Families provider absent; explicit Family constraint | capability error; query is not broadened | Integration | ✅ `integration/bootstrap/test_optional_features.py::TestOptionalFeatures::test_rejects_family_filters_when_the_provider_is_absent` |
+
+### SQLite activation under concurrent writes
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+|---|----------------------|----------|----------------------|-----------------------------|------|--------|
+| CW001 | drains competing SQLite writes before activation verification | Edge | ready replacement; concurrent writer in WAL mode | writer waits through verification; one new active generation commits without a stale-snapshot error | Integration | ✅ `integration/modules/search/test_cutover_concurrency.py::TestCutoverConcurrency::test_drains_competing_writes_before_verifying_activation` |
+
+Final independence/activation evidence: 168 optional-composition and Family API
+checks passed; 22 activation/migration/independence checks passed after the SQLite
+writer-lock repair. Visual/PostgreSQL activation checks passed 29 tests. The final
+independence and parsing run passed 33 tests, including an assertion that no Family
+table is queried during upload, four-Subject Search, and generation replacement.
+Trash/restoration acceptance checks passed 14 tests.
+
+Frontend coverage: all 2,347 app tests passed (82.43% statements, 77.23% branches);
+domain measured 95.54%/93.20%, shared UI 98.78%/97.60%. The three improved app
+branch floors were raised, and every floor passed. Full backend coverage remains
+open; its first run hit physical storage-reserve failures and found issues fixed
+by the focused checks above.

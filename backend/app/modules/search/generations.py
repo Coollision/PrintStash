@@ -571,7 +571,7 @@ def _prepare_space(
     return read(session, generation)
 
 
-def _lock_cutover(session: Session) -> None:
+def _lock_cutover(session: Session, generation_id: int) -> None:
     # PostgreSQL table SHARE locks drain in-flight passage/vector writes and
     # prevent new ones until the flip commits. Readers remain unblocked. SQLite
     # takes its ordinary write transaction. No inference happens under this lock.
@@ -581,6 +581,15 @@ def _lock_cutover(session: Session) -> None:
             text(
                 "LOCK TABLE models, files, search_passages, passage_vectors IN SHARE MODE"
             )
+        )
+    else:
+        # BEGIN is deferred on SQLite. Take its writer lock before verification
+        # establishes a read snapshot, which cannot be upgraded after another
+        # connection commits in WAL mode. This stages no metadata change.
+        session.exec(
+            update(IndexGeneration)
+            .where(IndexGeneration.id == generation_id)
+            .values(last_activity_at=IndexGeneration.last_activity_at)
         )
 
 
@@ -605,7 +614,7 @@ def activate(
         .with_for_update()
         .execution_options(populate_existing=True)
     ).all()
-    _lock_cutover(session)
+    _lock_cutover(session, generation_id)
     generation = require(session, generation_id, version_token)
     if not configuration.settings(session).enabled:
         raise OperationError("search_ai_disabled", kind=ErrorKind.CONFLICT)

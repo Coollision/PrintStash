@@ -421,7 +421,7 @@ def process(
                 generation = session.get(
                     IndexGeneration, generation_id, populate_existing=True
                 )
-                generations._lock_cutover(session)
+                generations._lock_cutover(session, generation_id)
                 generations.verify_counts(session, generation)
                 sample = session.exec(
                     select(PassageVector)

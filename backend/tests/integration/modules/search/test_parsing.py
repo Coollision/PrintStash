@@ -106,13 +106,32 @@ class TestParse:
             )
         if switch in ("instance", "both"):
             configuration.update(
-                db_session, SearchSettings(chat_endpoint_id=endpoint.id)
+                db_session, SearchSettings(enabled=True, chat_endpoint_id=endpoint.id)
             )
+        assert configuration.settings(db_session).enabled
         provider = ParseProvider()
         result = parsing.parse(
             db_session, user, "original query", provider_factory=lambda *_: provider
         )
         assert not result.parsed and result.residual_query == "original query"
+        assert provider.requests == []
+
+    def test_keeps_parsing_off_with_a_configured_chat_endpoint(
+        self, db_session, parser_setup, make_user
+    ):
+        _, endpoint = parser_setup
+        user = make_user()
+        configuration.update(
+            db_session, SearchSettings(enabled=True, chat_endpoint_id=endpoint.id)
+        )
+        provider = ParseProvider()
+
+        result = parsing.parse(
+            db_session, user, "original query", provider_factory=lambda *_: provider
+        )
+
+        assert not result.parsed
+        assert result.residual_query == "original query"
         assert provider.requests == []
 
     @pytest.mark.parametrize(
