@@ -218,6 +218,10 @@ class Settings(BaseSettings):
     # RAM headroom. Zero is the supported sentinel for serial execution.
     max_render_jobs: int = Field(default=1, ge=0)
 
+    # ZIP compute workers: 0 chooses from effective CPU and RAM; 1 is serial.
+    # Publishing remains ordered. All workers share mesh memory admission.
+    import_workers: int = Field(default=0, ge=0, le=32)
+
     # Number of faces processed per chunk in the software rasteriser. The renderer
     # builds its per-face geometry/shading arrays (each O(faces)) one chunk at a
     # time and frees them before the next, so peak render memory is O(chunk_size)
@@ -225,6 +229,9 @@ class Settings(BaseSettings):
     # ~70 MB float32 arrays all at once (#29). Lower it to shrink peak RSS further
     # on tiny containers; raise it for marginally less Python-loop overhead.
     mesh_render_face_chunk_size: int = Field(default=64_000, gt=0)
+    mesh_rasterizer: Literal["auto", "python", "rust"] = "auto"
+    mesh_loader: Literal["auto", "python"] = "auto"
+    mesh_geometry: Literal["auto", "python"] = "auto"
 
     # Width of generated Model preview images. Height keeps the renderer's 4:3
     # aspect ratio. The Settings UI offers bounded presets so higher fidelity is

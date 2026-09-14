@@ -132,18 +132,16 @@ class TestFingerprintExtraction:
         )
 
     def test_reuses_loaded_mesh_for_descriptors(self, tmp_path, monkeypatch):
-        import trimesh
-
         path = tmp_path / "part.stl"
         path.write_bytes(tetrahedron().export(file_type="stl"))
-        load = trimesh.load_scene
+        load = mesh_processing._load_mesh
         calls = []
 
         def observed_load(*args, **kwargs):
             calls.append(args[0])
             return load(*args, **kwargs)
 
-        monkeypatch.setattr(trimesh, "load_scene", observed_load)
+        monkeypatch.setattr(mesh_processing, "_load_mesh", observed_load)
 
         result = ThumbnailEngine().generate(
             ThumbnailRequest(path, width=64, include_fingerprint=True)

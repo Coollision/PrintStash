@@ -29,9 +29,15 @@ from app.modules.inference.sparse import LocalSparseProvider
 from app.modules.storage.capacity import CapacityManager, CapacityResource
 
 _HOSTS = {
+    # Explicit file-delivery hosts from https://huggingface.co/docs/hub/models-downloading.
+    # Keep exact matches: a suffix wildcard would also admit unrelated subdomains.
     "huggingface.co",
     "cdn-lfs.huggingface.co",
     "cdn-lfs-us-1.huggingface.co",
+    "cdn-lfs-us-1.hf.co",
+    "cdn-lfs-eu-1.hf.co",
+    "us.aws.cdn.hf.co",
+    "us.gcp.cdn.hf.co",
     "cas-bridge.xethub.hf.co",
     "transfer.xethub.hf.co",
 }

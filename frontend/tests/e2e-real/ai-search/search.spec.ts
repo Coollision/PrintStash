@@ -39,9 +39,10 @@ test.describe("AI Search", () => {
       const queryImage = await thumbnailResponse.body();
       const mimeType = thumbnailResponse.headers()["content-type"].split(";")[0];
       await page.goto("/settings?section=ai-search");
+      await page.getByRole("button", { name: "Advanced AI controls" }).click();
       const form = page.getByRole("form", { name: "AI Search", exact: true });
       await form.getByRole("checkbox", { name: "Enable AI Search", exact: true }).check();
-      await form.getByRole("checkbox", { name: "Allow local models", exact: true }).check();
+      await form.getByRole("checkbox", { name: "Run AI on this machine", exact: true }).check();
       await form.getByRole("button", { name: "Save search settings" }).click();
       await expect(page.getByText("AI Search settings saved", { exact: true })).toBeVisible();
       const catalog: InferenceModel[] = await (
@@ -55,9 +56,9 @@ test.describe("AI Search", () => {
           (!requestedModel || entry.key === requestedModel),
       );
       expect(model).toBeDefined();
-      await page.getByRole("combobox", { name: "Search index" }).selectOption("multiview");
+      await page.getByRole("combobox", { name: "Search type" }).selectOption("multiview");
       await page
-        .getByRole("combobox", { name: "Model", exact: true })
+        .getByRole("combobox", { name: "AI model or server", exact: true })
         .selectOption(`local:${model!.id}`);
       await page.getByRole("button", { name: "Build new index" }).click();
       await expect
@@ -83,6 +84,7 @@ test.describe("AI Search", () => {
       await transfer.dispose();
       const result = page.getByRole("link", { name: names[0], exact: true });
       await expect(result).toBeVisible();
+      await result.locator("xpath=ancestor::li").getByText("Why this result").click();
       await expect(
         result.locator("xpath=ancestor::li").getByText("Shape match", { exact: true }),
       ).toBeVisible();
@@ -142,9 +144,10 @@ test.describe("AI Search", () => {
       await expect(page).toHaveURL(/\/documents\/\d+$/);
       documentId = page.url().split("/").at(-1);
       await page.goto("/settings?section=ai-search");
+      await page.getByRole("button", { name: "Advanced AI controls" }).click();
       const form = page.getByRole("form", { name: "AI Search", exact: true });
       await form.getByRole("checkbox", { name: "Enable AI Search", exact: true }).check();
-      await form.getByRole("checkbox", { name: "Allow local models", exact: true }).check();
+      await form.getByRole("checkbox", { name: "Run AI on this machine", exact: true }).check();
       await form.getByRole("button", { name: "Save search settings" }).click();
       await expect(page.getByText("AI Search settings saved", { exact: true })).toBeVisible();
       const catalog: InferenceModel[] = await (
@@ -159,7 +162,7 @@ test.describe("AI Search", () => {
       );
       expect(model).toBeDefined();
       await page
-        .getByRole("combobox", { name: "Model", exact: true })
+        .getByRole("combobox", { name: "AI model or server", exact: true })
         .selectOption(`local:${model!.id}`);
       await page.getByRole("button", { name: "Verify local model" }).click();
       await expect(page.getByText("Local model verified", { exact: true })).toBeVisible();
@@ -180,7 +183,7 @@ test.describe("AI Search", () => {
         });
       }
       await page.getByRole("button", { name: "Build new index" }).click();
-      await expect(page.getByText("Serving search now").locator("..")).toContainText(model!.key, {
+      await expect(page.getByText("Search status").locator("..")).toContainText(model!.key, {
         timeout: 60000,
       });
       await page.goto("/");
@@ -199,6 +202,7 @@ test.describe("AI Search", () => {
       await expect(page).toHaveURL(/\/search\?q=bike\+lamp\+attachment/);
       const link = page.getByRole("link", { name, exact: true });
       await expect(link).toBeVisible();
+      await link.locator("xpath=ancestor::li").getByText("Why this result").click();
       await expect(
         link.locator("xpath=ancestor::li").getByText("Related description"),
       ).toBeVisible();
@@ -215,6 +219,19 @@ test.describe("AI Search", () => {
           fullPage: true,
         });
       }
+      await page.reload();
+      await expect(link).toBeVisible();
+      await page.getByRole("button", { name: "List view", exact: true }).click();
+      await expect(link).toBeVisible();
+      await page.getByRole("button", { name: "Clear search", exact: true }).click();
+      await expect(page).toHaveURL(/\/$/);
+      await expect(box).toHaveValue("");
+      await expect(page.getByRole("heading", { name: "Search results", exact: true })).toHaveCount(
+        0,
+      );
+      await box.fill("bike lamp attachment");
+      await box.press("Enter");
+      await expect(link).toBeVisible();
       await link.click();
       await expect(page).toHaveURL(new RegExp(`/documents/${documentId}$`));
       const disabled = await page.request.patch(`${API}/api/v1/search/settings`, {
@@ -257,9 +274,10 @@ test.describe("AI Search", () => {
       });
       modelId = Number((await modelCard(page, name).getAttribute("href"))!.split("/").at(-1));
       await page.goto("/settings?section=ai-search");
+      await page.getByRole("button", { name: "Advanced AI controls" }).click();
       const form = page.getByRole("form", { name: "AI Search", exact: true });
       await form.getByRole("checkbox", { name: "Enable AI Search", exact: true }).check();
-      await form.getByRole("checkbox", { name: "Allow local models", exact: true }).check();
+      await form.getByRole("checkbox", { name: "Run AI on this machine", exact: true }).check();
       await form.getByRole("button", { name: "Save search settings" }).click();
       await expect(page.getByText("AI Search settings saved", { exact: true })).toBeVisible();
       const catalog: InferenceModel[] = await (
@@ -273,9 +291,9 @@ test.describe("AI Search", () => {
         ) ?? catalog.find((entry) => entry.installed && entry.modality === "point_cloud");
       expect(clip).toBeDefined();
       expect(point).toBeDefined();
-      await page.getByRole("combobox", { name: "Search index" }).selectOption("thumbnail");
+      await page.getByRole("combobox", { name: "Search type" }).selectOption("thumbnail");
       await page
-        .getByRole("combobox", { name: "Model", exact: true })
+        .getByRole("combobox", { name: "AI model or server", exact: true })
         .selectOption(`local:${clip!.id}`);
       await page.getByRole("button", { name: "Build new index" }).click();
       await expect
@@ -284,9 +302,9 @@ test.describe("AI Search", () => {
           { timeout: 90000 },
         )
         .toContain("thumbnail");
-      await page.getByRole("combobox", { name: "Search index" }).selectOption("point_cloud");
+      await page.getByRole("combobox", { name: "Search type" }).selectOption("point_cloud");
       await page
-        .getByRole("combobox", { name: "Model", exact: true })
+        .getByRole("combobox", { name: "AI model or server", exact: true })
         .selectOption(`local:${point!.id}`);
       await page.getByRole("button", { name: "Build new index" }).click();
       await expect

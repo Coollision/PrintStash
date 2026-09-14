@@ -3,6 +3,8 @@ import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import SearchPage from "@/pages/search";
+import { Route, Routes } from "react-router-dom";
 import { LibrarySearch } from "@/components/library-search";
 import { usePathname, useSearchParams } from "@/lib/navigation";
 import { json, renderApp, type RenderAppOptions } from "@/test-support/render";
@@ -34,6 +36,57 @@ function searchBox(options: RenderAppOptions = {}) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("LibrarySearch", () => {
+  it("returns to the library when clearing a submitted search", async () => {
+    const user = userEvent.setup();
+    searchBox({ at: "/search?q=bracket&parse=1" });
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(/^\/\?$/));
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    expect(screen.getByRole("searchbox")).toHaveFocus();
+  });
+  it("leaves submitted results when the query is erased with the keyboard", async () => {
+    const user = userEvent.setup();
+    searchBox({ at: "/search?q=bracket" });
+    await user.clear(screen.getByRole("searchbox"));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(/^\/\?$/));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("discards a late response after clearing search", async () => {
+    const user = userEvent.setup();
+    renderApp(
+      <>
+        <LibrarySearch />
+        <Routes>
+          <Route path="/" element={<h1>Library</h1>} />
+          <Route path="/search" element={<SearchPage />} />
+        </Routes>
+      </>,
+      { at: "/search?q=bracket" },
+    );
+    let finish: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const fetcher = vi.fn<typeof fetch>((url) => {
+      if (String(url).includes("/search?")) return pending;
+      if (String(url).includes("/status")) return Promise.resolve(json(searchStatus()));
+      return Promise.resolve(json({ available: false, nl_filters_enabled: false }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    // A fresh query drives the delayed request through the mounted results page.
+    await user.type(screen.getByRole("searchbox"), " new{Enter}");
+    await waitFor(() =>
+      expect(fetcher.mock.calls.some(([url]) => String(url).includes("/search?"))).toBe(true),
+    );
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(await screen.findByRole("heading", { name: "Library" })).toBeVisible();
+    await act(async () => {
+      finish(json(searchResponse({ items: [aSearchResult()] })));
+    });
+    expect(screen.queryByRole("link", { name: "Desk bracket" })).toBeNull();
+    expect(screen.queryByText("Searching…")).toBeNull();
+  });
   it("debounces lexical suggestions without inference", async () => {
     const user = userEvent.setup();
     const app = searchBox();

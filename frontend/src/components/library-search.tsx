@@ -84,6 +84,20 @@ export function LibrarySearch() {
     setOpen(false);
     router.push(`/search?${new URLSearchParams({ q: value.trim(), parse: "1" })}`);
   }
+  function changeValue(next: string) {
+    setValue(next);
+    setOpen(!!next.trim());
+    if (next.trim()) return;
+    setDebounced("");
+    setPublished("");
+    if (pathname === "/search") {
+      router.replace("/", { scroll: false });
+    } else {
+      const updated = new URLSearchParams(params);
+      updated.delete("q");
+      router.replace(updated.size ? `/?${updated}` : "/", { scroll: false });
+    }
+  }
   if (!visible) return <span className="flex-1" />;
   const current = debounced === value.trim();
   const visualReady = status.data?.legs.some(
@@ -138,8 +152,7 @@ export function LibrarySearch() {
               value={value}
               onClick={() => setOpen(!!value.trim())}
               onChange={(event) => {
-                setValue(event.target.value);
-                setOpen(true);
+                changeValue(event.target.value);
               }}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown" && open) {
@@ -173,8 +186,7 @@ export function LibrarySearch() {
                   type="button"
                   aria-label={t("nav.clearSearch")}
                   onClick={() => {
-                    setValue("");
-                    setOpen(false);
+                    changeValue("");
                     input.current?.focus();
                   }}
                 >

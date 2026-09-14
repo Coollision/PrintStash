@@ -1,0 +1,160 @@
+"""Parallel computation must retain ordered, bounded consumption."""
+
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
+import pytest
+
+from app.core.config import _overlay
+from app.modules.ingestion.mesh_prefetch import PreparedImports
+from app.modules.media import mesh_operations
+from app.modules.media import render_budget as rb
+
+
+@pytest.fixture
+def parallel(monkeypatch, tmp_path):
+    monkeypatch.setitem(_overlay, "import_workers", 2)
+    monkeypatch.setattr(rb, "effective_cpus", lambda: 4)
+    monkeypatch.setattr(rb, "memory_budget", lambda: 1024 * rb.MIB)
+    monkeypatch.setattr(rb, "estimate_work", lambda *args: 128 * rb.MIB)
+    monkeypatch.setattr(rb, "budget", rb.RenderBudget())
+    paths = [
+        (tmp_path / name, name) for name in ("first.stl", "second.stl", "third.stl")
+    ]
+    for path, _ in paths:
+        path.write_bytes(b"mesh")
+    return paths
+
+
+def test_computes_concurrently_in_input_order(parallel, monkeypatch):
+    second_started = Event()
+
+    def analyze(path, **kwargs):
+        if path.name == "first.stl":
+            assert second_started.wait(5), "second mesh did not run concurrently"
+        else:
+            second_started.set()
+        return {"name": path.name}, b"thumbnail"
+
+    monkeypatch.setattr(mesh_operations, "analyze_mesh", analyze)
+    with PreparedImports(parallel, lambda p: None) as prepared:
+        names = [
+            analysis.process(path, lambda label: None)[0]["name"]
+            for (path, _), analysis in prepared
+        ]
+    assert names == [name for _, name in parallel]
+
+
+def test_retains_reservations_until_consumed(parallel, monkeypatch):
+    monkeypatch.setattr(
+        mesh_operations, "analyze_mesh", lambda *a, **k: ({}, b"preview")
+    )
+    with PreparedImports(parallel, lambda p: None) as prepared:
+        iterator = iter(prepared)
+        next(iterator)
+        assert rb.budget.used == 256 * rb.MIB
+        assert rb.budget.jobs == 2
+    assert rb.budget.used == 0
+
+
+def test_writer_failure_releases_admission(parallel, monkeypatch):
+    monkeypatch.setattr(
+        mesh_operations, "analyze_mesh", lambda *a, **k: ({}, b"preview")
+    )
+    with pytest.raises(RuntimeError, match="writer failed"):
+        with PreparedImports(parallel, lambda p: None) as prepared:
+            for _ in prepared:
+                raise RuntimeError("writer failed")
+    assert rb.budget.used == 0
+    assert rb.budget.jobs == 0
+
+
+def test_compute_failure_is_a_per_file_result(parallel, monkeypatch):
+    def analyze(path, **kwargs):
+        if path.name == "first.stl":
+            raise ValueError("bad mesh")
+        return {"name": path.name}, b"preview"
+
+    monkeypatch.setattr(mesh_operations, "analyze_mesh", analyze)
+    with PreparedImports(parallel, lambda p: None) as prepared:
+        iterator = iter(prepared)
+        (path, _), result = next(iterator)
+        with pytest.raises(RuntimeError, match="bad mesh"):
+            result.process(path, lambda label: None)
+        remaining = [
+            result.process(path, lambda label: None)[0]["name"]
+            for (path, _), result in iterator
+        ]
+    assert remaining == ["second.stl", "third.stl"]
+
+
+def test_serial_setting_defers_to_normal_pipeline(parallel, monkeypatch):
+    monkeypatch.setitem(_overlay, "import_workers", 1)
+    with PreparedImports(parallel, lambda p: None) as prepared:
+        results = list(prepared)
+    assert [analysis for _, analysis in results] == [None] * 3
+
+
+def test_unsupported_files_keep_normal_pipeline(parallel):
+    files = [(parallel[0][0], name) for name in ("readme.txt", "print.gcode")]
+    with PreparedImports(files, lambda p: None) as prepared:
+        assert [analysis for _, analysis in prepared] == [None, None]
+
+
+def test_large_reservation_waits_for_other_import(parallel, monkeypatch):
+    monkeypatch.setattr(rb, "estimate_work", lambda *args: 1024 * rb.MIB)
+    entered = Event()
+
+    def analyze(*args, **kwargs):
+        entered.set()
+        return {}, b"preview"
+
+    monkeypatch.setattr(mesh_operations, "analyze_mesh", analyze)
+    lease = rb.budget.acquire(128 * rb.MIB, capacity=1024 * rb.MIB, jobs=2)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+
+        def consume():
+            with PreparedImports(parallel[:1], lambda p: None) as prepared:
+                return list(prepared)
+
+        future = executor.submit(consume)
+        assert not entered.wait(0.1)
+        lease.release()
+        assert future.result(timeout=5)[0][1].value == ({}, b"preview")
+
+
+def test_reports_current_file_during_computation(parallel, monkeypatch):
+    names = []
+    progress = []
+    started = Event()
+
+    def analyze(path, report, **kwargs):
+        report("loading_mesh")
+        report("extracting_geometry")
+        assert started.wait(5)
+        return {}, b"preview"
+
+    monkeypatch.setattr(mesh_operations, "analyze_mesh", analyze)
+
+    def observe(value):
+        progress.append((names[-1], value))
+        if value > 0:
+            started.set()
+
+    with PreparedImports(parallel[:1], observe, names.append) as prepared:
+        results = list(prepared)
+    assert results[0][1].error is None
+    assert any(name == "first.stl" and 0 < value < 100 for name, value in progress)
+
+
+def test_missing_input_does_not_abort_remaining_files(parallel, monkeypatch):
+    parallel[0][0].unlink()
+
+    def analyze(path, **kwargs):
+        return {"size": len(path.read_bytes())}, b"preview"
+
+    monkeypatch.setattr(mesh_operations, "analyze_mesh", analyze)
+    with PreparedImports(parallel, lambda p: None) as prepared:
+        results = [analysis for _, analysis in prepared]
+    assert results[0].error is not None
+    assert results[1].value == ({"size": 4}, b"preview")

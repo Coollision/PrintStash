@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
 
+import { AiSearchSetup } from "@/components/ai-search-setup";
 import { InferenceEndpointForm } from "@/components/inference-endpoint-form";
 import { SearchGenerationControls } from "@/components/search-generation-controls";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import type { SearchSettingsRead } from "@/types/search";
 function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSaved: () => void }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState(initial.settings);
+  const helpId = useId();
   const queryClient = useQueryClient();
   const models = useQuery({ queryKey: ["ai-search", "models"], queryFn: listInferenceModels });
   const sparse = models.data?.find(
@@ -48,9 +50,9 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
     onError: toast.error,
   });
   const toggles = [
-    ["enabled", "aiSearch.enable"],
-    ["local_models_enabled", "aiSearch.enableLocal"],
-    ["download_enabled", "aiSearch.allowDownloads"],
+    ["enabled", "aiSearch.enable", "aiSearch.enableHelp"],
+    ["local_models_enabled", "aiSearch.enableLocal", "aiSearch.localPermissionHelp"],
+    ["download_enabled", "aiSearch.allowDownloads", "aiSearch.downloadPermissionHelp"],
   ] as const;
   return (
     <form
@@ -61,11 +63,13 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
         save.mutate();
       }}
     >
+      <h4 className="text-sm font-semibold">{t("aiSearch.setupPermissions")}</h4>
       <div className="space-y-3">
-        {toggles.map(([field, label]) => (
-          <label key={field} className="flex items-center gap-2 text-sm">
+        {toggles.map(([field, label, help]) => (
+          <label key={field} className="flex items-start gap-3 text-sm">
             <Checkbox
               ariaLabel={t(label)}
+              ariaDescribedBy={`${helpId}-${field}`}
               checked={draft[field]}
               onChange={(value) =>
                 setDraft({
@@ -78,7 +82,12 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
                 })
               }
             />
-            {t(label)}
+            <span className="space-y-1">
+              <span className="block font-medium">{t(label)}</span>
+              <span id={`${helpId}-${field}`} className="block text-xs text-muted-foreground">
+                {t(help)}
+              </span>
+            </span>
           </label>
         ))}
       </div>
@@ -294,6 +303,7 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
             <label key={field} className="flex items-center gap-2 text-sm">
               <Checkbox
                 ariaLabel={t(label)}
+                ariaDescribedBy={`${helpId}-${field}`}
                 checked={draft[field]}
                 disabled={
                   field === "captions_enabled"
@@ -333,6 +343,7 @@ function SettingsForm({ initial, onSaved }: { initial: SearchSettingsRead; onSav
 
 export function AiSearchSettings() {
   const { t } = useI18n();
+  const [advanced, setAdvanced] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const settings = useQuery({ queryKey: ["ai-search", "settings"], queryFn: getSearchSettings });
   const refresh = () => {
@@ -348,12 +359,24 @@ export function AiSearchSettings() {
       <div className="flex items-start gap-3 border-b border-border px-4 py-4 sm:px-5">
         <Search className="h-8 w-8 shrink-0 rounded-md bg-muted p-1.5" aria-hidden />
         <div>
-          <h3 className="text-sm font-semibold">{t("aiSearch.settingsTitle")}</h3>
+          <h2 className="text-sm font-semibold">{t("aiSearch.settingsTitle")}</h2>
           <p className="mt-1 max-w-prose text-xs text-muted-foreground">
             {t("aiSearch.settingsIntro")}
           </p>
         </div>
       </div>
+      {settings.data && (
+        <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+          <Button variant="ghost" onClick={() => setAdvanced(!advanced)}>
+            {advanced ? (
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+            ) : (
+              <SlidersHorizontal className="h-4 w-4" aria-hidden />
+            )}
+            {t(advanced ? "Back to guided setup" : "Advanced AI controls")}
+          </Button>
+        </div>
+      )}
       {settings.isError ? (
         <EmptyState
           title={t("aiSearch.settingsLoadError")}
@@ -365,58 +388,64 @@ export function AiSearchSettings() {
         </p>
       ) : (
         <>
-          <SettingsForm
-            key={JSON.stringify(settings.data.settings)}
-            initial={settings.data}
-            onSaved={refresh}
-          />
-          <SearchGenerationControls settings={settings.data} />
-          <details className="border-t border-border p-4 sm:p-5">
-            <summary className="cursor-pointer text-sm font-semibold">
-              {t("aiSearch.endpoints")}
-            </summary>
-            <div className="mt-4 space-y-4">
-              <label className="block space-y-1 text-sm">
-                {t("aiSearch.editEndpoint")}
-                <select
-                  className="block w-full rounded-md border border-input bg-background p-2"
-                  value={editing ?? ""}
-                  onChange={(event) =>
-                    setEditing(event.target.value ? Number(event.target.value) : null)
-                  }
-                >
-                  <option value="">{t("aiSearch.newEndpoint")}</option>
-                  {settings.data.endpoints.map((endpoint) => (
-                    <option key={endpoint.id} value={endpoint.id}>
-                      {endpoint.model} · {endpoint.host}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <InferenceEndpointForm
-                key={editing ?? "new"}
-                initial={settings.data.endpoints.find((endpoint) => endpoint.id === editing)}
-                onSaved={() => {
-                  setEditing(null);
-                  refresh();
-                }}
+          {!advanced ? (
+            <AiSearchSetup settings={settings.data} onSaved={refresh} />
+          ) : (
+            <>
+              <SettingsForm
+                key={JSON.stringify(settings.data.settings)}
+                initial={settings.data}
+                onSaved={refresh}
               />
-              {settings.data.environment_endpoints.map((kind) => (
-                <Button
-                  key={kind}
-                  variant="outline"
-                  loading={fromEnvironment.isPending}
-                  onClick={() => fromEnvironment.mutate(kind)}
-                >
-                  {t(
-                    kind === "embedding"
-                      ? "aiSearch.importEmbeddingEnvironment"
-                      : "aiSearch.importChatEnvironment",
-                  )}
-                </Button>
-              ))}
-            </div>
-          </details>
+              <SearchGenerationControls settings={settings.data} />
+              <details className="border-t border-border p-4 sm:p-5">
+                <summary className="cursor-pointer text-sm font-semibold">
+                  {t("aiSearch.endpoints")}
+                </summary>
+                <div className="mt-4 space-y-4">
+                  <label className="block space-y-1 text-sm">
+                    {t("aiSearch.editEndpoint")}
+                    <select
+                      className="block w-full rounded-md border border-input bg-background p-2"
+                      value={editing ?? ""}
+                      onChange={(event) =>
+                        setEditing(event.target.value ? Number(event.target.value) : null)
+                      }
+                    >
+                      <option value="">{t("aiSearch.newEndpoint")}</option>
+                      {settings.data.endpoints.map((endpoint) => (
+                        <option key={endpoint.id} value={endpoint.id}>
+                          {endpoint.model} · {endpoint.host}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <InferenceEndpointForm
+                    key={editing ?? "new"}
+                    initial={settings.data.endpoints.find((endpoint) => endpoint.id === editing)}
+                    onSaved={() => {
+                      setEditing(null);
+                      refresh();
+                    }}
+                  />
+                  {settings.data.environment_endpoints.map((kind) => (
+                    <Button
+                      key={kind}
+                      variant="outline"
+                      loading={fromEnvironment.isPending}
+                      onClick={() => fromEnvironment.mutate(kind)}
+                    >
+                      {t(
+                        kind === "embedding"
+                          ? "aiSearch.importEmbeddingEnvironment"
+                          : "aiSearch.importChatEnvironment",
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              </details>
+            </>
+          )}
         </>
       )}
     </Card>

@@ -48,11 +48,13 @@ export function SearchFilterControls({
   filters,
   q,
   sort,
+  showQuery = true,
   onChange,
 }: {
   filters: SavedViewFilters;
   q: string;
   sort: ModelSort;
+  showQuery?: boolean;
   onChange: (filters: SavedViewFilters, q: string, sort: ModelSort) => void;
 }) {
   const { t } = useI18n();
@@ -83,16 +85,20 @@ export function SearchFilterControls({
           onChange(filters, query, sort);
         }}
       >
-        <Input
-          className="min-w-0 flex-1 basis-full sm:basis-auto"
-          aria-label={t("aiSearch.residualQuery")}
-          defaultValue={q}
-          maxLength={512}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Button type="submit" variant="outline">
-          {t("aiSearch.applySearch")}
-        </Button>
+        {showQuery && (
+          <Input
+            className="min-w-0 flex-1 basis-full sm:basis-auto"
+            aria-label={t("aiSearch.residualQuery")}
+            defaultValue={q}
+            maxLength={512}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        )}
+        {showQuery && (
+          <Button type="submit" variant="outline">
+            {t("aiSearch.applySearch")}
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"

@@ -18,6 +18,13 @@ read on 2026-09-11. The comment’s historical download revision `c3875dac` no
 longer resolves through GitHub; the linked current gist supplies the independent
 plan and its 142 acceptance rows.
 
+Search results open in a thumbnail grid. Switch to list view for compact scanning,
+or expand **Why this result** to inspect the matching text. **Search options**
+contains result-type filters, retrieval mode, saved views, and personal preferences.
+The top search bar is the single query field; clearing it returns to the library.
+Interactive requests time out after 30 seconds with a retry action instead of
+remaining in a loading state. Reloading a submitted text search restores its URL query.
+
 ## Text projection and lexical search
 
 - A pure, versioned text recipe in `printstash-core.search.passages`.
@@ -309,6 +316,11 @@ bytes, verify each digest, reject external ONNX tensor data/custom operator
 libraries and atomically publish the complete model. The cancellation endpoint
 is `POST /api/v1/inference/models/downloads/{job_id}/cancel`. Startup never
 fetches weights. Failed/cancelled installs leave existing versions intact.
+Downloads accept the provider’s explicit file-delivery hosts, including
+`us.aws.cdn.hf.co`, `us.gcp.cdn.hf.co`, `cdn-lfs-us-1.hf.co` and
+`cdn-lfs-eu-1.hf.co`. Networks with outbound filtering must permit these HTTPS
+redirects as well as `huggingface.co`; see the
+[provider’s download guidance](https://huggingface.co/docs/hub/models-downloading).
 
 Mount a writable model volume at `VAULT_EMBEDDING_CACHE_DIR` (default
 `/data/ai-models`). `VAULT_EMBEDDING_CACHE_MAX_BYTES` defaults to 4 GiB;

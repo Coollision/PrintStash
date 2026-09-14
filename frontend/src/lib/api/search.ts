@@ -6,6 +6,7 @@ import {
   sendAction,
   sendJson,
 } from "@/lib/api/request";
+import { ApiError } from "@/lib/errors";
 import type { SavedViewFilters, ModelSort } from "@/types";
 import type {
   ParsedSearch,
@@ -33,6 +34,35 @@ export interface SearchQuery {
   filters?: SavedViewFilters;
   sort?: ModelSort;
 }
+
+/** Bound interactive searches, including parsing, while preserving route cancellation. */
+async function searchRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const controller = new AbortController();
+  const parent = options.signal;
+  const cancel = () => controller.abort(parent?.reason);
+  if (parent?.aborted) cancel();
+  else parent?.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(
+    () => controller.abort(new ApiError(408, "search_timeout", "Search timed out")),
+    30_000,
+  );
+  try {
+    return await handleResponse<T>(
+      await fetch(getUrl(path), {
+        headers: authHeaders(),
+        cache: "no-store",
+        ...options,
+        signal: controller.signal,
+      }),
+    );
+  } catch (error) {
+    if (controller.signal.aborted) throw controller.signal.reason;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    parent?.removeEventListener("abort", cancel);
+  }
+}
 export async function searchLibrary(
   query: SearchQuery,
   signal?: AbortSignal,
@@ -47,13 +77,7 @@ export async function searchLibrary(
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.instant) params.set("instant", "true");
   query.types?.forEach((type) => params.append("types[]", type));
-  return handleResponse<SearchResponse>(
-    await fetch(getUrl(`/api/v1/search?${params}`), {
-      headers: authHeaders(),
-      cache: "no-store",
-      signal,
-    }),
-  );
+  return searchRequest<SearchResponse>(`/api/v1/search?${params}`, { signal });
 }
 export function getSearchStatus() {
   return getJson<SearchStatus>("/api/v1/search/status", { fresh: true });
@@ -65,13 +89,9 @@ export async function searchUsingModel(
 ): Promise<SearchResponse> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
-  return handleResponse<SearchResponse>(
-    await fetch(getUrl(`/api/v1/models/${modelId}/similar-text?${params}`), {
-      headers: authHeaders(),
-      cache: "no-store",
-      signal,
-    }),
-  );
+  return searchRequest<SearchResponse>(`/api/v1/models/${modelId}/similar-text?${params}`, {
+    signal,
+  });
 }
 export async function searchImage(
   image: File,
@@ -80,15 +100,13 @@ export async function searchImage(
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({ limit: String(query.limit ?? 30) });
   if (query.cursor) params.set("cursor", query.cursor);
-  return handleResponse<SearchResponse>(
-    await fetch(getUrl(`/api/v1/search/image?${params}`), {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": image.type },
-      body: image,
-      cache: "no-store",
-      signal,
-    }),
-  );
+  return searchRequest<SearchResponse>(`/api/v1/search/image?${params}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": image.type },
+    body: image,
+    cache: "no-store",
+    signal,
+  });
 }
 const configuration = "/api/v1/config/ai-search";
 export function getSearchSettings() {
@@ -151,7 +169,7 @@ export function deleteInferenceModel(id: string) {
 }
 
 export function getSearchPreferences() {
-  return getJson<SearchPreferences>("/api/v1/search/preferences", { fresh: true });
+  return searchRequest<SearchPreferences>("/api/v1/search/preferences");
 }
 export function saveSearchPreferences(
   value: Partial<Pick<SearchPreferences, "nl_filters_enabled" | "timezone">>,
@@ -159,13 +177,11 @@ export function saveSearchPreferences(
   return sendJson<SearchPreferences>("/api/v1/search/preferences", "PATCH", value);
 }
 export async function parseSearch(query: string, signal?: AbortSignal): Promise<ParsedSearch> {
-  return handleResponse<ParsedSearch>(
-    await fetch(getUrl("/api/v1/search/parse"), {
-      method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-      cache: "no-store",
-      signal,
-    }),
-  );
+  return searchRequest<ParsedSearch>("/api/v1/search/parse", {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+    cache: "no-store",
+    signal,
+  });
 }

@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { ArrowLeft, LayoutGrid, List, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { SearchFilterControls } from "@/components/search-filter-controls";
@@ -58,6 +58,7 @@ function SearchContent() {
   const modelId = Number.isSafeInteger(sourceModel) && sourceModel > 0 ? sourceModel : 0;
   const [image, setImage] = useState<File | null>(null);
   const [imageVersion, setImageVersion] = useState(0);
+  const [view, setView] = useState<"grid" | "list">("grid");
   const mode = params.get("mode") === "lexical" ? "lexical" : "hybrid";
   const types = subjectTypes.filter((type) => params.getAll("type").includes(type));
   const status = useQuery({
@@ -69,7 +70,7 @@ function SearchContent() {
   const filters = readSearchFilters(params);
   const filtered = hasSearchFilters(filters);
   const sort = searchSorts.find((value) => value === params.get("sort")) ?? "relevance";
-  const wantsParse = params.get("parse") === "1" && !imageMode && !modelId;
+  const wantsParse = params.get("parse") === "1" && !!q.trim() && !imageMode && !modelId;
   const parseFailed = params.get("parse_error") === "1";
   const preference = useQuery({
     queryKey: ["search-preferences", user?.id],
@@ -167,6 +168,12 @@ function SearchContent() {
   return (
     <PageContainer>
       <PageHeader
+        actions={
+          <Button variant="outline" onClick={() => router.push("/")}>
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            {t("aiSearch.backToLibrary")}
+          </Button>
+        }
         title={t("aiSearch.resultsTitle")}
         description={
           modelId
@@ -185,20 +192,14 @@ function SearchContent() {
             filters={filters}
             q={q}
             sort={sort}
-            onChange={(next, query, order) =>
-              router.push(`/search?${writeSearchFilters(next, query, order)}`)
-            }
+            showQuery={false}
+            onChange={(next, query, order) => {
+              const updated = writeSearchFilters(next, query, order);
+              if (mode === "lexical") updated.set("mode", mode);
+              types.forEach((type) => updated.append("type", type));
+              router.push(`/search?${updated}`);
+            }}
           />
-          {user && (
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <SearchSavedViews
-                userId={user.id}
-                filters={{ ...filters, q, sort }}
-                onSelect={(value) => router.push(`/search?${writeSearchFilters(value)}`)}
-              />
-              {preference.data && <SearchPreferences userId={user.id} value={preference.data} />}
-            </div>
-          )}
           {wantsParse && (
             <p role="status" className="mb-3 text-sm text-muted-foreground">
               {t("aiSearch.parsing")}
@@ -234,38 +235,57 @@ function SearchContent() {
       )}
       {!imageMode && !modelId && (
         <>
-          <div
-            className="mb-4 flex flex-wrap items-center gap-2"
-            aria-label={t("aiSearch.resultTypes")}
-          >
-            {subjectTypes.map((type) => (
-              <Button
-                key={type}
-                size="sm"
-                variant={types.includes(type) ? "secondary" : "outline"}
-                aria-pressed={types.includes(type)}
-                onClick={() => changeType(type)}
+          <details className="mb-4 rounded-lg border border-border">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {t("aiSearch.searchOptions")}
+            </summary>
+            <div className="space-y-3 border-t border-border p-4">
+              {user && (
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <SearchSavedViews
+                    userId={user.id}
+                    filters={{ ...filters, q, sort }}
+                    onSelect={(value) => router.push(`/search?${writeSearchFilters(value)}`)}
+                  />
+                  {preference.data && (
+                    <SearchPreferences userId={user.id} value={preference.data} />
+                  )}
+                </div>
+              )}
+              <div
+                className="mb-4 flex flex-wrap items-center gap-2"
+                aria-label={t("aiSearch.resultTypes")}
               >
-                {t(`aiSearch.type.${type}`)}
-              </Button>
-            ))}
-            <label className="ml-auto flex items-center gap-2 text-sm">
-              {t("aiSearch.searchMode")}
-              <select
-                aria-label={t("aiSearch.searchMode")}
-                value={mode}
-                className="rounded-md border border-input bg-background p-2 text-sm"
-                onChange={(event) => {
-                  const next = new URLSearchParams(params);
-                  next.set("mode", event.target.value);
-                  router.push(`/search?${next}`);
-                }}
-              >
-                <option value="hybrid">{t("aiSearch.hybrid")}</option>
-                <option value="lexical">{t("aiSearch.keywordOnly")}</option>
-              </select>
-            </label>
-          </div>
+                {subjectTypes.map((type) => (
+                  <Button
+                    key={type}
+                    size="sm"
+                    variant={types.includes(type) ? "secondary" : "outline"}
+                    aria-pressed={types.includes(type)}
+                    onClick={() => changeType(type)}
+                  >
+                    {t(`aiSearch.type.${type}`)}
+                  </Button>
+                ))}
+                <label className="ml-auto flex items-center gap-2 text-sm">
+                  {t("aiSearch.searchMode")}
+                  <select
+                    aria-label={t("aiSearch.searchMode")}
+                    value={mode}
+                    className="rounded-md border border-input bg-background p-2 text-sm"
+                    onChange={(event) => {
+                      const next = new URLSearchParams(params);
+                      next.set("mode", event.target.value);
+                      router.push(`/search?${next}`);
+                    }}
+                  >
+                    <option value="hybrid">{t("aiSearch.hybrid")}</option>
+                    <option value="lexical">{t("aiSearch.keywordOnly")}</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </details>
         </>
       )}
       {status.data?.remote_hosts.length ? (
@@ -294,39 +314,92 @@ function SearchContent() {
         <EmptyState icon={Search} title={t("aiSearch.startSearch")} />
       ) : null}
       {(!!modelId || (imageMode ? !!image : !!q.trim() || filtered)) &&
-        (results.isPending ? (
+        (wantsParse ? null : results.isLoading ? (
           <p role="status" className="py-8 text-sm text-muted-foreground">
             {t("aiSearch.searching")}
           </p>
         ) : results.isError && !items.length ? (
           <EmptyState
-            title={t("aiSearch.loadError")}
+            title={t(
+              results.error instanceof ApiError && results.error.code === "search_timeout"
+                ? "aiSearch.timeout"
+                : "aiSearch.loadError",
+            )}
             action={<Button onClick={() => void results.refetch()}>{t("aiSearch.retry")}</Button>}
           />
         ) : items.length ? (
           <Card className="overflow-hidden">
-            <ul className="divide-y divide-border">
+            <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground sm:px-5">
+              <span role="status">{t("aiSearch.resultsShown", { count: items.length })}</span>
+              <div className="flex gap-1" role="group" aria-label={t("aiSearch.resultView")}>
+                <Button
+                  variant="ghost"
+                  className={view === "grid" ? "bg-accent text-accent-foreground" : undefined}
+                  size="icon"
+                  aria-label={t("aiSearch.gridView")}
+                  aria-pressed={view === "grid"}
+                  onClick={() => setView("grid")}
+                >
+                  <LayoutGrid className="h-4 w-4" aria-hidden />
+                </Button>
+                <Button
+                  variant="ghost"
+                  className={view === "list" ? "bg-accent text-accent-foreground" : undefined}
+                  size="icon"
+                  aria-label={t("aiSearch.listView")}
+                  aria-pressed={view === "list"}
+                  onClick={() => setView("list")}
+                >
+                  <List className="h-4 w-4" aria-hidden />
+                </Button>
+              </div>
+            </div>
+            <ul
+              className={
+                view === "grid"
+                  ? "grid grid-cols-2 gap-x-4 gap-y-6 p-4 lg:grid-cols-3 xl:grid-cols-4 sm:p-5"
+                  : "divide-y divide-border"
+              }
+            >
               {items.map((item) => (
                 <li
                   key={`${item.subject_type}:${item.subject_id}`}
-                  className="flex gap-3 px-4 py-4 sm:px-5"
+                  className={view === "grid" ? "min-w-0" : "flex gap-3 px-4 py-4 sm:px-5"}
                 >
-                  {(imageMode || !!modelId) && (
-                    <SearchModelPreview path={item.model?.thumbnail_url} />
-                  )}
+                  {view === "list" && <SearchModelPreview path={item.model?.thumbnail_url} />}
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="min-w-0 break-words text-base font-semibold">
-                        <Link
-                          href={item.href}
-                          className="rounded-sm hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    <div
+                      className={
+                        view === "grid" ? "space-y-2" : "flex flex-wrap items-center gap-2"
+                      }
+                    >
+                      <Link
+                        href={item.href}
+                        className="block rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {view === "grid" && (
+                          <SearchModelPreview path={item.model?.thumbnail_url} large />
+                        )}
+                        <h2
+                          className={
+                            view === "grid"
+                              ? "mt-3 break-words text-sm font-semibold"
+                              : "break-words text-base font-semibold"
+                          }
                         >
                           {item.name}
-                        </Link>
-                      </h2>
+                        </h2>
+                      </Link>
                       <Badge variant="outline">{t(`aiSearch.type.${item.subject_type}`)}</Badge>
                     </div>
-                    <SearchEvidenceList evidence={item.evidence} />
+                    {item.evidence.length > 0 && (
+                      <details className="mt-2 text-sm">
+                        <summary className="cursor-pointer rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          {t("aiSearch.matchDetails")}
+                        </summary>
+                        <SearchEvidenceList evidence={item.evidence} />
+                      </details>
+                    )}
                   </div>
                 </li>
               ))}

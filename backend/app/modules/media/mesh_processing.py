@@ -24,8 +24,10 @@ import tempfile
 import threading
 import time
 import warnings
+import weakref
 import zipfile
-from contextlib import ExitStack
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path, PurePosixPath
 from typing import Dict, Optional
 
@@ -68,7 +70,9 @@ class FallbackThumbnail(bytes):
 _LIBC: "ctypes.CDLL | bool | None" = None
 
 
-def _reclaim_memory() -> None:
+def _reclaim_memory(
+    *, released_mesh: weakref.ReferenceType[object] | None = None
+) -> None:
     """Force Python + the allocator to give a just-freed mesh back to the OS.
 
     Loading and rasterising a mesh churns hundreds of MB of NumPy/trimesh arrays.
@@ -79,7 +83,15 @@ def _reclaim_memory() -> None:
     ``malloc_trim(0)`` returns the freed arenas to the kernel so the high-water
     mark resets between files. Best-effort: a no-op where malloc_trim is absent.
     """
-    gc.collect()
+    if released_mesh is None:
+        gc.collect()
+    else:
+        # A native STL has one owned set of mesh buffers. Collect its young
+        # cycles first, then verify that the mesh actually died. A live weakref
+        # requires a full collection, including objects promoted while rendering.
+        gc.collect(1)
+        if released_mesh() is not None:
+            gc.collect()
     global _LIBC
     try:
         if _LIBC is None:
@@ -107,7 +119,7 @@ def _render_jobs_limit() -> int:
         return 1
 
 
-def _render_semaphore() -> "threading.BoundedSemaphore":
+def _legacy_render_semaphore() -> "threading.BoundedSemaphore":
     """Concurrency gate for mesh load+render.
 
     Ingestion runs in FastAPI's background-task threadpool, so a bulk/folder
@@ -123,6 +135,30 @@ def _render_semaphore() -> "threading.BoundedSemaphore":
         if _RENDER_SEMAPHORE is None or _RENDER_SEMAPHORE[0] != limit:
             _RENDER_SEMAPHORE = (limit, threading.BoundedSemaphore(limit))
         return _RENDER_SEMAPHORE[1]
+
+
+@contextmanager
+def _render_semaphore() -> Iterator[None]:
+    from app.modules.media import render_budget
+
+    if render_budget.RENDER_ADMITTED.get() or render_budget.ADAPTIVE_RENDER.get():
+        yield
+        return
+    with _legacy_render_semaphore():
+        capacity = render_budget.memory_budget()
+        limit = _render_jobs_limit()
+        reservation = render_budget.budget.acquire(
+            max(1, capacity // limit),
+            capacity=capacity,
+            jobs=max(limit, render_budget.import_workers()),
+        )
+        assert reservation is not None
+        token = render_budget.RENDER_ADMITTED.set(True)
+        try:
+            yield
+        finally:
+            render_budget.RENDER_ADMITTED.reset(token)
+            reservation.release()
 
 
 def _canonical_suffix(path: Path, file_type: str | None = None) -> str:
@@ -329,7 +365,10 @@ def _ram_triangle_cap(suffix: str) -> Optional[int]:
         _MEMORY_LIMIT_BYTES = _detect_memory_limit_bytes() or False
     if not _MEMORY_LIMIT_BYTES:
         return None
-    budget = _MEMORY_LIMIT_BYTES * fraction / _render_jobs_limit()
+    from app.modules.media.render_budget import ADAPTIVE_RENDER
+
+    divisor = 1 if ADAPTIVE_RENDER.get() else _render_jobs_limit()
+    budget = _MEMORY_LIMIT_BYTES * fraction / divisor
     per_tri = _PEAK_BYTES_PER_TRIANGLE.get(suffix, _DEFAULT_PEAK_BYTES_PER_TRIANGLE)
     return max(int(budget / per_tri), 1)
 
@@ -564,6 +603,15 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
         return _load_step_mesh_isolated(path)
 
     try:
+        loaded = None
+        if suffix == ".3mf" and settings.mesh_loader == "auto":
+            from printstash_core.mesh.threemf import load_scene
+
+            loaded = load_scene(path)
+        elif suffix == ".stl" and settings.mesh_loader == "auto":
+            from printstash_core.mesh.stl import load_binary_stl
+
+            loaded = load_binary_stl(path)
         # Load the scene rather than asking trimesh for a mesh directly. 3MF
         # projects commonly represent a placed part as a component graph: the
         # mesh lives on one object while the build item and component carry its
@@ -571,12 +619,13 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
         # trimesh releases, and flattening ``Scene.geometry`` directly drops
         # those instance transforms. Keep the scene until ``dump`` explicitly
         # bakes every graph path into each mesh instance.
-        if file_type is None:
-            loaded = trimesh.load_scene(str(path), process=False)
-        else:
-            loaded = trimesh.load_scene(
-                str(path), file_type=suffix.lstrip(".") or None, process=False
-            )
+        if loaded is None:
+            if file_type is None:
+                loaded = trimesh.load_scene(str(path), process=False)
+            else:
+                loaded = trimesh.load_scene(
+                    str(path), file_type=suffix.lstrip(".") or None, process=False
+                )
     except Exception:
         logger.warning(
             "mesh_processing: trimesh.load_scene failed for %s",
@@ -625,6 +674,13 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
 
 
 def _geometry_from_mesh(mesh) -> Dict[str, Optional[float]]:
+    if mesh is not None and settings.mesh_geometry == "auto":
+        from printstash_core.mesh.native_geometry import measure_mesh
+
+        measured = measure_mesh(mesh)
+        if measured is not None:
+            return measured
+
     out: Dict[str, Optional[float]] = {
         "bbox_x_mm": None,
         "bbox_y_mm": None,

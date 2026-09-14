@@ -12,8 +12,10 @@ import type { EndpointProposal, InferenceEndpoint } from "@/types/search";
 export function InferenceEndpointForm({
   initial,
   onSaved,
+  compact = false,
 }: {
   initial?: InferenceEndpoint;
+  compact?: boolean;
   onSaved: () => void;
 }) {
   const { t } = useI18n();
@@ -69,18 +71,23 @@ export function InferenceEndpointForm({
     >
       <p className="max-w-prose text-sm text-muted-foreground">{t("aiSearch.compatibleHelp")}</p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-sm">
-          {t("aiSearch.endpointKind")}
-          <select
-            className="block w-full rounded-md border border-input bg-background p-2"
-            value={kind}
-            disabled={!!initial}
-            onChange={(event) => setKind(event.target.value === "chat" ? "chat" : "embedding")}
-          >
-            <option value="embedding">{t("aiSearch.embeddingEndpoint")}</option>
-            <option value="chat">{t("aiSearch.chatEndpoint")}</option>
-          </select>
-        </label>
+        {!compact && (
+          <>
+            <label className="space-y-1 text-sm">
+              {t("aiSearch.endpointKind")}
+              <select
+                className="block w-full rounded-md border border-input bg-background p-2"
+                value={kind}
+                disabled={!!initial}
+                onChange={(event) => setKind(event.target.value === "chat" ? "chat" : "embedding")}
+              >
+                <option value="embedding">{t("aiSearch.embeddingEndpoint")}</option>
+                <option value="chat">{t("aiSearch.chatEndpoint")}</option>
+              </select>
+            </label>
+          </>
+        )}
+
         <label className="space-y-1 text-sm">
           {t("aiSearch.endpointUrl")}
           <Input
@@ -101,26 +108,10 @@ export function InferenceEndpointForm({
             maxLength={128}
           />
         </label>
-        <label className="space-y-1 text-sm">
-          {t("aiSearch.revision")}
-          <Input
-            value={revision}
-            onChange={(event) => setRevision(event.target.value)}
-            required
-            maxLength={128}
-          />
-        </label>
-        <label className="space-y-1 text-sm">
-          {t("aiSearch.repository")}
-          <Input
-            value={repo}
-            onChange={(event) => setRepo(event.target.value)}
-            placeholder={t("aiSearch.repoPlaceholder")}
-          />
-        </label>
+
         {kind === "embedding" && (
           <label className="space-y-1 text-sm">
-            {t("aiSearch.nativeDimension")}
+            {t(compact ? "Model output size (from your server)" : "aiSearch.nativeDimension")}
             <Input
               type="number"
               min={1}
@@ -147,18 +138,40 @@ export function InferenceEndpointForm({
             </span>
           )}
         </label>
-        <label className="space-y-1 text-sm">
-          {t("aiSearch.endpointTimeout")}
-          <Input
-            type="number"
-            min={1}
-            max={120}
-            value={timeout}
-            required
-            onChange={(event) => setTimeout(Number(event.target.value))}
-          />
-        </label>
       </div>
+      <details open={compact ? undefined : true}>
+        <summary className="cursor-pointer py-3 text-sm font-medium">{t("Server options")}</summary>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            {t("aiSearch.revision")}
+            <Input
+              value={revision}
+              onChange={(event) => setRevision(event.target.value)}
+              required
+              maxLength={128}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            {t("aiSearch.repository")}
+            <Input
+              value={repo}
+              onChange={(event) => setRepo(event.target.value)}
+              placeholder={t("aiSearch.repoPlaceholder")}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            {t("aiSearch.endpointTimeout")}
+            <Input
+              type="number"
+              min={1}
+              max={120}
+              value={timeout}
+              required
+              onChange={(event) => setTimeout(Number(event.target.value))}
+            />
+          </label>
+        </div>
+      </details>
       {initial?.has_credentials && (
         <Button
           type="button"
@@ -174,7 +187,7 @@ export function InferenceEndpointForm({
         </Button>
       )}
       <details>
-        <summary className="cursor-pointer text-sm font-medium">
+        <summary className="cursor-pointer py-3 text-sm font-medium">
           {t("aiSearch.customHeaders")}
         </summary>
         {initial?.header_names.length ? (

@@ -502,6 +502,67 @@ class TestRasteriseTriangles:
         # keeps the near surface visible.
         assert zbuf[4, 4] < 0
 
+    def test_bounds_work_for_a_long_thin_triangle(self) -> None:
+        tri = np.array([[[0.0, 0.0, 0.0], [511.0, 511.0, 0.0], [509.0, 511.0, 0.0]]])
+
+        candidates, img = self.paint(tri, size=512)
+
+        assert candidates < 512 * 8
+        assert img[400, 400].tolist() == [255, 255, 255]
+
+    @pytest.mark.parametrize(
+        "dtype", [np.float32, np.float64], ids=["float32", "float64"]
+    )
+    def test_scanlines_preserve_bounding_box_pixels(self, dtype) -> None:
+        rng = np.random.default_rng(1234)
+        starts = rng.uniform(-100, 500, size=(64, 3))
+        ends = rng.uniform(-100, 500, size=(64, 3))
+        thin = ends + rng.uniform(-2, 2, size=(64, 3))
+        tri = np.stack((starts, ends, thin), axis=1).astype(dtype)
+
+        optimized_count, optimized = self.paint(tri, size=512)
+        reference_count, reference = self.paint(
+            tri, size=512, budget=RasterBudget(limit=100_000_000)
+        )
+
+        np.testing.assert_array_equal(optimized, reference)
+        assert optimized_count < reference_count / 4
+
+    def test_scanlines_preserve_equal_depth_face_order(self) -> None:
+        tri = np.array(
+            [
+                [[0.0, 0.0, 0.0], [511.0, 511.0, 0.0], [509.0, 511.0, 0.0]],
+                [[0.0, 0.0, 0.0], [511.0, 511.0, 0.0], [509.0, 511.0, 0.0]],
+            ]
+        )
+        normals = np.array([[[1.0, 0.0, 0.0]] * 3, [[0.0, 1.0, 0.0]] * 3])
+        img = np.zeros((512, 512, 3), dtype=np.uint8)
+        zbuf = np.full((512, 512), np.inf)
+
+        rasterizer._rasterise_triangles(
+            img,
+            zbuf,
+            tri,
+            normals,
+            lambda n: n,
+            np.array([255.0, 255.0, 255.0]),
+            512,
+            512,
+        )
+
+        assert img[400, 400].tolist() == [255, 0, 0]
+
+    @pytest.mark.parametrize("dtype", [np.float32, np.float64])
+    def test_scanlines_preserve_rounded_edge_pixels(self, dtype) -> None:
+        top = np.nextafter(dtype(17.5), dtype(-np.inf))
+        tri = np.array([[[0, top, 0], [1, top, 0], [511, -482.5, 0]]], dtype=dtype)
+
+        _, optimized = self.paint(tri, size=512)
+        _, reference = self.paint(tri, size=512, budget=RasterBudget(limit=100_000_000))
+
+        assert reference[17, 0].tolist() == [255, 255, 255]
+        np.testing.assert_array_equal(optimized, reference)
+
     def test_stops_when_a_shared_budget_is_exhausted(self) -> None:
         tri = np.array([[[2.0, 2.0, 0.0], [12.0, 2.0, 0.0], [2.0, 12.0, 0.0]]])
 

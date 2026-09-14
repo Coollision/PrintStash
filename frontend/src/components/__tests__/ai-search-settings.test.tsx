@@ -13,8 +13,8 @@ import {
   searchSettings,
 } from "@/test-support/search";
 
-function settingsPanel(options: RenderAppOptions = {}) {
-  return renderApp(<AiSearchSettings />, {
+async function settingsPanel(options: RenderAppOptions = {}) {
+  const app = renderApp(<AiSearchSettings />, {
     ...options,
     routes: {
       "GET /api/v1/config/ai-search": json(
@@ -34,10 +34,174 @@ function settingsPanel(options: RenderAppOptions = {}) {
       ...options.routes,
     },
   });
+  if (
+    !options.routes?.["GET /api/v1/config/ai-search"] ||
+    (options.routes["GET /api/v1/config/ai-search"] instanceof Response &&
+      options.routes["GET /api/v1/config/ai-search"].ok)
+  ) {
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Advanced AI controls|Controles avanzados de IA/ }),
+    );
+  }
+  return app;
 }
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AI Search settings", () => {
+  it("keeps index tuning optional", async () => {
+    await settingsPanel();
+    await screen.findByRole("combobox", { name: "AI model or server" });
+    expect(screen.getByText("Index precision")).not.toBeVisible();
+    await userEvent.click(screen.getByText("Advanced index settings"));
+    expect(screen.getByRole("combobox", { name: "Index precision" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Use automatically when ready" })).toBeChecked();
+  });
+
+  it("explains the first setup step when AI is off", async () => {
+    await settingsPanel({
+      routes: {
+        "GET /api/v1/config/ai-search": json(
+          searchConfiguration({ settings: searchSettings({ enabled: false }) }),
+        ),
+      },
+    });
+    expect(
+      await screen.findByText("First, enable AI Search above and save your settings."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Build new index" })).toBeDisabled();
+    expect(
+      screen.getByText("You choose each download below. Enabling this does not start a download."),
+    ).toBeVisible();
+  });
+
+  it.each([
+    {
+      label: "local processing disabled",
+      local: false,
+      runtime: true,
+      installed: true,
+      message: "Enable “Run AI on this machine” above and save before using a local model.",
+    },
+    {
+      label: "download required",
+      local: true,
+      runtime: true,
+      installed: false,
+      message: "Download the selected AI model before building the index.",
+    },
+    {
+      label: "ready model",
+      local: true,
+      runtime: true,
+      installed: true,
+      message: "Ready to build. You can check the space needed first.",
+    },
+  ])("explains a $label", async ({ local, runtime, installed, message }) => {
+    await settingsPanel({
+      routes: {
+        "GET /api/v1/config/ai-search": json(
+          searchConfiguration({
+            settings: searchSettings({
+              enabled: true,
+              local_models_enabled: local,
+              download_enabled: true,
+            }),
+          }),
+        ),
+        "GET /api/v1/inference/models": json([
+          anInferenceModel({ installed, runtime_available: runtime }),
+        ]),
+      },
+    });
+    await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "AI model or server" }),
+      `local:${"a".repeat(64)}`,
+    );
+    expect(screen.getByText(message)).toBeVisible();
+  });
+
+  it("explains an index already building", async () => {
+    await settingsPanel({
+      routes: {
+        "GET /api/v1/config/ai-search/generations": json([
+          aSearchGeneration({ state: "building", phase: "backfill" }),
+        ]),
+      },
+    });
+    await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "AI model or server" }),
+      `local:${"a".repeat(64)}`,
+    );
+    expect(
+      screen.getByText(
+        "An index for this search type is already building. Follow its progress below.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Build new index" })).toBeDisabled();
+  });
+
+  it("explains an estimate exceeding the storage budget", async () => {
+    await settingsPanel({
+      routes: {
+        "POST /api/v1/config/ai-search/generations/estimate": json({
+          passages: 24,
+          estimated_bytes: 2097152,
+          existing_bytes: 1048576,
+          budget_bytes: 1048576,
+          fits_budget: false,
+          estimated_seconds: 120,
+        }),
+      },
+    });
+    await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "AI model or server" }),
+      `local:${"a".repeat(64)}`,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Estimate resources" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Build new index" })).toBeDisabled(),
+    );
+    expect(
+      screen.queryByText("Ready to build. You can check the space needed first."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        "This build exceeds the index storage budget. Increase the budget or remove an old index first.",
+      )[0],
+    ).toBeVisible();
+  });
+
+  it("explains missing download permission", async () => {
+    await settingsPanel({
+      routes: {
+        "GET /api/v1/config/ai-search": json(
+          searchConfiguration({
+            settings: searchSettings({
+              enabled: true,
+              local_models_enabled: true,
+              download_enabled: false,
+            }),
+          }),
+        ),
+        "GET /api/v1/inference/models": json([anInferenceModel({ installed: false })]),
+      },
+    });
+    await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
+    await userEvent.selectOptions(
+      await screen.findByRole("combobox", { name: "AI model or server" }),
+      `local:${"a".repeat(64)}`,
+    );
+    expect(
+      screen.getByText(
+        "Enable “Allow AI model downloads” above and save, then download this model.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Download model" })).toBeDisabled();
+  });
+
   it("prepares the optional preplaced point profile", async () => {
     const user = userEvent.setup();
     const point = anInferenceModel({
@@ -47,7 +211,7 @@ describe("AI Search settings", () => {
       native_dimension: 512,
       curated: false,
     });
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "GET /api/v1/inference/models": json([anInferenceModel(), point]),
         "GET /api/v1/config/ai-search/generations": json([
@@ -59,10 +223,13 @@ describe("AI Search settings", () => {
       },
     });
     await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Search index" }),
+      await screen.findByRole("combobox", { name: "Search type" }),
       "point_cloud",
     );
-    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), `local:${point.id}`);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "AI model or server" }),
+      `local:${point.id}`,
+    );
     expect(screen.getByText(/Build a thumbnail or multiple-view index first/)).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "Combine views" })).toBeNull();
     expect(screen.queryByRole("option", { name: /bge-small/ })).toBeNull();
@@ -82,7 +249,7 @@ describe("AI Search settings", () => {
       modality: "text_image",
       native_dimension: 512,
     });
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "GET /api/v1/inference/models": json([anInferenceModel(), clip]),
         "GET /api/v1/config/ai-search/generations": json([
@@ -94,13 +261,16 @@ describe("AI Search settings", () => {
       },
     });
     await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Search index" }),
+      await screen.findByRole("combobox", { name: "Search type" }),
       "multiview",
     );
-    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), `local:${clip.id}`);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "AI model or server" }),
+      `local:${clip.id}`,
+    );
     expect(screen.queryByRole("option", { name: /bge-small/ })).toBeNull();
     expect(
-      within(screen.getByRole("combobox", { name: "Model" })).queryByRole("option", {
+      within(screen.getByRole("combobox", { name: "AI model or server" })).queryByRole("option", {
         name: /server-encoder/,
       }),
     ).toBeNull();
@@ -117,7 +287,7 @@ describe("AI Search settings", () => {
   it("refreshes installed models when a download completes", async () => {
     const user = userEvent.setup();
     const job = anIngestJob({ job_id: "download-2", kind: "model_download", state: "running" });
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "GET /api/v1/inference/models": json([anInferenceModel({ installed: false })]),
         "GET /api/v1/ingest/jobs": json([job]),
@@ -125,7 +295,7 @@ describe("AI Search settings", () => {
     });
     await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
     await user.selectOptions(
-      screen.getByRole("combobox", { name: "Model" }),
+      screen.getByRole("combobox", { name: "AI model or server" }),
       `local:${"a".repeat(64)}`,
     );
     expect(screen.getByRole("button", { name: "Build new index" })).toBeDisabled();
@@ -142,7 +312,7 @@ describe("AI Search settings", () => {
   });
   it("saves advanced ranking choices explicitly", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel();
+    const app = await settingsPanel();
     await user.click(await screen.findByText("Advanced settings"));
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Keyword search backend" }),
@@ -162,7 +332,7 @@ describe("AI Search settings", () => {
   });
   it("requires the caption capability prerequisites", async () => {
     const user = userEvent.setup();
-    settingsPanel({
+    await settingsPanel({
       routes: {
         "GET /api/v1/config/ai-search": json(
           searchConfiguration({
@@ -195,7 +365,7 @@ describe("AI Search settings", () => {
   });
   it("saves independent opt-ins without submitting endpoint secrets", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel();
+    const app = await settingsPanel();
     await user.click(await screen.findByRole("checkbox", { name: "Enable AI Search" }));
     await user.click(screen.getByRole("button", { name: "Save search settings" }));
     await waitFor(() => expect(app.requestsWithMethod("PUT")).toHaveLength(1));
@@ -207,19 +377,19 @@ describe("AI Search settings", () => {
   });
   it("separates pending model selection from the serving index", async () => {
     const user = userEvent.setup();
-    settingsPanel();
+    await settingsPanel();
     await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
     await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Model" }),
+      await screen.findByRole("combobox", { name: "AI model or server" }),
       `local:${"a".repeat(64)}`,
     );
-    expect(screen.getByText("Serving search now").parentElement).toHaveTextContent("old-encoder");
-    expect(screen.getByText(/These choices are pending/)).toBeVisible();
+    expect(screen.getByText("Search status").parentElement).toHaveTextContent("old-encoder");
+    expect(screen.getByText(/Your current search stays available/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Build new index" })).toBeEnabled();
   });
   it("shows pinned provenance with a current-library estimate", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "POST /api/v1/config/ai-search/generations/estimate": json({
           passages: 24,
@@ -233,7 +403,7 @@ describe("AI Search settings", () => {
     });
     await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
     await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Model" }),
+      await screen.findByRole("combobox", { name: "AI model or server" }),
       `local:${"a".repeat(64)}`,
     );
     expect(screen.getByText("MIT")).toBeVisible();
@@ -246,7 +416,7 @@ describe("AI Search settings", () => {
   });
   it("starts a new index without replacing the serving label", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "POST /api/v1/config/ai-search/generations": json(
           aSearchGeneration({ id: 2, state: "building", phase: "reconcile" }),
@@ -255,7 +425,7 @@ describe("AI Search settings", () => {
     });
     await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
     await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Model" }),
+      await screen.findByRole("combobox", { name: "AI model or server" }),
       `local:${"a".repeat(64)}`,
     );
     await user.click(screen.getByRole("button", { name: "Build new index" }));
@@ -265,11 +435,11 @@ describe("AI Search settings", () => {
       auto_activate: true,
       quantization: "float32",
     });
-    expect(screen.getByText("Serving search now").parentElement).toHaveTextContent("old-encoder");
+    expect(screen.getByText("Search status").parentElement).toHaveTextContent("old-encoder");
   });
   it("requires an explicit download request", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "GET /api/v1/inference/models": json([anInferenceModel({ installed: false })]),
         "POST /api/v1/inference/models/bge-small-en-v1.5/download": json({ job_id: "download-1" }),
@@ -277,7 +447,7 @@ describe("AI Search settings", () => {
     });
     await screen.findByRole("option", { name: /bge-small-en-v1.5/ });
     await user.selectOptions(
-      await screen.findByRole("combobox", { name: "Model" }),
+      await screen.findByRole("combobox", { name: "AI model or server" }),
       `local:${"a".repeat(64)}`,
     );
     expect(app.requestsWithMethod("POST")).toHaveLength(0);
@@ -291,7 +461,7 @@ describe("AI Search settings", () => {
   });
   it("displays cancellable download progress", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "GET /api/v1/ingest/jobs": json([
           anIngestJob({
@@ -323,7 +493,7 @@ describe("AI Search settings", () => {
         quarantined: action === "retry" ? 1 : 0,
       });
       const user = userEvent.setup();
-      const app = settingsPanel({
+      const app = await settingsPanel({
         routes: {
           "GET /api/v1/config/ai-search/generations": json([generation]),
           [`POST /api/v1/config/ai-search/generations/1/${action}`]: json(generation),
@@ -339,14 +509,14 @@ describe("AI Search settings", () => {
   );
   it("keeps saved credentials out of an unrelated endpoint edit", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "POST /api/v1/config/ai-search/endpoints": json(
           anInferenceEndpoint({ id: 3, model: "replacement" }),
         ),
       },
     });
-    await user.click(await screen.findByText("Compatible servers", { selector: "summary" }));
+    await user.click(await screen.findByText("Connect an AI server", { selector: "summary" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Server configuration" }), "2");
     const form = screen.getByRole("form", { name: "Inference server" });
     expect(within(form).getByLabelText("API key (optional)")).toHaveValue("");
@@ -362,10 +532,10 @@ describe("AI Search settings", () => {
   });
   it("requires explicit replacement of authentication headers", async () => {
     const user = userEvent.setup();
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: { "POST /api/v1/config/ai-search/endpoints": json(anInferenceEndpoint({ id: 3 })) },
     });
-    await user.click(await screen.findByText("Compatible servers", { selector: "summary" }));
+    await user.click(await screen.findByText("Connect an AI server", { selector: "summary" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Server configuration" }), "2");
     await user.click(screen.getByText("Custom authentication headers", { selector: "summary" }));
     await user.click(screen.getByRole("checkbox", { name: "Replace saved headers" }));
@@ -379,14 +549,32 @@ describe("AI Search settings", () => {
     });
   });
   it("supports Spanish maintenance controls", async () => {
-    settingsPanel({ locale: "es" });
+    await settingsPanel({ locale: "es" });
     expect(
       await screen.findByRole("button", { name: "Guardar ajustes de búsqueda" }),
     ).toBeVisible();
-    expect(screen.getByText("Preparar un índice nuevo")).toBeVisible();
+    expect(screen.getByText("2. Prepara tu biblioteca para la búsqueda con IA")).toBeVisible();
+  });
+  it("keeps guided navigation available after a settings refresh fails", async () => {
+    const app = await settingsPanel();
+    app.route({ "GET /api/v1/config/ai-search": json({}, 503) });
+    await act(async () => {
+      await app.client.refetchQueries({ queryKey: ["ai-search", "settings"] });
+    });
+    expect(await screen.findByText("AI Search settings could not load")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Back to guided setup" }));
+    app.route({
+      "GET /api/v1/config/ai-search": json(
+        searchConfiguration({ settings: searchSettings({ enabled: false }) }),
+      ),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByRole("heading", { name: "Where should AI Search run?" }),
+    ).toBeVisible();
   });
   it("reports a settings load failure with retry", async () => {
-    settingsPanel({ routes: { "GET /api/v1/config/ai-search": json({}, 503) } });
+    await settingsPanel({ routes: { "GET /api/v1/config/ai-search": json({}, 503) } });
     expect(await screen.findByText("AI Search settings could not load")).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
   });
@@ -401,7 +589,7 @@ describe("Sparse expansion settings", () => {
       modality: "sparse",
       native_dimension: 30522,
     });
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: { "GET /api/v1/inference/models": json([anInferenceModel(), sparse]) },
     });
     await user.click(await screen.findByText("Advanced settings"));
@@ -414,7 +602,7 @@ describe("Sparse expansion settings", () => {
       sparse_expansion_enabled: true,
     });
     expect(
-      within(screen.getByRole("combobox", { name: "Model" })).queryByRole("option", {
+      within(screen.getByRole("combobox", { name: "AI model or server" })).queryByRole("option", {
         name: /splade/,
       }),
     ).toBeNull();
@@ -428,7 +616,7 @@ describe("Sparse expansion settings", () => {
       modality: "sparse",
       installed: false,
     });
-    const app = settingsPanel({
+    const app = await settingsPanel({
       routes: {
         "GET /api/v1/inference/models": json([anInferenceModel(), sparse]),
         "POST /api/v1/inference/models/splade-pp-en-v1/download": json({

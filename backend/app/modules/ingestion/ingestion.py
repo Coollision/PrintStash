@@ -827,6 +827,8 @@ def run_ingestion_pipeline(
     source_url: Optional[str] = None,
     target_library_id: int | None = None,
     provenance_context: ProvenanceContext | None = None,
+    on_progress: Callable[[float], None] | None = None,
+    defer_fingerprint: bool = False,
 ) -> None:
     """Full ingestion pipeline.
 
@@ -863,6 +865,9 @@ def run_ingestion_pipeline(
             ),
             current_item=original_filename,
         )
+
+        if on_progress is not None and step is not None:
+            on_progress((step - 1) / total_steps * 100)
 
     registry.update(job_id, state="running", total_steps=total_steps)
 
@@ -1040,7 +1045,7 @@ def run_ingestion_pipeline(
         assert durable_ids is not None
         model_id, file_id = durable_ids
         fingerprint_result = getattr(meta, "fingerprint_result", None)
-        if fingerprint_result is not None:
+        if fingerprint_result is not None or defer_fingerprint:
             from app.modules.ingestion.extensions import after_commit
 
             try:
@@ -1162,15 +1167,23 @@ def _gcode_strategy() -> IngestionStrategy:
     )
 
 
-def _mesh_strategy(file_type: FileType) -> IngestionStrategy:
+def _mesh_strategy(
+    file_type: FileType, *, defer_fingerprint: bool = False
+) -> IngestionStrategy:
 
     def process(
         path: Path, report: ProgressFn = _noop_progress
     ) -> tuple[dict[str, Any], bytes | None]:
-        from app.modules.ingestion.extensions import extraction_options
+        from app.modules.ingestion.extensions import (
+            MeshExtractionOptions,
+            extraction_options,
+        )
 
-        # Single mesh load for geometry, thumbnail and opted-in fingerprints.
-        options = extraction_options(get_session_factory())
+        # Bulk imports queue optional fingerprints after the Artifact is durable.
+        # Direct uploads can reuse this mesh load for inline fingerprints.
+        options: MeshExtractionOptions = (
+            {} if defer_fingerprint else extraction_options(get_session_factory())
+        )
         return mesh_operations.analyze_mesh(
             path,
             report=report,
@@ -1208,6 +1221,7 @@ def ingest_orca_gcode(
     source_url: Optional[str] = None,
     target_library_id: int | None = None,
     provenance_context: ProvenanceContext | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> None:
     """Public entry point for G-code ingestion (called from the OrcaSlicer router)."""
     run_ingestion_pipeline(
@@ -1224,6 +1238,7 @@ def ingest_orca_gcode(
         source_url=source_url,
         target_library_id=target_library_id,
         provenance_context=provenance_context,
+        on_progress=on_progress,
     )
 
 
@@ -1242,8 +1257,15 @@ def ingest_mesh(
     source_url: Optional[str] = None,
     target_library_id: int | None = None,
     provenance_context: ProvenanceContext | None = None,
+    on_progress: Callable[[float], None] | None = None,
+    defer_fingerprint: bool = False,
+    prepared_analysis: Callable[[Path, ProgressFn], tuple[dict[str, Any], bytes | None]]
+    | None = None,
 ) -> None:
     """Public entry point for mesh ingestion (called from the model upload router)."""
+    strategy = _mesh_strategy(file_type, defer_fingerprint=defer_fingerprint)
+    if prepared_analysis is not None:
+        strategy = replace(strategy, process=prepared_analysis)
     run_ingestion_pipeline(
         job_id=job_id,
         staged_path=staged_path,
@@ -1252,12 +1274,14 @@ def ingest_mesh(
         collection=collection,
         tags=tags,
         source_hash=source_hash,
-        strategy=_mesh_strategy(file_type),
+        strategy=strategy,
         actor_user_id=actor_user_id,
         session_factory=session_factory,
         source_url=source_url,
         target_library_id=target_library_id,
         provenance_context=provenance_context,
+        on_progress=on_progress,
+        defer_fingerprint=defer_fingerprint,
     )
 
 

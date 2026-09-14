@@ -2,6 +2,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { aModelListItem } from "@/test-support/factories";
 import SearchPage from "@/pages/search";
 import { AuthContext } from "@/lib/auth-context";
 import {
@@ -26,6 +27,96 @@ function results(options: RenderAppOptions = {}) {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("Search results", () => {
+  it("shows an idle state for an empty search", async () => {
+    const app = results({ at: "/search?parse=1" });
+    expect(screen.getAllByText("Search your library from the top bar").at(-1)).toBeVisible();
+    expect(screen.queryByText("Searching…")).toBeNull();
+    await waitFor(() =>
+      expect(app.requests().some((request) => request.url.includes("/status"))).toBe(true),
+    );
+    expect(app.requests().some((request) => request.url.startsWith("/api/v1/search?"))).toBe(false);
+    expect(app.requestsWithMethod("POST")).toHaveLength(0);
+  });
+  it("exposes search options on demand", async () => {
+    const user = userEvent.setup();
+    results();
+    await screen.findByRole("link", { name: "Desk bracket" });
+    expect(screen.getByRole("combobox", { name: "Search mode" })).not.toBeVisible();
+    await user.click(screen.getByText("Search options"));
+    expect(screen.getByRole("combobox", { name: "Search mode" })).toBeVisible();
+    await user.click(screen.getByText("Search options"));
+    expect(screen.getByRole("combobox", { name: "Search mode" })).not.toBeVisible();
+  });
+  it("changes the result layout without repeating the search", async () => {
+    const user = userEvent.setup();
+    const app = results();
+    await screen.findByRole("link", { name: "Desk bracket" });
+    expect(screen.getByRole("button", { name: "Grid view" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "List view" }));
+    expect(screen.getByRole("button", { name: "List view" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("link", { name: "Desk bracket" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Grid view" }));
+    expect(screen.getByRole("button", { name: "Grid view" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(app.requests().filter(({ url }) => url.startsWith("/api/v1/search?"))).toHaveLength(1);
+  });
+  it("offers retry when the search deadline expires", async () => {
+    const user = userEvent.setup();
+    const app = results({
+      routes: { "GET /api/v1/search?": json({ detail: "search_timeout" }, 408) },
+    });
+    expect(await screen.findByText("The search took too long. Try again.")).toBeVisible();
+    app.route({ "GET /api/v1/search?": json(searchResponse({ items: [aSearchResult()] })) });
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("link", { name: "Desk bracket" })).toBeVisible();
+  });
+  it("shows model previews in text results", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:search-preview");
+    results({
+      routes: {
+        "GET /api/v1/search?": json(
+          searchResponse({
+            items: [
+              aSearchResult({
+                model: aModelListItem({ thumbnail_url: "/api/v1/files/search-preview/thumbnail" }),
+              }),
+            ],
+          }),
+        ),
+        "GET /api/v1/files/search-preview/thumbnail": new Response(
+          new Blob(["preview"], { type: "image/png" }),
+        ),
+      },
+    });
+    expect(await screen.findByAltText("")).toHaveAttribute("src", "blob:search-preview");
+    expect(screen.getByText("1 result shown")).toBeVisible();
+  });
+  it("preserves the selected search mode when changing sort", async () => {
+    const user = userEvent.setup();
+    const app = results({ at: "/search?q=bracket&mode=lexical&type=model" });
+    await screen.findByRole("link", { name: "Desk bracket" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sort results" }), "name-asc");
+    await waitFor(() =>
+      expect(
+        app
+          .requests()
+          .some(
+            ({ url }) =>
+              url.includes("sort=name-asc") &&
+              url.includes("mode=lexical") &&
+              url.includes("types%5B%5D=model"),
+          ),
+      ).toBe(true),
+    );
+  });
   it("discards private image queries after an identity change", async () => {
     const user = userEvent.setup();
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:private-query");
@@ -100,6 +191,7 @@ describe("Search results", () => {
     await waitFor(() => expect(input).toBeEnabled());
     await user.upload(input, image);
     expect(await screen.findByRole("link", { name: "Desk bracket" })).toBeVisible();
+    await user.click(screen.getByText("Why this result"));
     expect(screen.getByText("Appearance match")).toBeVisible();
     expect(screen.getByRole("img", { name: "Image used for this search" })).toHaveAttribute(
       "src",
@@ -149,7 +241,8 @@ describe("Search results", () => {
         ),
       },
     });
-    expect(await screen.findByText("Two bolts secure the bracket.")).toBeVisible();
+    await userEvent.setup().click(await screen.findByText("Why this result"));
+    expect(screen.getByText("Two bolts secure the bracket.")).toBeVisible();
     expect(screen.getAllByText("Two bolts secure the bracket.")).toHaveLength(1);
     expect(screen.getByText("Keyword match")).toBeVisible();
     expect(screen.getByText("Related description")).toBeVisible();
@@ -217,6 +310,7 @@ describe("Search results", () => {
       "/multipart-models/4",
     );
     expect(screen.getByRole("link", { name: "Guide" })).toHaveAttribute("href", "/documents/5");
+    await userEvent.setup().click(screen.getAllByText("Why this result")[3]);
     expect(screen.getByText("Related description")).toBeVisible();
     expect(document.querySelector("script")).toBeNull();
     expect([...document.querySelectorAll("mark")].map((node) => node.textContent)).toContain(
@@ -296,6 +390,7 @@ describe("Search results", () => {
   it("applies Subject filters through the canonical URL", async () => {
     const user = userEvent.setup();
     const app = results();
+    await user.click(screen.getByText("Search options"));
     await user.click(screen.getByRole("button", { name: "Document" }));
     await waitFor(() =>
       expect(app.requests().some((request) => request.url.includes("types%5B%5D=document"))).toBe(

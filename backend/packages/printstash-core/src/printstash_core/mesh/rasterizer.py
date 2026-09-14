@@ -65,6 +65,17 @@ FLAT_MESH_THICKNESS_RATIO = PREVIEW_PROFILE.flat_thickness_ratio
 _CHUNK_PIXEL_BUDGET = 250_000
 
 
+@dataclass(frozen=True)
+class _PhongShader:
+    """Reference callback plus the same light parameters for the optional kernel."""
+
+    reference: Shade
+    parameters: tuple[float, ...]
+
+    def __call__(self, normals: FloatArray) -> FloatArray:
+        return self.reference(normals)
+
+
 @dataclass
 class RasterBudget:
     """Cumulative candidate-pixel budget shared by rasteriser calls."""
@@ -351,6 +362,32 @@ def render_mesh_thumbnail(
             rgb = diffuse + rim_str * fres * rim_color + spec_str * spec
             return np.clip(rgb, 0.0, 1.0)
 
+        shade = _PhongShader(
+            _shade,
+            tuple(
+                float(value)
+                for vector in (
+                    key_dir,
+                    fill_dir,
+                    half,
+                    albedo,
+                    key_color,
+                    fill_color,
+                    rim_color,
+                )
+                for value in vector
+            )
+            + (
+                key_str,
+                fill_str,
+                rim_str,
+                ambient_str,
+                spec_str,
+                rim_power,
+                spec_power,
+            ),
+        )
+
         # ------------------------------------------------------------------
         # 6. Rasterise (z-buffered — no painter's sort needed), one face chunk at
         #    a time into the shared image/z-buffer. The z-buffer makes chunk order
@@ -377,6 +414,12 @@ def render_mesh_thumbnail(
             # z<0; a negative-determinant (front-on flat) view flips that sign.
             raw_normals = np.cross(edge1, edge2)  # (c, 3)
             norm_len = np.linalg.norm(raw_normals, axis=1)  # (c,)
+            front = (raw_normals[:, 2] * view_handedness) < 0.0
+            valid = front & (norm_len > 1e-8)
+            # Keep the same visibility rule, but apply it before gathering and
+            # interpolating corner normals for faces that cannot be drawn.
+            fc = fc[valid]
+            tri = tri[valid]
 
             # Object-space face normals for the crease test (the view normals are
             # flipped toward the camera, which would corrupt smoothing across
@@ -414,13 +457,9 @@ def render_mesh_thumbnail(
             cvn = corner_n @ rot_T  # (c, 3, 3)
             cvn = np.where(cvn[..., 2:3] >= 0, cvn, -cvn)
 
-            front = (raw_normals[:, 2] * view_handedness) < 0.0
-            valid = front & (norm_len > 1e-8)
-            tri = tri[valid]
-            cvn = cvn[valid]
             visible_total += int(tri.shape[0])
 
-            rasterise(img, zbuf, tri, cvn, _shade, base_color, ss_width, ss_height)
+            rasterise(img, zbuf, tri, cvn, shade, base_color, ss_width, ss_height)
             # Free this chunk's temporaries before the next one so only one
             # chunk's worth of per-face arrays is ever live. No gc.collect() here:
             # there are no reference cycles in the hot loop, and the per-file
@@ -626,7 +665,7 @@ def _rasterise_triangles(
         candidate_width,
         counts,
         pixel_offset,
-    ) in _pixel_batches(x0, y0, bbox_w, bbox_h, areas, budget):
+    ) in _triangle_pixel_batches(v0, v1, v2, x0, y0, bbox_w, bbox_h, areas, budget):
         candidates += int(counts.sum())
         tri_idx = np.repeat(np.arange(len(source_faces)), counts)
         source_idx = source_faces[tri_idx]
@@ -753,3 +792,87 @@ def _pixel_batches(
             0,
         )
         start = end
+
+
+def _triangle_pixel_batches(
+    v0: FloatArray,
+    v1: FloatArray,
+    v2: FloatArray,
+    x0: IntArray,
+    y0: IntArray,
+    widths: IntArray,
+    heights: IntArray,
+    areas: IntArray,
+    budget: RasterBudget | None,
+) -> Iterator[tuple[IntArray, IntArray, IntArray, IntArray, IntArray, int]]:
+    """Trim wasteful bounding boxes to bounded scanline rectangles.
+
+    Keep source order and the exact barycentric/depth tests. Broad or tiny faces
+    retain the cheaper box path. Explicit fallback budgets retain their existing
+    centered-tile semantics and accounting.
+    """
+    import numpy as np
+
+    twice_area = np.abs(
+        (v1[:, 0] - v0[:, 0]) * (v2[:, 1] - v0[:, 1])
+        - (v1[:, 1] - v0[:, 1]) * (v2[:, 0] - v0[:, 0])
+    )
+    split = (areas > 256) & (twice_area < areas * 0.25)
+    if budget is not None or not split.any():
+        yield from _pixel_batches(x0, y0, widths, heights, areas, budget)
+        return
+
+    row_counts = np.where(split, heights, 1)
+    zeros = np.zeros_like(row_counts)
+    ones = np.ones_like(row_counts)
+    for faces, _, _, _, counts, offset in _pixel_batches(
+        zeros, zeros, row_counts, ones, row_counts, None
+    ):
+        local_faces = np.repeat(np.arange(len(faces)), counts)
+        source = faces[local_faces]
+        starts = np.concatenate(([0], np.cumsum(counts)[:-1]))
+        row = offset + np.arange(int(counts.sum())) - np.repeat(starts, counts)
+        left = x0[source].copy()
+        top = y0[source].copy()
+        span = widths[source].copy()
+        depth = heights[source].copy()
+        scan = split[source]
+        selected = source[scan]
+        fy = y0[selected] + row[scan] + 0.5
+        low = np.full(len(selected), np.inf)
+        high = np.full(len(selected), -np.inf)
+        epsilon = np.finfo(v0.dtype).eps
+        for a, b in ((v0, v1), (v1, v2), (v2, v0)):
+            ax, ay = a[selected, 0], a[selected, 1]
+            bx, by = b[selected, 0], b[selected, 1]
+            dy = by - ay
+            # The barycentric subtraction can round a pixel onto an edge just
+            # outside its geometric extent. Include those adjacent scanlines;
+            # the unchanged inside test determines whether they are painted.
+            slack = 8 * epsilon * np.maximum(1, np.maximum(np.abs(ay), np.abs(by)))
+            crosses = (
+                (dy != 0)
+                & (fy >= np.minimum(ay, by) - slack)
+                & (fy <= np.maximum(ay, by) + slack)
+            )
+            x = ax + (fy - ay) * (bx - ax) / np.where(dy == 0, 1, dy)
+            low = np.minimum(low, np.where(crosses, x, np.inf))
+            high = np.maximum(high, np.where(crosses, x, -np.inf))
+        valid = np.isfinite(low) & np.isfinite(high)
+        # Expand to adjacent pixel centers; the original barycentric test decides
+        # edge membership, including float32 roundoff at shared triangle edges.
+        scan_left = np.maximum(
+            x0[selected], np.floor(np.where(valid, low, 0) - 0.5).astype(np.int64)
+        )
+        scan_right = np.minimum(
+            x0[selected] + widths[selected] - 1,
+            np.ceil(np.where(valid, high, 0) - 0.5).astype(np.int64),
+        )
+        left[scan] = scan_left
+        top[scan] += row[scan]
+        span[scan] = np.where(valid, np.maximum(0, scan_right - scan_left + 1), 0)
+        depth[scan] = 1
+        for rectangles, bx, by, bw, pixels, pixel_offset in _pixel_batches(
+            left, top, span, depth, span * depth, None
+        ):
+            yield source[rectangles], bx, by, bw, pixels, pixel_offset

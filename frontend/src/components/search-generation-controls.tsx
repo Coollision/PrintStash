@@ -41,7 +41,8 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
   const generations = useQuery({
     queryKey: ["ai-search", "generations"],
     queryFn: listSearchGenerations,
-    refetchInterval: 5000,
+    refetchInterval: (query) =>
+      query.state.data?.some((generation) => generation.state === "building") ? 5000 : false,
   });
   const downloads = useQuery({
     queryKey: ["ai-search", "downloads"],
@@ -137,6 +138,9 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
       ? estimate.data
       : undefined;
   const dimensions = local?.mrl_dimensions ?? remote?.mrl_dimensions ?? [];
+  const building = generations.data?.some(
+    (generation) => generation.state === "building" && generation.profile === profile,
+  );
   const active = generations.data?.filter((generation) => generation.state === "active") ?? [];
   return (
     <>
@@ -149,8 +153,7 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
         ) : active.length ? (
           active.map((generation) => (
             <p key={generation.id} className="mt-1 break-words text-sm">
-              {statusLabel(`aiSearch.profile.${generation.profile}`)} · {generation.model} ·{" "}
-              {generation.index_dimension} · {generation.effective_backend}
+              {statusLabel(`aiSearch.profile.${generation.profile}`)} · {generation.model}
             </p>
           ))
         ) : (
@@ -213,7 +216,7 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
           </label>
         )}
         <label className="block space-y-1 text-sm">
-          {t("aiSearch.model")}
+          {t("aiSearch.modelOrServer")}
           <select
             className="block w-full rounded-md border border-input bg-background p-2"
             value={selection}
@@ -339,107 +342,134 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
             {t("aiSearch.indexDisclosure", { host: remote.host })}
           </p>
         )}
-        <details>
+        <details className="space-y-4 border-t pt-3">
           <summary className="cursor-pointer text-sm font-medium">
-            {t("aiSearch.offlineCustom")}
+            {t("aiSearch.indexAdvanced")}
           </summary>
-          <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
-            {t("aiSearch.offlineHelp")}
-          </p>
-          <Button variant="ghost" size="sm" onClick={() => void models.refetch()}>
-            {t("aiSearch.refreshModels")}
-          </Button>
-        </details>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <label className="space-y-1 text-sm">
-            {t("aiSearch.indexDimension")}
-            <select
-              className="block w-full rounded-md border border-input bg-background p-2"
-              value={dimension}
-              onChange={(event) => setDimension(Number(event.target.value))}
-            >
-              <option value={0}>{t("aiSearch.nativeDimension")}</option>
-              {dimensions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            {t("aiSearch.quantization")}
-            <select
-              className="block w-full rounded-md border border-input bg-background p-2"
-              value={quantization}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value === "float32" || value === "int8" || value === "binary")
-                  setQuantization(value);
-              }}
-            >
-              <option value="float32">{t("aiSearch.float32")}</option>
-              <option value="int8">{t("aiSearch.int8")}</option>
-              <option value="binary">{t("aiSearch.binary")}</option>
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            {t("aiSearch.backend")}
-            <select
-              className="block w-full rounded-md border border-input bg-background p-2"
-              value={indexBackend}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value === "auto" || value === "numpy") setIndexBackend(value);
-              }}
-            >
-              <option value="auto">{t("aiSearch.autoBackend")}</option>
-              <option value="numpy">{t("aiSearch.portableBackend")}</option>
-            </select>
-          </label>
-        </div>
-        {profile === "semantic_text" && (
+          <p className="text-xs text-muted-foreground">{t("aiSearch.indexDefaultsHelp")}</p>
           <details>
             <summary className="cursor-pointer text-sm font-medium">
-              {t("aiSearch.inputRecipe")}
+              {t("aiSearch.offlineCustom")}
             </summary>
-            <label className="mt-3 flex items-center gap-2 text-sm">
-              <Checkbox
-                ariaLabel={t("aiSearch.customPrefixes")}
-                checked={customPrefixes}
-                onChange={setCustomPrefixes}
-              />
-              {t("aiSearch.customPrefixes")}
-            </label>
-            {customPrefixes && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-sm">
-                  {t("aiSearch.queryPrefix")}
-                  <Input
-                    value={queryPrefix}
-                    maxLength={256}
-                    onChange={(event) => setQueryPrefix(event.target.value)}
-                  />
-                </label>
-                <label className="space-y-1 text-sm">
-                  {t("aiSearch.documentPrefix")}
-                  <Input
-                    value={documentPrefix}
-                    maxLength={256}
-                    onChange={(event) => setDocumentPrefix(event.target.value)}
-                  />
-                </label>
-              </div>
-            )}
+            <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
+              {t("aiSearch.offlineHelp")}
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => void models.refetch()}>
+              {t("aiSearch.refreshModels")}
+            </Button>
           </details>
-        )}
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            ariaLabel={t("aiSearch.autoActivate")}
-            checked={autoActivate}
-            onChange={setAutoActivate}
-          />
-          {t("aiSearch.autoActivate")}
-        </label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="space-y-1 text-sm">
+              {t("aiSearch.indexDimension")}
+              <select
+                className="block w-full rounded-md border border-input bg-background p-2"
+                value={dimension}
+                onChange={(event) => setDimension(Number(event.target.value))}
+              >
+                <option value={0}>{t("aiSearch.nativeDimension")}</option>
+                {dimensions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              {t("aiSearch.quantization")}
+              <select
+                className="block w-full rounded-md border border-input bg-background p-2"
+                value={quantization}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === "float32" || value === "int8" || value === "binary")
+                    setQuantization(value);
+                }}
+              >
+                <option value="float32">{t("aiSearch.float32")}</option>
+                <option value="int8">{t("aiSearch.int8")}</option>
+                <option value="binary">{t("aiSearch.binary")}</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              {t("aiSearch.backend")}
+              <select
+                className="block w-full rounded-md border border-input bg-background p-2"
+                value={indexBackend}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === "auto" || value === "numpy") setIndexBackend(value);
+                }}
+              >
+                <option value="auto">{t("aiSearch.autoBackend")}</option>
+                <option value="numpy">{t("aiSearch.portableBackend")}</option>
+              </select>
+            </label>
+          </div>
+          {profile === "semantic_text" && (
+            <details>
+              <summary className="cursor-pointer text-sm font-medium">
+                {t("aiSearch.inputRecipe")}
+              </summary>
+              <label className="mt-3 flex items-center gap-2 text-sm">
+                <Checkbox
+                  ariaLabel={t("aiSearch.customPrefixes")}
+                  checked={customPrefixes}
+                  onChange={setCustomPrefixes}
+                />
+                {t("aiSearch.customPrefixes")}
+              </label>
+              {customPrefixes && (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-sm">
+                    {t("aiSearch.queryPrefix")}
+                    <Input
+                      value={queryPrefix}
+                      maxLength={256}
+                      onChange={(event) => setQueryPrefix(event.target.value)}
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm">
+                    {t("aiSearch.documentPrefix")}
+                    <Input
+                      value={documentPrefix}
+                      maxLength={256}
+                      onChange={(event) => setDocumentPrefix(event.target.value)}
+                    />
+                  </label>
+                </div>
+              )}
+            </details>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              ariaLabel={t("aiSearch.autoActivate")}
+              checked={autoActivate}
+              onChange={setAutoActivate}
+            />
+            {t("aiSearch.autoActivate")}
+          </label>
+        </details>
+        <p role="status" className="text-sm text-muted-foreground">
+          {!settings.settings.enabled
+            ? t("aiSearch.enableFirst")
+            : !proposal
+              ? t("aiSearch.chooseFirst")
+              : local && !settings.settings.local_models_enabled
+                ? t("aiSearch.localFirst")
+                : local && !local.runtime_available
+                  ? t("aiSearch.runtimeUnavailable")
+                  : local && !local.installed
+                    ? t(
+                        settings.settings.download_enabled
+                          ? "aiSearch.downloadFirst"
+                          : "aiSearch.allowFirst",
+                      )
+                    : building
+                      ? t("aiSearch.alreadyBuilding")
+                      : currentEstimate?.fits_budget === false
+                        ? t("aiSearch.overBudget")
+                        : t("aiSearch.readyToBuild")}
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
@@ -453,13 +483,7 @@ export function SearchGenerationControls({ settings }: { settings: SearchSetting
           </Button>
           <Button
             loading={prepare.isPending}
-            disabled={
-              !canPrepare ||
-              generations.data?.some(
-                (generation) => generation.state === "building" && generation.profile === profile,
-              ) ||
-              currentEstimate?.fits_budget === false
-            }
+            disabled={!canPrepare || building || currentEstimate?.fits_budget === false}
             onClick={() => {
               if (proposal) prepare.mutate(proposal);
             }}

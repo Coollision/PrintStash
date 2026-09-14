@@ -142,6 +142,7 @@ describe("Natural-language search filters", () => {
     });
     const user = userEvent.setup();
     await screen.findByRole("button", { name: "Remove Successful print" });
+    await user.click(screen.getByText("Search options"));
     await user.click(screen.getByRole("button", { name: "Saved views" }));
     await user.click(screen.getByRole("button", { name: /Save current view/ }));
     await user.type(screen.getByRole("textbox", { name: "View name" }), "My brackets");

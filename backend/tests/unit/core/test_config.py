@@ -9,6 +9,48 @@ from app.core.config import FrozenSettings
 
 
 class TestSettings:
+    @pytest.mark.parametrize("workers", [0, 1, 2, 32], ids=str)
+    def test_accepts_import_worker_limits(self, workers):
+        assert (
+            FrozenSettings(_env_file=None, import_workers=workers).import_workers
+            == workers
+        )
+
+    @pytest.mark.parametrize("workers", [-1, 33], ids=str)
+    def test_rejects_invalid_import_worker_limits(self, workers):
+        with pytest.raises(ValidationError, match="import_workers"):
+            FrozenSettings(_env_file=None, import_workers=workers)
+
+    @pytest.mark.parametrize("geometry", ["auto", "python"], ids=str)
+    def test_accepts_geometry_engines(self, geometry):
+        assert (
+            FrozenSettings(_env_file=None, mesh_geometry=geometry).mesh_geometry
+            == geometry
+        )
+
+    def test_rejects_unknown_geometry_engine(self):
+        with pytest.raises(ValidationError, match="mesh_geometry"):
+            FrozenSettings(_env_file=None, mesh_geometry="unknown")
+
+    @pytest.mark.parametrize("loader", ["auto", "python"])
+    def test_accepts_mesh_loaders(self, loader):
+        assert FrozenSettings(_env_file=None, mesh_loader=loader).mesh_loader == loader
+
+    def test_rejects_unknown_mesh_loader(self):
+        with pytest.raises(ValidationError, match="mesh_loader"):
+            FrozenSettings(_env_file=None, mesh_loader="unknown")
+
+    @pytest.mark.parametrize("renderer", ["auto", "python", "rust"])
+    def test_accepts_mesh_rasterizers(self, renderer):
+        assert (
+            FrozenSettings(_env_file=None, mesh_rasterizer=renderer).mesh_rasterizer
+            == renderer
+        )
+
+    def test_rejects_an_unknown_mesh_rasterizer(self):
+        with pytest.raises(ValidationError, match="mesh_rasterizer"):
+            FrozenSettings(_env_file=None, mesh_rasterizer="unknown")
+
     @pytest.mark.parametrize(
         ("field", "value"),
         [

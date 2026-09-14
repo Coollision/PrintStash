@@ -24,9 +24,10 @@ test.describe("AI Search", () => {
     const documentId = (await created.json()).id;
     try {
       await page.goto("/settings?section=ai-search");
+      await page.getByRole("button", { name: "Advanced AI controls" }).click();
       const form = page.getByRole("form", { name: "AI Search", exact: true });
       await form.getByRole("checkbox", { name: "Enable AI Search", exact: true }).check();
-      await form.getByRole("checkbox", { name: "Allow local models", exact: true }).check();
+      await form.getByRole("checkbox", { name: "Run AI on this machine", exact: true }).check();
       await form.getByText("Advanced settings", { exact: true }).click();
       await form.getByRole("combobox", { name: "Expansion model" }).selectOption(sparse!.id);
       await form.getByRole("checkbox", { name: "Enable lexical expansion" }).check();
@@ -65,6 +66,7 @@ test.describe("AI Search", () => {
       await page.goto("/search?q=cycling");
       await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
       await page.goto("/settings?section=ai-search");
+      await page.getByRole("button", { name: "Advanced AI controls" }).click();
       await form.getByText("Advanced settings", { exact: true }).click();
       await form.getByRole("checkbox", { name: "Enable lexical expansion" }).uncheck();
       await form.getByRole("button", { name: "Save search settings" }).click();

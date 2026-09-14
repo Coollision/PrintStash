@@ -4,6 +4,23 @@
 
 ### Added
 
+- Rust mesh previews now interpolate visible-pixel normals and apply the
+  canonical lighting without allocating NumPy arrays for each shading step.
+  Custom shaders and older native extensions retain the Python path. Full-ZIP
+  comparisons verify geometry and encoded previews against the reference.
+
+- Rust can now read binary STL geometry and calculate mesh dimensions and
+  volume. Geometry measurements use bounded triangle batches and avoid unused
+  inertia calculations. Native STL previews verify memory release before
+  requesting a full garbage collection. Python remains selectable through `VAULT_MESH_LOADER`
+  and `VAULT_MESH_GEOMETRY`; full-ZIP comparisons check saved geometry too.
+- 3MF previews stream mesh XML through the optional Rust extension, preserving
+  component placements and repeated instances. `VAULT_MESH_LOADER=python`
+  selects the existing loader for comparison. The renderer culls back-facing triangles
+  before allocating per-corner shading arrays.
+- Mesh previews can use a Rust rasterization extension, included in both Docker
+  variants. Python remains available through `VAULT_MESH_RASTERIZER`, and the
+  full-ZIP benchmark can compare both engines with matching imported files.
 - AI Search adds transactional text indexing for Models, Collections, Multipart
   Models and Documents, authorized lexical suggestions, hybrid results with match
   evidence, and local image/geometry search. Image queries support file selection,
@@ -44,6 +61,41 @@
   separate from verified geometry, and analysis never downloads model weights.
 
 ### Fixed
+
+- Thumbnail encoding uses the fastest lossless WebP method to reduce import
+  CPU time. Decoded pixels and transparency stay unchanged; thumbnail files
+  are larger. Preview recipe version 3 applies the same setting to rendered
+  and embedded images. The full-ZIP benchmark can compare decoded pixels
+  explicitly while still requiring identical source files and geometry.
+
+- ZIP import progress reports the current filename, completed-file counts and
+  progress within each file. Failed and skipped files update the count as the
+  import continues.
+- ZIP imports save Models and previews before running optional similarity
+  fingerprints. The analysis queue survives restarts and yields during uploads
+  and imports. Thumbnail rendering also avoids empty areas around narrow faces
+  while preserving the rendered pixels.
+
+- Mobile startup ships smaller translation bundles by sharing message keys across
+  languages and compacting translations identical to their keys.
+
+- First-time visits no longer reload the page when offline support installs,
+  avoiding duplicate startup work on mobile. Updates to an existing service
+  worker still refresh the application once.
+
+- Clearing an AI search returns to the library immediately; abandoned queries cannot restore old results, and stalled searches offer a retry after 30 seconds. Search results now use a thumbnail grid with an optional list view, on-demand match details, and fewer duplicated controls.
+
+- Local AI model downloads accept Hugging Face’s current CDN redirects while
+  retaining exact host checks and pinned file verification.
+
+- AI Search keeps the return to guided setup above the advanced controls, including
+  when settings fail to refresh. Switching views preserves keyboard focus.
+
+- Storage settings use GB cache limits, a simpler usage summary and expandable
+  diagnostics. AI Search now guides users through choosing local or server processing,
+  explicit downloads, library preparation, and a ready-to-search action. Server tuning
+  and the complete advanced controls remain available. Storage leads with used and
+  free space and hides empty cleanup actions. Library archive actions use consistent buttons.
 
 - Search backfill yields to complete user write requests, including upload staging
   and cleanup, without holding a database transaction while waiting.

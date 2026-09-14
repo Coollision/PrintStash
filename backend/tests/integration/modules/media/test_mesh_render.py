@@ -3,13 +3,29 @@
 import io
 
 import numpy as np
+import pytest
 from PIL import Image
 
+from app.core.config import _overlay
 from app.modules.media import mesh_processing, mesh_render
 from tests.paths import FIXTURES_DIR, TESTDATA_DIR
 
 
 class TestMeshRender:
+    def test_native_preview_matches_python(self, monkeypatch):
+        pytest.importorskip("printstash_mesh_native")
+        mesh = mesh_processing._load_mesh(TESTDATA_DIR / "benchy/3dbenchy.stl")
+        monkeypatch.setitem(_overlay, "mesh_rasterizer", "python")
+        python = mesh_render.render_mesh_thumbnail(mesh, "benchy")
+        monkeypatch.setitem(_overlay, "mesh_rasterizer", "rust")
+        rust = mesh_render.render_mesh_thumbnail(mesh, "benchy")
+        assert python is not None and rust is not None
+        with (
+            Image.open(io.BytesIO(python)) as expected,
+            Image.open(io.BytesIO(rust)) as actual,
+        ):
+            np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+
     def test_preserves_preview_pixels(self):
         mesh = mesh_processing._load_mesh(TESTDATA_DIR / "benchy/3dbenchy.stl")
 
