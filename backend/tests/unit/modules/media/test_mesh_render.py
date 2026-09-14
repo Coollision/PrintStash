@@ -26,8 +26,52 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
+from app.core.config import _overlay
 from app.modules.media import mesh_render
+
+
+class TestRasterizerSelection:
+    @pytest.mark.parametrize(
+        "renderer,dtype",
+        [("auto", np.float64), ("python", np.float64), ("auto", np.float32)],
+    )
+    def test_python_remains_available_without_the_extension(
+        self, monkeypatch, renderer, dtype
+    ):
+        monkeypatch.setitem(_overlay, "mesh_rasterizer", renderer)
+        monkeypatch.setattr(mesh_render.native_rasterizer, "kernel", lambda: None)
+        image = np.zeros((16, 16, 3), dtype=np.uint8)
+        depth = np.full((16, 16), np.inf, dtype=dtype)
+        tri = np.array([[[0, 0, 1], [4, 0, 1], [0, 4, 1]]], dtype=np.float32)
+        mesh_render._rasterise_triangles(
+            image,
+            depth,
+            tri,
+            np.ones_like(tri),
+            lambda n: np.ones_like(n),
+            np.ones(3) * 255,
+            16,
+            16,
+        )
+        assert image[0, 0].tolist() == [255, 255, 255]
+        assert depth[0, 0] == 1
+
+    def test_forced_rust_requires_the_extension(self, monkeypatch):
+        monkeypatch.setitem(_overlay, "mesh_rasterizer", "rust")
+        monkeypatch.setattr(mesh_render.native_rasterizer, "kernel", lambda: None)
+        with pytest.raises(RuntimeError, match="Rust mesh renderer is not installed"):
+            mesh_render._rasterise_triangles(
+                np.zeros((16, 16, 3), dtype=np.uint8),
+                np.full((16, 16), np.inf),
+                np.zeros((0, 3, 3)),
+                np.zeros((0, 3, 3)),
+                lambda n: n,
+                np.ones(3),
+                16,
+                16,
+            )
 
 
 def _tilt_matrix() -> np.ndarray:

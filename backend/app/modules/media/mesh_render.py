@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
+from printstash_core.mesh import native_rasterizer
 from printstash_core.mesh import rasterizer as _core
 
 from app.core.config import settings
@@ -15,8 +16,39 @@ logger = get_logger(__name__)
 FLAT_MESH_THICKNESS_RATIO = _core.FLAT_MESH_THICKNESS_RATIO
 RasterBudget = _core.RasterBudget
 
+
 # Preserve the helper import surface used by the STL fallback and focused tests.
-_rasterise_triangles = _core._rasterise_triangles
+def _rasterise_triangles(
+    img: Any,
+    zbuf: Any,
+    tri: Any,
+    vert_nrm: Any,
+    shade: Any,
+    base_color: Any,
+    width: int,
+    height: int,
+    *,
+    budget: RasterBudget | None = None,
+) -> int:
+    import numpy as np
+
+    # Budgeted STL recovery retains its centered partial-tile contract. The
+    # ordinary preview path uses float64 depth and can run the native kernel.
+    if (
+        budget is not None
+        or settings.mesh_rasterizer == "python"
+        or zbuf.dtype != np.dtype(np.float64)
+    ):
+        return _core._rasterise_triangles(
+            img, zbuf, tri, vert_nrm, shade, base_color, width, height, budget=budget
+        )
+    if settings.mesh_rasterizer == "rust" or native_rasterizer.kernel() is not None:
+        return native_rasterizer.rasterise_triangles(
+            img, zbuf, tri, vert_nrm, shade, base_color, width, height
+        )
+    return _core._rasterise_triangles(
+        img, zbuf, tri, vert_nrm, shade, base_color, width, height
+    )
 
 
 def _select_view_rotation(verts: Any, _np: Any) -> Any:

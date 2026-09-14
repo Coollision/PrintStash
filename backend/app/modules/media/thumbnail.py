@@ -39,6 +39,7 @@ def to_webp(data: bytes, *, normalize: bool = True) -> bytes:
     """
     try:
         from PIL import Image
+        from printstash_core.mesh.preview_profile import PREVIEW_PROFILE
 
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -56,8 +57,6 @@ def to_webp(data: bytes, *, normalize: bool = True) -> bytes:
                     raise ThumbnailValidationError("thumbnail_empty")
 
                 if normalize:
-                    from printstash_core.mesh.preview_profile import PREVIEW_PROFILE
-
                     canonical_with_safe_border = (
                         source_had_alpha
                         and rgba.size == (width, height)
@@ -107,7 +106,13 @@ def to_webp(data: bytes, *, normalize: bool = True) -> bytes:
                     rgba.thumbnail((width, height), Image.Resampling.LANCZOS)
 
                 buf = io.BytesIO()
-                rgba.save(buf, format="WEBP", lossless=True, exact=True, method=6)
+                rgba.save(
+                    buf,
+                    format="WEBP",
+                    lossless=True,
+                    exact=True,
+                    method=PREVIEW_PROFILE.encoding_method,
+                )
                 return buf.getvalue()
     except ThumbnailValidationError:
         raise

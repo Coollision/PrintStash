@@ -95,6 +95,81 @@ def _write_real_stl(path: Path, *, subdivisions: int) -> int:
 
 
 class TestLoadMesh:
+    def test_releases_the_preview_mesh(self, tmp_path, monkeypatch):
+        import weakref
+
+        from tests.factories.geometry import tetrahedron
+
+        path = tmp_path / "owned.stl"
+        path.write_bytes(tetrahedron().export(file_type="stl"))
+        references = []
+        original = mesh_processing._load_mesh
+
+        def load(*args, **kwargs):
+            mesh = original(*args, **kwargs)
+            references.append(weakref.ref(mesh))
+            return mesh
+
+        monkeypatch.setattr(mesh_processing, "_load_mesh", load)
+
+        mesh_operations.analyze_mesh(path)
+
+        assert len(references) == 1
+        assert references[0]() is None
+
+    def test_streams_3mf_without_the_legacy_loader(self, tmp_path, monkeypatch):
+        pytest.importorskip("printstash_mesh_native")
+        from tests.factories.geometry import three_mf
+
+        path = tmp_path / "streamed.3mf"
+        path.write_bytes(three_mf())
+        monkeypatch.setitem(_overlay, "mesh_loader", "auto")
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("legacy loader was used")
+
+        monkeypatch.setattr(trimesh, "load_scene", forbidden)
+
+        mesh = mesh_processing._load_mesh(path)
+
+        assert mesh is not None
+        assert len(mesh.faces) == 4
+        assert mesh.bounds.tolist() == [[0, 0, 0], [10, 20, 30]]
+
+    def test_python_selection_uses_the_legacy_loader(self, tmp_path, monkeypatch):
+        from printstash_core.mesh import threemf
+
+        from tests.factories.geometry import three_mf
+
+        path = tmp_path / "legacy.3mf"
+        path.write_bytes(three_mf())
+        monkeypatch.setitem(_overlay, "mesh_loader", "python")
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("native loader was used")
+
+        monkeypatch.setattr(threemf, "load_scene", forbidden)
+
+        mesh = mesh_processing._load_mesh(path)
+
+        assert mesh is not None
+        assert len(mesh.faces) == 4
+
+    def test_missing_native_parser_keeps_3mf_loading(self, tmp_path, monkeypatch):
+        from printstash_core.mesh import threemf
+
+        from tests.factories.geometry import three_mf
+
+        path = tmp_path / "optional.3mf"
+        path.write_bytes(three_mf())
+        monkeypatch.setitem(_overlay, "mesh_loader", "auto")
+        monkeypatch.setattr(threemf, "available", lambda: False)
+
+        mesh = mesh_processing._load_mesh(path)
+
+        assert mesh is not None
+        assert len(mesh.faces) == 4
+
     def test_real_over_triangle_mesh_uses_streaming_fallback(
         self, tmp_path: Path, monkeypatch
     ) -> None:

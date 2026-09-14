@@ -92,7 +92,7 @@ class TestLoadMesh:
     ) -> None:
 
         empty_scene = trimesh.Scene()  # no geometry at all
-        p = tmp_path / "empty.3mf"
+        p = tmp_path / "empty.glb"
         p.write_bytes(b"placeholder")
         monkeypatch.setattr(trimesh, "load_scene", lambda *a, **k: empty_scene)
         assert mesh_processing._load_mesh(p) is None
@@ -112,11 +112,9 @@ class TestLoadMesh:
             def dump(self, *_args: object, **_kwargs: object):
                 raise ValueError("component graph references a missing object")
 
-        p = tmp_path / "broken-graph.3mf"
+        p = tmp_path / "broken-graph.glb"
         p.write_bytes(b"placeholder")
-        monkeypatch.setattr(
-            trimesh, "load_scene", lambda *a, **k: UnflattenableScene()
-        )
+        monkeypatch.setattr(trimesh, "load_scene", lambda *a, **k: UnflattenableScene())
 
         assert mesh_processing._load_mesh(p) is None
 
@@ -133,7 +131,7 @@ class TestLoadMesh:
         scene = trimesh.Scene()
         scene.add_geometry(trimesh.creation.box(extents=[5, 5, 5]), node_name="a")
         scene.add_geometry(trimesh.creation.box(extents=[3, 3, 3]), node_name="b")
-        p = tmp_path / "unjoinable.3mf"
+        p = tmp_path / "unjoinable.glb"
         p.write_bytes(b"placeholder")
         monkeypatch.setattr(trimesh, "load_scene", lambda *a, **k: scene)
 
@@ -151,7 +149,7 @@ class TestLoadMesh:
         scene = trimesh.Scene()
         box = trimesh.creation.box(extents=[5, 5, 5])
         scene.add_geometry(box, node_name="a")
-        p = tmp_path / "single.3mf"
+        p = tmp_path / "single.glb"
         p.write_bytes(b"placeholder")
         monkeypatch.setattr(trimesh, "load_scene", lambda *a, **k: scene)
         mesh = mesh_processing._load_mesh(p)

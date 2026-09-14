@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Performance
+
+- ZIP imports compute mesh geometry and previews ahead of the ordered writer.
+  Worker counts adapt to CPU and memory limits; `VAULT_IMPORT_WORKERS=1` keeps
+  serial execution. Shared memory reservations bound outstanding mesh work.
+- Both Docker variants include an optional Rust extension for binary STL and
+  streamed 3MF mesh loading, geometry measurements, rasterization and canonical
+  lighting. Python remains available for comparison and compatibility.
+- Preview rendering culls back faces and avoids empty raster regions. Lossless
+  WebP method 0 reduces encoding work while preserving decoded pixels; encoded
+  thumbnails can be larger. The shared preview recipe advances to version 3.
+- ZIP imports publish originals, geometry and previews before queuing optional
+  similarity fingerprints. Progress reports the current file and completed,
+  failed and skipped counts. A full-archive benchmark checks source hashes,
+  geometry and previews while measuring elapsed time, CPU and sampled RAM.
+
 ### Added
 
 - Model Families preserve independent Models and Revisions while recording human
