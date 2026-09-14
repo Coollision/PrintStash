@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import warnings
+from typing import cast
 
 from .embedding import EmbeddingError, EmbeddingInput
 
@@ -26,7 +27,11 @@ def decode_image(payload: bytes, content_type: str) -> EmbeddingInput:
     if mime not in _FORMATS.values():
         raise EmbeddingError("embedding_image_type_unsupported")
     try:
-        from PIL import Image, ImageOps, UnidentifiedImageError
+        from PIL import (  # pyright: ignore[reportMissingTypeStubs]
+            Image,
+            ImageOps,
+            UnidentifiedImageError,
+        )
     except ImportError:
         raise EmbeddingError("embedding_runtime_unavailable") from None
     try:
@@ -48,10 +53,12 @@ def decode_image(payload: bytes, content_type: str) -> EmbeddingInput:
                 if getattr(source, "n_frames", 1) != 1:
                     raise EmbeddingError("embedding_image_animation_unsupported")
                 source.load()
-                oriented = ImageOps.exif_transpose(source)
+                # Pillow 10 annotates the optional in-place return even though
+                # the default used here always returns an image.
+                oriented = cast(Image.Image, ImageOps.exif_transpose(source))
                 oriented.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
                 rgba = oriented.convert("RGBA")
-                background = Image.new("RGBA", rgba.size, "white")
+                background = Image.new("RGBA", rgba.size, 0xFFFFFFFF)
                 background.alpha_composite(rgba)
                 rgb = background.convert("RGB")
                 return EmbeddingInput(
