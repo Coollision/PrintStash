@@ -79,7 +79,14 @@ def native_units(
     assert vector_index.prepare(db_session, generation)
     assert vector_index.rebuild_partition(db_session, generation) == 2
     db_session.commit()
-    return generation, contract, first, second
+    native_table = vector_index.table_name(generation.id, "sqlite")
+    try:
+        yield generation, contract, first, second
+    finally:
+        # Test bodies may change the generation's table claim or retire it.
+        db_session.rollback()
+        db_session.execute(text(f"DROP TABLE IF EXISTS {native_table}"))
+        db_session.commit()
 
 
 class TestVectorIndex:
