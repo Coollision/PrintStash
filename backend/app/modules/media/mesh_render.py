@@ -79,6 +79,17 @@ def render_mesh_thumbnail(
     output_format: Literal["PNG", "WEBP"] = "PNG",
 ) -> Optional[bytes]:
     """Render through core with application settings and logging injected."""
+    frame_factory = None
+    normal_preparer = None
+    mesh_preparer = None
+    if settings.mesh_rasterizer != "python":
+        native = native_rasterizer.kernel()
+        if hasattr(native, "PreparedPreview"):
+            mesh_preparer = native_rasterizer.prepare_mesh
+        if hasattr(native, "NativeFrame"):
+            frame_factory = native_rasterizer.NativeFrame
+        if hasattr(native, "smooth_normals"):
+            normal_preparer = native_rasterizer.prepare_normals
     return _core.render_mesh_thumbnail(
         mesh,
         name,
@@ -88,6 +99,9 @@ def render_mesh_thumbnail(
         logger=logger,
         rasterise_triangles=_rasterise_triangles,
         output_format=output_format,
+        frame_factory=frame_factory,
+        normal_preparer=normal_preparer,
+        mesh_preparer=mesh_preparer,
     )
 
 

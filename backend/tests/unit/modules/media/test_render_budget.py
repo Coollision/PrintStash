@@ -88,9 +88,9 @@ class TestRenderBudget:
         assert gate.jobs == 0
 
     def test_unknown_memory_uses_conservative_budget(self, monkeypatch):
-        from app.modules.media import mesh_processing
+        from app.modules.media import mesh_limits
 
-        monkeypatch.setattr(mesh_processing, "_detect_memory_limit_bytes", lambda: None)
+        monkeypatch.setattr(mesh_limits, "_detect_memory_limit_bytes", lambda: None)
         monkeypatch.setitem(_overlay, "mesh_memory_budget_fraction", 0)
         assert rb.memory_budget() == 256 * rb.MIB
 
@@ -120,19 +120,20 @@ class TestRenderBudget:
         assert rb.budget.used == 0
 
     def test_unknown_mesh_cost_reserves_entire_budget(self, monkeypatch, tmp_path):
-        from app.modules.media import mesh_processing
+        from app.modules.media import mesh_limits
 
         monkeypatch.setattr(
-            mesh_processing, "_estimate_triangle_count", lambda *a, **k: None
+            mesh_limits, "_estimate_triangle_count", lambda *a, **k: None
         )
         assert rb.estimate_work(tmp_path / "model.step", "step", 1024) == 1024
 
     def test_known_mesh_cost_includes_fixed_overhead(self, monkeypatch, tmp_path):
-        from app.modules.media import mesh_processing
+        from app.modules.media import mesh_limits
 
         monkeypatch.setattr(
-            mesh_processing, "_estimate_triangle_count", lambda *a, **k: 100
+            mesh_limits, "_estimate_triangle_count", lambda *a, **k: 100
         )
+        (tmp_path / "model.stl").touch()
         assert (
             rb.estimate_work(tmp_path / "model.stl", "stl", 1024**3)
             == 100 * 2200 + 128 * rb.MIB
@@ -146,3 +147,33 @@ class TestRenderBudget:
         monkeypatch.setattr(rb.os, "cpu_count", lambda: None)
         monkeypatch.setattr(rb.os, "sched_getaffinity", unreadable)
         assert rb.effective_cpus() == 1
+
+
+class TestStreamingAdmission:
+    @pytest.mark.parametrize(
+        "budget", [512 * rb.MIB, 4096 * rb.MIB], ids=["small-server", "larger-server"]
+    )
+    def test_large_stl_reserves_bounded_recovery(self, monkeypatch, tmp_path, budget):
+        monkeypatch.setitem(_overlay, "mesh_max_load_mb", 1)
+        path = tmp_path / "large.stl"
+        with path.open("wb") as stream:
+            stream.truncate(2 * rb.MIB)
+        assert rb.estimate_work(path, "stl", budget) == min(budget, 1024 * rb.MIB)
+
+    @pytest.mark.parametrize("cap", [0, 2], ids=["disabled-cap", "at-cap"])
+    def test_full_load_keeps_conservative_reservation(self, monkeypatch, tmp_path, cap):
+        from app.modules.media import mesh_limits
+
+        monkeypatch.setitem(_overlay, "mesh_max_load_mb", cap)
+        monkeypatch.setattr(
+            mesh_limits, "_estimate_triangle_count", lambda *a, **k: 1_000_000
+        )
+        path = tmp_path / "mesh.stl"
+        with path.open("wb") as stream:
+            stream.truncate(2 * rb.MIB)
+        budget = 4096 * rb.MIB
+        assert rb.estimate_work(path, "stl", budget) == 1_000_000 * 2200 + 128 * rb.MIB
+
+    def test_unreadable_stl_reserves_entire_budget(self, tmp_path):
+        budget = 4096 * rb.MIB
+        assert rb.estimate_work(tmp_path / "missing.stl", "stl", budget) == budget

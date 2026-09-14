@@ -27,6 +27,32 @@ def parallel(monkeypatch, tmp_path):
 
 
 class TestPreparedImports:
+    def test_reports_activity_while_a_mesh_stage_has_not_changed(
+        self, parallel, monkeypatch
+    ):
+        from app.modules.ingestion import mesh_prefetch
+
+        reported = []
+        heartbeat = Event()
+        clock = iter((0.0, 1.1, 2.2, 3.3, 4.4))
+        monkeypatch.setattr(mesh_prefetch, "monotonic", lambda: next(clock))
+
+        def analyze(*args, **kwargs):
+            assert heartbeat.wait(5), "unchanged mesh stage stopped reporting activity"
+            return {}, b"preview"
+
+        def observe(progress):
+            reported.append(progress)
+            if len(reported) >= 2:
+                heartbeat.set()
+
+        monkeypatch.setattr(mesh_operations, "analyze_mesh", analyze)
+        with PreparedImports(parallel[:1], observe) as prepared:
+            result = list(prepared)
+
+        assert result[0][1].error is None
+        assert reported[0] == reported[1]
+
     def test_computes_concurrently_in_input_order(self, parallel, monkeypatch):
         second_started = Event()
 

@@ -95,13 +95,15 @@ def _write_real_stl(path: Path, *, subdivisions: int) -> int:
 
 
 class TestLoadMesh:
-    def test_releases_the_preview_mesh(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("format", ["stl", "stl_ascii"], ids=["binary", "ascii"])
+    def test_releases_the_preview_mesh(self, tmp_path, monkeypatch, format):
         import weakref
 
         from tests.factories.geometry import tetrahedron
 
         path = tmp_path / "owned.stl"
-        path.write_bytes(tetrahedron().export(file_type="stl"))
+        payload = tetrahedron().export(file_type=format)
+        path.write_bytes(payload.encode() if isinstance(payload, str) else payload)
         references = []
         original = mesh_processing._load_mesh
 

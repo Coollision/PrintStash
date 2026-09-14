@@ -33,7 +33,7 @@ from app.db.models import (
     StorageObjectState,
     User,
 )
-from app.db.projections import content_changed
+from app.db.projections import batch_content_changes, content_changed
 from app.db.scopes import live
 from app.db.session import SessionFactory, get_session_factory
 from app.modules.identity import rbac
@@ -580,35 +580,36 @@ def persist_artifact(
         # Metadata is a model that renders with no print time, filament or cost and
         # no error to explain it. flush() allocates the id the thumbnail key needs
         # without ending the transaction.
-        session.add(file_row)
-        session.flush()
-        assert file_row.id is not None
-        if provenance_context is not None:
-            # The File id exists, but the Artifact has not yet become visible.
-            # A provenance failure therefore follows the established rollback
-            # path for both its link and the bytes/row it describes.
-            _attach_ingested_artifact(session, file_row, provenance_context)
-        # The parser may carry detection-only keys (e.g. printer_preset_name)
-        # that have no Metadata column.
-        md_fields = {k: v for k, v in meta.items() if k in Metadata.model_fields}
-        session.add(Metadata(file_id=file_row.id, **md_fields))
-        requirements = meta.get("material_requirements")
-        if isinstance(requirements, list):
-            for requirement in requirements:
-                if not isinstance(requirement, dict):
-                    continue
-                material_type = requirement.get("material_type")
-                if not isinstance(material_type, str) or not material_type.strip():
-                    continue
-                session.add(
-                    ArtifactMaterialRequirement(
-                        file_id=file_row.id,
-                        tool_index=int(requirement.get("tool_index") or 0),
-                        material_type=material_type.strip(),
-                        color_hex=requirement.get("color_hex"),
+        with batch_content_changes(session):
+            session.add(file_row)
+            session.flush()
+            assert file_row.id is not None
+            if provenance_context is not None:
+                # The File id exists, but the Artifact has not yet become visible.
+                # A provenance failure therefore follows the established rollback
+                # path for both its link and the bytes/row it describes.
+                _attach_ingested_artifact(session, file_row, provenance_context)
+            # The parser may carry detection-only keys (e.g. printer_preset_name)
+            # that have no Metadata column.
+            md_fields = {k: v for k, v in meta.items() if k in Metadata.model_fields}
+            session.add(Metadata(file_id=file_row.id, **md_fields))
+            requirements = meta.get("material_requirements")
+            if isinstance(requirements, list):
+                for requirement in requirements:
+                    if not isinstance(requirement, dict):
+                        continue
+                    material_type = requirement.get("material_type")
+                    if not isinstance(material_type, str) or not material_type.strip():
+                        continue
+                    session.add(
+                        ArtifactMaterialRequirement(
+                            file_id=file_row.id,
+                            tool_index=int(requirement.get("tool_index") or 0),
+                            material_type=material_type.strip(),
+                            color_hex=requirement.get("color_hex"),
+                        )
                     )
-                )
-        content_changed(session, "model", [model_id])
+            content_changed(session, "model", [model_id])
         # A driver may acknowledge a committed transaction as an exception
         # (for example, a connection loss after COMMIT). From here onward the
         # blob must be preserved until a fresh session resolves the outcome.

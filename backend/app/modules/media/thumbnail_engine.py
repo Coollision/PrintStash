@@ -420,10 +420,7 @@ class ThumbnailEngine:
             prepared = None
             if mesh is not None:
                 released_mesh = (
-                    weakref.ref(mesh)
-                    if not request.include_fingerprint
-                    and getattr(mesh, "_printstash_owned_buffers", False)
-                    else None
+                    weakref.ref(mesh) if not request.include_fingerprint else None
                 )
                 del mesh
                 if released_mesh is None:

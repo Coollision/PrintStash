@@ -2,7 +2,23 @@
 
 import pytest
 
-from scripts.bench_import import compare_previews
+from scripts.bench_import import compare_previews, environment_record
+
+
+class TestEnvironmentRecord:
+    def test_records_a_source_archive_without_git(self, tmp_path):
+        record = environment_record(tmp_path)
+        assert record["git_revision"] is None
+        assert record["dependency_versions"]["numpy"] is not None
+        assert "server startup" in record["timing_excludes"]
+        assert record["cache_condition"].startswith("uncontrolled")
+
+
+    def test_records_an_image_without_the_git_executable(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PATH", str(tmp_path))
+        record = environment_record(tmp_path)
+        assert record["git_revision"] is None
+        assert record["dependency_versions"]["numpy"] is not None
 
 
 class TestComparePreviews:

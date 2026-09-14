@@ -32,6 +32,67 @@ class TestKernel:
             native_rasterizer.kernel()
 
 
+class TestNativeFrame:
+    def test_missing_extension_refuses_frame(self, monkeypatch):
+        monkeypatch.setattr(native_rasterizer, "kernel", lambda: None)
+        with pytest.raises(RuntimeError, match="not installed"):
+            native_rasterizer.NativeFrame(4, 4)
+
+    def test_missing_extension_refuses_preparation(self, monkeypatch):
+        monkeypatch.setattr(native_rasterizer, "kernel", lambda: None)
+        with pytest.raises(RuntimeError, match="not installed"):
+            native_rasterizer.prepare_normals(
+                np.zeros((3, 3), dtype=np.float32),
+                np.array([[0, 1, 2]]),
+                np.arange(3),
+                3,
+                64,
+            )
+
+    def test_constant_silhouette_uses_flat_color(self, native):
+        frame = native_rasterizer.NativeFrame(4, 4)
+        tri = np.array([[[0, 0, 1], [4, 0, 1], [0, 4, 1]]], dtype=np.float32)
+        frame.draw(
+            tri,
+            np.zeros_like(tri),
+            lambda n: np.full_like(n, 0.5),
+            np.array([100, 200, 240]),
+        )
+        pixels = np.frombuffer(frame.rgba(), np.uint8).reshape(4, 4, 4)
+        np.testing.assert_array_equal(pixels[0, 0], [50, 100, 120, 255])
+
+    @pytest.mark.parametrize(
+        "shape", ["box", "icosphere"], ids=["mechanical", "curved"]
+    )
+    @pytest.mark.parametrize("chunk", [5, 64000], ids=["small-batches", "single-batch"])
+    @pytest.mark.parametrize(
+        "prepare", [False, True], ids=["numpy-normals", "rust-normals"]
+    )
+    def test_preserves_complete_preview(self, native, shape, chunk, prepare):
+        import trimesh
+
+        mesh = getattr(trimesh.creation, shape)()
+        expected = rasterizer.render_mesh_thumbnail(
+            mesh,
+            shape,
+            width=128,
+            height=128,
+            face_chunk_size=chunk,
+            rasterise_triangles=native_rasterizer.rasterise_triangles,
+        )
+        actual = rasterizer.render_mesh_thumbnail(
+            mesh,
+            shape,
+            width=128,
+            height=128,
+            face_chunk_size=chunk,
+            frame_factory=native_rasterizer.NativeFrame,
+            normal_preparer=native_rasterizer.prepare_normals if prepare else None,
+        )
+        assert expected is not None
+        assert actual == expected
+
+
 @pytest.fixture
 def native():
     pytest.importorskip(

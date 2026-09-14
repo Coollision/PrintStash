@@ -117,10 +117,10 @@ def affected_subjects(
 
 class LibraryProjection:
     def refresh(self, session: Session, sources: tuple[ContentSource, ...]) -> None:
+        recent: set[SearchSubject] = set()
         for source in sources:
             # Duplicates are harmless and idempotent. A bounded recent set avoids
             # repeated joins without allocating a library-sized deduplication set.
-            recent: set[SearchSubject] = set()
             for subject in affected_subjects(session, source):
                 if subject not in recent:
                     sync_subject(session, subject)

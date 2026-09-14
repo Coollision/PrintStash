@@ -11,7 +11,11 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from alembic import command
 from app.db.models.search import SearchPassage
-from app.db.projections import bind_content_projection, content_changed
+from app.db.projections import (
+    batch_content_changes,
+    bind_content_projection,
+    content_changed,
+)
 from app.db.url import normalize_database_url
 from app.modules.search.passages import sync_subject
 from app.modules.search.projection import LibraryProjection
@@ -54,6 +58,31 @@ def passage_engine():
 
 
 class TestSearchPassages:
+    def test_batch_rollback_preserves_the_previous_publication(self, passage_engine):
+        engine, config = passage_engine
+        command.upgrade(config, "head")
+        previous = bind_content_projection(LibraryProjection())
+        try:
+            with Session(engine) as session:
+                model = build_model(session, "Original")
+                with batch_content_changes(session):
+                    content_changed(session, "model", [model.id])
+                    model.name = "Committed"
+                    session.add(model)
+                    content_changed(session, "model", [model.id])
+                session.commit()
+                with batch_content_changes(session):
+                    model.name = "Rolled back"
+                    session.add(model)
+                    content_changed(session, "model", [model.id])
+                session.rollback()
+            with Session(engine) as session:
+                assert (
+                    session.exec(select(SearchPassage.text)).one() == "Title: Committed"
+                )
+        finally:
+            bind_content_projection(previous)
+
     def test_projects_existing_models_after_upgrade(self, passage_engine):
         engine, config = passage_engine
         with Session(engine) as session:

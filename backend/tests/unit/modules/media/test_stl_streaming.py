@@ -625,6 +625,7 @@ class TestRenderStlPreviewIsolated:
                 budget.used += 1
             return 1
 
+        monkeypatch.setenv("VAULT_MESH_RASTERIZER", "python")
         from app.modules.media import mesh_render
 
         monkeypatch.setattr(mesh_render, "_rasterise_triangles", fake_rasterise)

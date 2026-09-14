@@ -86,8 +86,9 @@ again afterward.
 
 `VAULT_MESH_RASTERIZER` accepts `auto` (the default), `python` or `rust`.
 `auto` uses Rust when the extension is installed. `python` provides an explicit
-fallback. Budgeted STL recovery keeps its existing Python rasterizer and
-partial-tile accounting in every mode.
+fallback. Budgeted STL recovery can also calculate depth in Rust, preserving its
+float32 depth buffer and partial-tile accounting. Binary source reading can run
+in Rust; scene setup and image encoding remain in the isolated Python worker.
 
 Compare complete imports with explicit engines:
 
@@ -102,22 +103,25 @@ contains them. Requesting Rust without the extension fails before the benchmark 
 Add `--similarity` to both commands to compare the same import settings with
 analysis enabled. Fingerprint completion remains outside this timer.
 
-The native rendering kernels run on one thread and release the Python interpreter lock
-while computing visibility, interpolating normals and applying the canonical
-lighting. They accept immutable byte buffers and return packed final fragments
-(pixel index, depth and RGB); they do not access storage or mutate Python arrays.
-The fused path keeps face IDs inside Rust and avoids a separate visibility
-payload and RGB result. Visibility memory is bounded by the framebuffer size.
-The shader uses constant
-per-pixel scratch space and allocates its RGB output at its final size, avoiding
-NumPy arrays for barycentric interpolation, normalized normals and light terms.
+The native rendering kernels run on one thread and release the Python interpreter
+lock during computation. The current extension prepares angle-weighted vertex
+normals and retains depth, RGB and reusable 32-bit face indices in a Rust frame
+across draw batches. It returns the completed RGBA buffer once. This removes
+repeated copies of depth and intermediate visible fragments. An interrupted or
+failed draw cannot publish a partially updated native frame.
 
-Python still prepares vertex/corner normals and publishes the completed colors.
-Custom lighting callbacks and older native extensions retain the Python shading
-path with batches of at most 16,384 visible pixels. Both paths finish shading
-before updating the caller's image or depth. Invalid native buffers, fragment
-indices and lighting parameters are rejected before any framebuffer update.
-Rust uses no unsafe blocks; PyO3 supplies the Python boundary.
+The owned native preview path also centers vertices, groups coincident positions,
+projects the camera view, culls faces and computes crease-aware corner normals.
+It receives the mesh once and processes drawing batches inside Rust, without
+per-batch Python callbacks or triangle/normal array transfers. Position and face
+indices use 32 bits; coordinates use float32 and accumulated normals use float64.
+The camera and material recipes remain shared with the Python path. Pillow handles
+image resizing and encoding through its existing native codecs.
+
+Custom lighting callbacks and older native extensions retain the earlier fragment
+adapter, with Python shading batches of at most 16,384 visible pixels when needed.
+Native functions accept immutable inputs and validate dimensions, indices and
+finite values. Rust uses no unsafe blocks; PyO3 supplies the Python boundary.
 
 The renderer still copies input buffers to give Rust immutable data while the
 interpreter lock is released. Mesh loading and vertex preparation retain arrays
@@ -163,6 +167,22 @@ proportional to the mesh size. Streaming does not make the whole pipeline use
 constant memory.
 
 
+## Binary STL recovery without block callbacks
+
+For exact binary STL files that exceed full-mesh admission, Rust owns both source
+passes. The first pass validates coordinates, measures bounds and retains the
+same deterministic 4,096-point framing sample. The second pass projects bounded
+blocks into one retained depth buffer. The completed depth buffer crosses into
+Python once for screen-space shading and encoding. The worker retains its source,
+triangle, candidate, memory and deadline limits. It checks source identity before
+and after each pass and rejects changed files or incomplete renders.
+
+The bounded fallback sampler also reads binary STL records in Rust, preserving
+midpoint sampling, finite-coordinate filtering and completion metadata. ASCII
+recovery and the fallback coverage/shading path still use Python/NumPy. They are
+not part of the callback-free binary source path. `VAULT_MESH_RASTERIZER=python`
+selects the earlier preview and fallback implementation.
+
 ## Binary STL and geometry measurements
 
 The native binary STL loader reads the file in 64 KiB blocks and writes
@@ -192,12 +212,18 @@ the reference. `VAULT_MESH_LOADER=python` separately selects the previous STL
 and 3MF loaders.
 
 
-Native STL previews also verify mesh reclamation through a weak reference.
-They first collect younger object cycles and run a full collection if the mesh
+Preview-only mesh processing verifies mesh reclamation through a weak reference.
+It first collects younger object cycles and runs a full collection if the mesh
 is still alive. This avoids repeatedly scanning unrelated long-lived objects.
-The allocator still returns freed pages to the OS. Scene loaders and fingerprint
-analysis retain the existing full collection because they can create additional
-mesh copies.
+Allocator trimming remains enabled. Fingerprint analysis retains full collection
+because it can create additional mesh copies.
+
+Connected-component extraction can use `petgraph`'s union-find implementation
+with compact edge and face indices. It preserves edge connectivity and canonical
+component ordering, including nonmanifold edges and vertices that touch without
+sharing an edge. `VAULT_MESH_GEOMETRY=python` selects the previous path for both
+measurements and component extraction. Other similarity algorithms and model
+inference retain their existing implementations.
 
 ## Lossless preview compression
 
@@ -232,7 +258,12 @@ disable bounded prefetch.
 The coordinator estimates each file's working memory before submitting it and
 retains that reservation until publication consumes the result. It admits only
 a bounded window of files, so a slow writer stops additional computation.
-Unknown mesh costs and STEP reserve the whole budget. A large mesh waits for
+Unknown mesh costs and STEP reserve the whole budget. STL sources above the
+configured full-load byte cap reserve at most 1 GiB for their bounded recovery
+route, instead of the full-mesh estimate. This covers the isolated worker's
+256 MiB RSS ceiling, parent fallback processing and retained output. A smaller
+budget still admits only its available capacity; disabling the byte cap keeps
+the conservative full-load estimate. A large mesh waits for
 smaller active jobs instead of losing its preview merely because more import
 workers are configured. Reservations cover estimated parser/render memory and
 retained output; they are not a hard RSS guarantee. Costs vary by format and
@@ -245,6 +276,16 @@ versions, collections, storage publication and durable job states remain on the
 ordered ingestion path. A failed file is reported through that same path, and
 outstanding workers drain before their reservations are released. Rust performs
 the native mesh operations; scheduling and persistence remain in Python.
+
+Within each Artifact publication, repeated content changes are collected before
+refreshing search projections. The projection is flushed before the existing
+commit, so files and searchable content remain in the same transaction. This
+does not combine unrelated Artifacts into one transaction or relax durability.
+While waiting for parallel mesh work, the coordinator reports activity at roughly
+one-second intervals. Serial processing reports activity at stage boundaries.
+Identical intermediate job states are coalesced within
+that interval; changed and terminal states are persisted immediately. Activity
+does not increase the completed-file count.
 
 Compare the complete archive with the same rendering settings:
 

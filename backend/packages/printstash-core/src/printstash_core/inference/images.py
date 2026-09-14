@@ -55,7 +55,7 @@ def decode_image(payload: bytes, content_type: str) -> EmbeddingInput:
                 source.load()
                 # Pillow 10 annotates the optional in-place return even though
                 # the default used here always returns an image.
-                oriented = cast(Image.Image, ImageOps.exif_transpose(source))
+                oriented = cast(Image.Image, ImageOps.exif_transpose(source))  # pyright: ignore[reportUnnecessaryCast]
                 oriented.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
                 rgba = oriented.convert("RGBA")
                 background = Image.new("RGBA", rgba.size, 0xFFFFFFFF)

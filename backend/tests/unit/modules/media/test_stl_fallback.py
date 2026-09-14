@@ -336,6 +336,9 @@ class TestRenderStlThumbnail:
 
         path = tmp_path / "io-error.stl"
         _write_renderable_binary_stl(path, 1)
+        from app.core.config import _overlay
+
+        monkeypatch.setitem(_overlay, "mesh_rasterizer", "python")
         original_open = Path.open
 
         def fail_open(_path: Path, *args, **kwargs):
@@ -366,6 +369,9 @@ class TestRenderStlThumbnail:
     ) -> None:
         path = tmp_path / "sampler-unreadable.stl"
         _write_renderable_binary_stl(path, 1)
+        from app.core.config import _overlay
+
+        monkeypatch.setitem(_overlay, "mesh_rasterizer", "python")
         info = (1, path.stat().st_size)
 
         def fail_open(_path: Path, *args, **kwargs):

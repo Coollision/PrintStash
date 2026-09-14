@@ -355,7 +355,7 @@ class TestAnalyzeMesh:
         assert geometry["triangle_count"] == 99  # cheap geometry kept
         assert thumb is None
 
-    def test_loaded_mesh_triggers_memory_reclaim(
+    def test_releases_the_loaded_mesh_before_reclaim(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         monkeypatch.setitem(_overlay, "mesh_max_render_triangles", 1_000_000)
@@ -363,7 +363,7 @@ class TestAnalyzeMesh:
         p = tmp_path / "ok.stl"
         _write_binary_stl(p, 500)
 
-        calls = {"n": 0}
+        released = []
         monkeypatch.setattr(mesh_processing, "_load_mesh", lambda _p: _fake_mesh(500))
         monkeypatch.setattr(
             mesh_render, "render_mesh_thumbnail", lambda *a, **k: b"PNG"
@@ -371,11 +371,11 @@ class TestAnalyzeMesh:
         monkeypatch.setattr(
             mesh_processing,
             "_reclaim_memory",
-            lambda: calls.__setitem__("n", calls["n"] + 1),
+            lambda *, released_mesh: released.append(released_mesh()),
         )
 
         mesh_operations.analyze_mesh(p)
-        assert calls["n"] == 1
+        assert released == [None]
 
     def test_skipped_mesh_does_not_reclaim(self, tmp_path: Path, monkeypatch) -> None:
         # No mesh was loaded (over cap), so there's nothing to free — and we don't pay

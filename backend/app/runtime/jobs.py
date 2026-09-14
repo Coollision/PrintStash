@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import delete, exists, func, or_
 from sqlmodel import Session, select
 
-from app.core.time import utcnow
+from app.core.time import ensure_utc, utcnow
 from app.db.models import BackgroundJob, IndexGeneration, StagingLease
 from app.db.session import get_session_factory
 from app.schemas.ingest import (
@@ -344,6 +344,7 @@ class JobRegistry:
                 return
             if state == "pending" and job.state != "pending":
                 return
+            previous_payload = self._status_payload(job)
             if state == "running" and job.started_at is None:
                 job.started_at = utcnow()
             if model_id is not None:
@@ -443,6 +444,15 @@ class JobRegistry:
                     duration,
                     result_label,
                 )
+            # Identical hints need at most one durable heartbeat per second.
+            # Changed fields and terminal transitions are always persisted now.
+            if (
+                self._status_payload(job) == previous_payload
+                and job.updated_at is not None
+                and (ensure_utc(utcnow()) - ensure_utc(job.updated_at)).total_seconds()
+                < 1.0
+            ):
+                return
             self._persist(job)
 
     def finish(

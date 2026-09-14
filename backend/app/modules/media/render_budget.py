@@ -58,9 +58,9 @@ def effective_cpus() -> int:
 
 
 def memory_budget() -> int:
-    from app.modules.media import mesh_processing
+    from app.modules.media import mesh_limits
 
-    detected = mesh_processing._detect_memory_limit_bytes()
+    detected = mesh_limits._detect_memory_limit_bytes()
     # Unknown capacity and disabled mesh capping do not authorize unbounded
     # prefetch. The scheduler retains a conservative budget in those modes.
     fraction = float(settings.mesh_memory_budget_fraction) or 0.5
@@ -77,14 +77,25 @@ def import_workers() -> int:
 
 
 def estimate_work(path: Path, file_type: str, budget: int) -> int:
-    from app.modules.media import mesh_processing
+    from app.modules.media import mesh_limits
 
-    suffix = mesh_processing._canonical_suffix(path, file_type)
-    triangles = mesh_processing._estimate_triangle_count(path, file_type=suffix)
+    suffix = mesh_limits._canonical_suffix(path, file_type)
+    # Bulk previews of STL sources above the byte cap never load the whole
+    # mesh. The isolated reader has a 256 MiB RSS ceiling; the bounded 100k
+    # fallback and retained preview get the rest of this conservative estimate.
+    # Reserve that route instead of sizing a full mesh that cannot be loaded.
+    size_cap_mb = int(settings.mesh_max_load_mb)
+    if suffix == ".stl" and size_cap_mb > 0:
+        try:
+            if path.stat().st_size > size_cap_mb * MIB:
+                return min(budget, 1024 * MIB)
+        except OSError:
+            return budget
+    triangles = mesh_limits._estimate_triangle_count(path, file_type=suffix)
     if triangles is None or suffix in (".step", ".stp"):
         return budget
-    cost = mesh_processing._PEAK_BYTES_PER_TRIANGLE.get(
-        suffix, mesh_processing._DEFAULT_PEAK_BYTES_PER_TRIANGLE
+    cost = mesh_limits._PEAK_BYTES_PER_TRIANGLE.get(
+        suffix, mesh_limits._DEFAULT_PEAK_BYTES_PER_TRIANGLE
     )
     # Includes framebuffers, encoded output and fixed parser overhead. Keep the
     # reservation until publication has consumed the result, not only rendering.

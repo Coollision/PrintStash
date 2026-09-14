@@ -207,6 +207,32 @@ def _binary_sample_indices(count: int, sample_count: int) -> Iterator[int]:
 def _read_binary_samples(
     path: Path, budget: int, info: tuple[int, int] | None = None
 ) -> _SampledSTL | None:
+    from printstash_core.mesh.native_rasterizer import kernel
+
+    from app.core.config import settings
+
+    native = kernel() if settings.mesh_rasterizer != "python" else None
+    sample = getattr(native, "sample_binary_stl", None)
+    if sample is not None and 1 <= budget <= _MAX_SAMPLED_TRIANGLES:
+        try:
+            result = sample(path, budget)
+        except OSError:
+            return None
+        if result is None:
+            return None
+        packed, count, parsed, lower, upper, scanned, complete = result
+        coordinates = array("f")
+        coordinates.frombytes(packed)
+        return _SampledSTL(
+            coordinates,
+            count,
+            parsed,
+            tuple(lower),
+            tuple(upper),
+            scanned,
+            parsed,
+            complete,
+        )
     info = info or _binary_stl_info(path)
     if info is None:
         return None

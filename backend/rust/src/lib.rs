@@ -5,9 +5,15 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
+mod components;
 mod geometry;
+mod mesh_prepare;
+mod prepared_preview;
+mod preview;
 mod shading;
 mod stl;
+mod stl_pipeline;
+mod streaming_preview;
 mod threemf;
 mod threemf_archive;
 
@@ -15,7 +21,7 @@ const MAX_PIXELS: usize = 16_777_216;
 
 struct Visibility {
     closest: Vec<f64>,
-    winners: Vec<usize>,
+    winners: Vec<u32>,
     visible: usize,
     candidates: usize,
 }
@@ -50,16 +56,42 @@ fn visibility(
     if depth.len() != pixels * 8 {
         return Err("invalid depth buffer length");
     }
-    // Match NumPy's input-width coefficient arithmetic before its float64
-    // pixel-center calculations. Ordinary arithmetic intentionally avoids FMA.
+    let mut closest: Vec<f64> = depth.chunks_exact(8).map(|v| number(v, 8)).collect();
+    let mut winners = vec![u32::MAX; pixels];
+    let (visible, candidates) = visibility_into(
+        triangles,
+        itemsize,
+        &mut closest,
+        &mut winners,
+        width,
+        height,
+    )?;
+    Ok(Visibility {
+        closest,
+        winners,
+        visible,
+        candidates,
+    })
+}
+
+fn visibility_into(
+    triangles: &[u8],
+    itemsize: usize,
+    closest: &mut [f64],
+    winners: &mut [u32],
+    width: usize,
+    height: usize,
+) -> Result<(usize, usize), &'static str> {
+    if triangles.len() / (9 * itemsize) >= u32::MAX as usize {
+        return Err("triangle index limit exceeded");
+    }
+    winners.fill(u32::MAX);
     let round = |v: f64| if itemsize == 4 { (v as f32) as f64 } else { v };
     let epsilon = if itemsize == 4 {
         f32::EPSILON as f64
     } else {
         f64::EPSILON
     };
-    let mut closest: Vec<f64> = depth.chunks_exact(8).map(|v| number(v, 8)).collect();
-    let mut winners = vec![usize::MAX; pixels];
     let mut candidates = 0usize;
     let mut visible = 0usize;
 
@@ -122,22 +154,17 @@ fn visibility(
                     // Strict comparison preserves the first source face on ties
                     // and any equally close fragment from a previous chunk.
                     if z < closest[pixel] {
-                        if winners[pixel] == usize::MAX {
+                        if winners[pixel] == u32::MAX {
                             visible += 1;
                         }
                         closest[pixel] = z;
-                        winners[pixel] = face;
+                        winners[pixel] = face as u32;
                     }
                 }
             }
         }
     }
-    Ok(Visibility {
-        closest,
-        winners,
-        visible,
-        candidates,
-    })
+    Ok((visible, candidates))
 }
 
 #[pyfunction]
@@ -161,7 +188,7 @@ fn rasterize<'py>(
         py.detach(|| {
             let mut records = bytes.chunks_exact_mut(24);
             for (pixel, &face) in result.winners.iter().enumerate() {
-                if face != usize::MAX {
+                if face != u32::MAX {
                     let record = records.next().unwrap();
                     record[..8].copy_from_slice(&(pixel as u64).to_ne_bytes());
                     record[8..16].copy_from_slice(&(face as u64).to_ne_bytes());
@@ -206,7 +233,7 @@ fn rasterize_phong<'py>(
         py.detach(|| {
             let mut outputs = bytes.chunks_exact_mut(15);
             for (pixel, &face) in result.winners.iter().enumerate() {
-                if face == usize::MAX {
+                if face == u32::MAX {
                     continue;
                 }
                 let output = outputs.next().unwrap();
@@ -238,6 +265,16 @@ fn rasterize_phong<'py>(
 
 #[pymodule]
 fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<preview::NativeFrame>()?;
+    module.add_class::<prepared_preview::PreparedPreview>()?;
+    module.add_class::<stl_pipeline::NativeStlSource>()?;
+    module.add_function(wrap_pyfunction!(stl_pipeline::sample_binary_stl, module)?)?;
+    module.add_function(wrap_pyfunction!(components::component_labels, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        streaming_preview::streaming_depth,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(mesh_prepare::smooth_normals, module)?)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     module.add_function(wrap_pyfunction!(rasterize, module)?)?;
     module.add_function(wrap_pyfunction!(shading::shade_fragments, module)?)?;

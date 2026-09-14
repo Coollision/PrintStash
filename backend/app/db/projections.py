@@ -5,7 +5,8 @@ operations publish source identities after staging their content changes. The
 projection may flush but must never commit, perform inference, or publish events.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -23,6 +24,28 @@ class ContentProjection(Protocol):
 
 
 _projection: ContentProjection | None = None
+_BATCH_KEY = "printstash_content_changes"
+
+
+@contextmanager
+def batch_content_changes(session: Session) -> Iterator[None]:
+    """Project staged changes once, before returning transaction ownership.
+
+    The owner must commit after this context exits. Nested batches share the
+    outer boundary. Failures discard the queue; rollback remains the owner's job.
+    """
+    if _BATCH_KEY in session.info:
+        yield
+        return
+    pending: set[ContentSource] = set()
+    session.info[_BATCH_KEY] = pending
+    try:
+        yield
+        if pending and _projection is not None:
+            session.flush()
+            _projection.refresh(session, tuple(sorted(pending)))
+    finally:
+        session.info.pop(_BATCH_KEY, None)
 
 
 def bind_content_projection(
@@ -42,4 +65,11 @@ def content_changed(session: Session, kind: str, ids: Iterable[int | None]) -> N
     session.flush()
     sources = tuple(sorted({ContentSource(kind, id) for id in ids if id is not None}))
     if sources:
+        pending = session.info.get(_BATCH_KEY)
+        if pending is not None:
+            pending.update(sources)
+            if len(pending) >= 1024:
+                _projection.refresh(session, tuple(sorted(pending)))
+                pending.clear()
+            return
         _projection.refresh(session, sources)

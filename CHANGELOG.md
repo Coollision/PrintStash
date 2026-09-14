@@ -4,6 +4,23 @@
 
 ### Performance
 
+- Large STL files that must use bounded recovery reserve that route's memory
+  estimate, allowing concurrent recovery when the import budget has room.
+- Binary STL recovery validates and samples source blocks in Rust, then projects
+  into one retained depth buffer without Python callbacks per block. Bounded
+  fallback sampling also uses Rust. Source identity checks reject changed files.
+- Ordinary native previews now own centering, position grouping, projection,
+  culling and crease normals, transferring the mesh once instead of passing
+  triangle and normal arrays through Python for every drawing batch.
+- Mesh previews retain depth and color buffers across batches in Rust, prepare
+  vertex normals natively and reuse compact face indices. Budgeted STL recovery
+  also uses native depth calculation while retaining its existing limits.
+  Connected-component extraction uses `petgraph` with canonical ordering.
+- Artifact publication coalesces repeated search projection updates before its
+  existing commit. Slow mesh preparation reports activity while work continues;
+  unchanged intermediate job states avoid redundant writes within one second.
+- Preview-only processing checks whether the mesh was released before requesting
+  a full garbage collection, including meshes loaded from scenes and ASCII STL.
 - Stored and DEFLATE 3MF model parts now decompress directly into the Rust XML
   parser using `zip` and `zlib-rs`, without Python read callbacks. Reads retain
   byte limits and CRC checks; older extensions and other compression methods

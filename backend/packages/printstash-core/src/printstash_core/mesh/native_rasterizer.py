@@ -6,14 +6,46 @@ import importlib
 from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
-    from .rasterizer import FloatArray, Shade, UInt8Array
+    from .rasterizer import FloatArray, IntArray, PreparedMesh, Shade, UInt8Array
 
 
 # Bound interpolation and lighting temporaries independently of preview size.
 _SHADE_BATCH_PIXELS = 16_384
 
 
+class FrameKernel(Protocol):
+    def draw_phong(
+        self,
+        triangles: bytes,
+        itemsize: int,
+        normals: bytes,
+        normal_itemsize: int,
+        lighting: tuple[float, ...],
+    ) -> int: ...
+
+    def draw_flat(
+        self, triangles: bytes, itemsize: int, color: tuple[int, ...]
+    ) -> int: ...
+
+    def rgba(self) -> bytes: ...
+
+
 class Kernel(Protocol):
+    def PreparedPreview(
+        self, vertices: bytes, faces: bytes, chunk: int
+    ) -> PreparedMesh: ...
+
+    def NativeFrame(self, width: int, height: int) -> FrameKernel: ...
+
+    def smooth_normals(
+        self,
+        vertices: bytes,
+        faces: bytes,
+        positions: bytes,
+        position_count: int,
+        chunk_size: int,
+    ) -> bytes: ...
+
     def rasterize(
         self, triangles: bytes, itemsize: int, depth: bytes, width: int, height: int
     ) -> tuple[bytes, int]: ...
@@ -51,6 +83,41 @@ def kernel() -> Kernel | None:
         if exc.name != "printstash_mesh_native":
             raise
         return None
+
+
+class NativeFrame:
+    """Keep frame storage native until the final RGBA transfer."""
+
+    def __init__(self, width: int, height: int) -> None:
+        native = kernel()
+        if native is None:
+            raise RuntimeError("Rust mesh renderer is not installed")
+        self._frame = native.NativeFrame(width, height)
+
+    def draw(
+        self, tri: FloatArray, normals: FloatArray, shade: Shade, base_color: FloatArray
+    ) -> None:
+        import numpy as np
+
+        from .rasterizer import PhongShader
+
+        if isinstance(shade, PhongShader):
+            self._frame.draw_phong(
+                tri.tobytes(),
+                tri.dtype.itemsize,
+                normals.tobytes(),
+                normals.dtype.itemsize,
+                shade.parameters + tuple(float(v) for v in base_color),
+            )
+        else:
+            # The core's silhouette fallback has a constant material color.
+            color = np.clip(base_color * shade(np.zeros((1, 3))), 0, 255)
+            self._frame.draw_flat(
+                tri.tobytes(), tri.dtype.itemsize, tuple(int(v) for v in color.ravel())
+            )
+
+    def rgba(self) -> bytes:
+        return self._frame.rgba()
 
 
 def rasterise_triangles(
@@ -176,3 +243,35 @@ def rasterise_triangles(
         zbuf[y, x] = batch[:, 2].view(np.float64)
         img[y, x] = colors[start : start + len(batch)]
     return candidates
+
+
+def prepare_normals(
+    vertices: FloatArray,
+    faces: IntArray,
+    positions: IntArray,
+    position_count: int,
+    chunk_size: int,
+) -> FloatArray:
+    import numpy as np
+
+    native = kernel()
+    if native is None:
+        raise RuntimeError("Rust mesh renderer is not installed")
+    payload = native.smooth_normals(
+        vertices.tobytes(),
+        faces.tobytes(),
+        positions.astype(np.int64).tobytes(),
+        position_count,
+        chunk_size,
+    )
+    return np.frombuffer(payload, dtype=np.float64).reshape(-1, 3)
+
+
+def prepare_mesh(
+    vertices: FloatArray, faces: IntArray, chunk_size: int
+) -> PreparedMesh:
+    """Transfer the mesh once; Rust owns preparation and every drawing batch."""
+    native = kernel()
+    if native is None:
+        raise RuntimeError("Rust mesh renderer is not installed")
+    return native.PreparedPreview(vertices.tobytes(), faces.tobytes(), chunk_size)

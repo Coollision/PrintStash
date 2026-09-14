@@ -10,6 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
+from time import monotonic
 from typing import Any, Callable, Iterator
 
 from printstash_core.imports import StagedAsset
@@ -149,11 +150,14 @@ class PreparedImports:
             if entry is not None:
                 future, analysis, _reservation = entry
                 last = -1.0
+                last_report = float("-inf")
                 while True:
                     progress = analysis.progress()
-                    if progress != last:
+                    now = monotonic()
+                    if progress != last or now - last_report >= 1.0:
                         self.progress(progress)
                         last = progress
+                        last_report = now
                     try:
                         future.result(timeout=0.1)
                         break

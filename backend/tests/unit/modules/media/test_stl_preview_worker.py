@@ -621,6 +621,9 @@ class TestMain:
         self, stl, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         source = stl(_binary_stl([TRIANGLE, SECOND]))
+        # Exercise the Python reader fault seam; native identity checks are
+        # covered separately by rust/tests/test_stl_pipeline.py.
+        monkeypatch.setenv("VAULT_MESH_RASTERIZER", "python")
         real_read_pass = worker._read_pass
 
         def rewrite_after_reading(path, limits, callback):

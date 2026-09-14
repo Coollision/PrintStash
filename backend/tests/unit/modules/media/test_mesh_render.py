@@ -328,12 +328,17 @@ class TestRenderThumbnail:
         assert alpha.max() == 255
         assert (alpha > 200).mean() > 0.10
 
-    def test_huge_mesh_never_allocates_full_face_arrays(self, monkeypatch) -> None:
-        # Spy on the rasteriser: every chunk it receives must be bounded by the
-        # configured chunk size, proving per-face arrays are built per-chunk and a
-        # full (F, 3, 3) array is never materialised.
+    @pytest.mark.parametrize("renderer", ["python", "auto"])
+    def test_bounds_face_batches_sent_to_the_renderer(
+        self, monkeypatch, renderer
+    ) -> None:
+        # This observes the legacy Python/buffer adapters. Owned Rust preparation
+        # has image parity across chunk sizes in rust/tests/test_prepared_preview.py.
+        monkeypatch.setattr(mesh_render.native_rasterizer, "prepare_mesh", None)
+        # Observe the input batch sizes while both adapters do their real work.
         import trimesh
 
+        monkeypatch.setitem(_overlay, "mesh_rasterizer", renderer)
         mesh = trimesh.creation.icosphere(subdivisions=5, radius=10.0)  # 20480 faces
         chunk = 1000
         _set_chunk_size(monkeypatch, chunk)
@@ -345,6 +350,12 @@ class TestRenderThumbnail:
             seen_max["n"] = max(seen_max["n"], int(tri.shape[0]))
             return real(img, zbuf, tri, vert_nrm, shade, base_color, width, height)
 
+        class ObservedFrame(mesh_render.native_rasterizer.NativeFrame):
+            def draw(self, tri, normals, shade, base_color):
+                seen_max["n"] = max(seen_max["n"], int(tri.shape[0]))
+                return super().draw(tri, normals, shade, base_color)
+
+        monkeypatch.setattr(mesh_render.native_rasterizer, "NativeFrame", ObservedFrame)
         monkeypatch.setattr(mesh_render, "_rasterise_triangles", _spy)
         png = mesh_render.render_mesh_thumbnail(mesh, "big.stl", width=64, height=64)
 

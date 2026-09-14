@@ -315,6 +315,7 @@ def render_stl_preview_isolated(
             *worker_limits.as_worker_args(expected_parent_pid=os.getpid()),
         ]
         env = os.environ.copy()
+        env["VAULT_MESH_RASTERIZER"] = settings.mesh_rasterizer
         env.update(
             {
                 "OMP_NUM_THREADS": "1",

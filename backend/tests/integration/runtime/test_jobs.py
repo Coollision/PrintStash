@@ -53,6 +53,30 @@ def owner(db_session: Session) -> User:
 class TestJobRegistry:
     """Recording a background job's progress and outcome so a page can follow it."""
 
+    def test_coalesces_identical_immediate_progress(self, monkeypatch):
+        registry = JobRegistry()
+        job_id = registry.create()
+        registry.update(job_id, state="running", progress=20)
+        before = registry.get(job_id).updated_at
+        monkeypatch.setattr(
+            jobs_module, "utcnow", lambda: before + timedelta(milliseconds=100)
+        )
+
+        registry.update(job_id, progress=20)
+
+        assert registry.get(job_id).updated_at == before
+
+    def test_persists_an_unchanged_heartbeat_after_one_second(self, monkeypatch):
+        registry = JobRegistry()
+        job_id = registry.create()
+        registry.update(job_id, state="running", progress=20)
+        later = registry.get(job_id).updated_at + timedelta(seconds=2)
+        monkeypatch.setattr(jobs_module, "utcnow", lambda: later)
+
+        registry.update(job_id, progress=20)
+
+        assert registry.get(job_id).updated_at == later
+
     def test_does_not_publish_a_rolled_back_job(self, db_session, owner):
         registry = JobRegistry()
         owner.username = "uncommitted-job-owner"

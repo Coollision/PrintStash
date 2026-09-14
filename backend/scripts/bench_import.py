@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -28,11 +29,53 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from collections import Counter
 from pathlib import Path
 
 import httpx
 import psutil
+
+
+def environment_record(backend: Path) -> dict:
+    """Record reproducibility facts without changing host caches or resources."""
+    revision = None
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=backend,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            revision = result.stdout.strip()
+    except FileNotFoundError:
+        pass  # Minimal runtime images need not contain the Git executable.
+    limits = {}
+    for name in ("cpu.max", "memory.max", "memory.swap.max"):
+        try:
+            limits[name] = (Path("/sys/fs/cgroup") / name).read_text().strip()
+        except OSError:
+            limits[name] = None
+    versions = {}
+    for name in ("numpy", "trimesh", "pillow", "cascadio", "printstash-mesh-native"):
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name] = None
+    process = psutil.Process()
+    return {
+        "run_id": str(uuid.uuid4()),
+        "git_revision": revision,
+        "dependency_versions": versions,
+        "cpu_affinity": process.cpu_affinity()
+        if hasattr(process, "cpu_affinity")
+        else None,
+        "cgroup_root_limits": limits,
+        "cache_condition": "uncontrolled shared host cache; no global cache flush",
+        "timing_excludes": ["archive hashing", "database migration", "server startup"],
+    }
 
 
 class ServerResources:
@@ -116,6 +159,7 @@ def run(
     workers: int = 1,
 ) -> dict:
     backend = Path(__file__).resolve().parent.parent
+    environment = environment_record(backend)
     engine_digest = hashlib.sha256()
     for directory in (backend / "app", backend / "packages/printstash-core/src"):
         for path in sorted(directory.rglob("*.py")):
@@ -384,6 +428,29 @@ def run(
                                 export_previews / f"{source_hash}-{digest}.webp"
                             ).write_bytes(encoded)
                     report = {
+                        **environment,
+                        "native_capabilities": (
+                            sorted(
+                                name
+                                for name in (
+                                    "NativeFrame",
+                                    "smooth_normals",
+                                    "streaming_depth",
+                                    "component_labels",
+                                    "parse_3mf_xml",
+                                    "ThreeMfArchive",
+                                    "measure_triangles",
+                                    "load_binary_stl",
+                                    "rasterize_phong",
+                                )
+                                if hasattr(
+                                    importlib.import_module("printstash_mesh_native"),
+                                    name,
+                                )
+                            )
+                            if native_path
+                            else []
+                        ),
                         "similarity_on_ingest": similarity,
                         "engine_source_sha256": engine_digest.hexdigest(),
                         "preview_profile_sha256": hashlib.sha256(

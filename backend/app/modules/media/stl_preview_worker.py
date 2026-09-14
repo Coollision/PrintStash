@@ -409,6 +409,7 @@ def _render(
     limits: _Limits,
     first: _PassStats,
     reservoir: _FramingReservoir,
+    native_source=None,
 ) -> int:
     import io
 
@@ -445,6 +446,11 @@ def _render(
     image = np.zeros((coverage_height, coverage_width, 3), dtype=np.uint8)
     zbuffer = np.full((coverage_height, coverage_width), np.inf, dtype=np.float32)
     raster_budget = RasterBudget(limit=limits.max_candidates)
+    native_depth = None
+    if os.environ.get("VAULT_MESH_RASTERIZER", "auto") != "python":
+        from printstash_core.mesh.native_rasterizer import kernel
+
+        native_depth = getattr(kernel(), "streaming_depth", None)
     # The rasteriser still receives a valid normal callback while it fills the
     # depth buffer, but face normals are deliberately not used for colour.  A
     # dense STL often contains millions of tiny, differently-oriented facets;
@@ -499,20 +505,31 @@ def _render(
         # consuming raster candidates), but use a neutral normal here.  The
         # depth pass is shaded in screen space after all chunks have resolved
         # into the z-buffer, so no microfacet normal can leak into the image.
-        corner_normals = np.zeros((int(valid_normal.sum()), 3, 3), dtype=np.float32)
-        corner_normals[:, :, 2] = 1.0
         before = raster_budget.used
-        _rasterise_triangles(
-            image,
-            zbuffer,
-            screen,
-            corner_normals,
-            shade,
-            base_color,
-            coverage_width,
-            coverage_height,
-            budget=raster_budget,
-        )
+        if native_depth is not None:
+            packed, used = native_depth(
+                screen.tobytes(),
+                zbuffer.tobytes(),
+                coverage_width,
+                coverage_height,
+                raster_budget.limit - raster_budget.used,
+            )
+            zbuffer[:] = np.frombuffer(packed, dtype=np.float32).reshape(zbuffer.shape)
+            raster_budget.used += used
+        else:
+            corner_normals = np.zeros((int(valid_normal.sum()), 3, 3), dtype=np.float32)
+            corner_normals[:, :, 2] = 1.0
+            _rasterise_triangles(
+                image,
+                zbuffer,
+                screen,
+                corner_normals,
+                shade,
+                base_color,
+                coverage_width,
+                coverage_height,
+                budget=raster_budget,
+            )
         rendered += 1
         if raster_budget.used > limits.max_candidates or (
             raster_budget.used == limits.max_candidates
@@ -520,13 +537,29 @@ def _render(
         ):
             raise _BudgetExceeded("candidate budget")
 
-    second = _read_pass(path, limits, draw)
-    if second.triangle_count != first.triangle_count:
-        raise _InvalidSTL("source changed between passes")
-    if not np.allclose(first.bounds_min, second.bounds_min, rtol=0, atol=0):
-        raise _InvalidSTL("source changed between passes")
-    if not np.allclose(first.bounds_max, second.bounds_max, rtol=0, atol=0):
-        raise _InvalidSTL("source changed between passes")
+    if native_source is not None:
+        packed, used = native_source.render_depth(
+            coverage_width,
+            coverage_height,
+            limits.max_candidates,
+            center.tolist(),
+            rotation.tolist(),
+            expanded_min.tolist(),
+            expanded_max.tolist(),
+            projected_mid.tolist(),
+            scale,
+        )
+        zbuffer = np.frombuffer(packed, dtype=np.float32).reshape(zbuffer.shape)
+        raster_budget.used = used
+        rendered = 1
+    else:
+        second = _read_pass(path, limits, draw)
+        if second.triangle_count != first.triangle_count:
+            raise _InvalidSTL("source changed between passes")
+        if not np.allclose(first.bounds_min, second.bounds_min, rtol=0, atol=0):
+            raise _InvalidSTL("source changed between passes")
+        if not np.allclose(first.bounds_max, second.bounds_max, rtol=0, atol=0):
+            raise _InvalidSTL("source changed between passes")
     finite = np.isfinite(zbuffer)
     if not finite.any() or rendered == 0:
         raise _InvalidSTL("no visible triangles")
@@ -726,7 +759,25 @@ def main(argv: list[str] | None = None) -> int:
         def collect(vertices) -> None:
             reservoir.add(vertices.mean(axis=1))
 
-        first = _read_pass(args.source, limits, collect)
+        native_source = None
+        if os.environ.get("VAULT_MESH_RASTERIZER", "auto") != "python":
+            from printstash_core.mesh.native_rasterizer import kernel
+
+            source_type = getattr(kernel(), "NativeStlSource", None)
+            if source_type is not None and _source_is_binary(args.source) is not None:
+                native_source = source_type(
+                    args.source,
+                    limits.max_triangles,
+                    limits.max_source_bytes,
+                    limits.chunk_triangles,
+                    limits.deadline - time.monotonic(),
+                )
+        if native_source is not None:
+            count, scanned, lower, upper, sampled = native_source.analyze()
+            first = _PassStats(count, scanned, tuple(lower), tuple(upper))
+            reservoir.values = sampled
+        else:
+            first = _read_pass(args.source, limits, collect)
         if first.triangle_count > limits.max_triangles:
             raise _BudgetExceeded("triangle budget")
         first_after = args.source.stat()
@@ -744,6 +795,7 @@ def main(argv: list[str] | None = None) -> int:
             limits,
             first,
             reservoir,
+            native_source=native_source,
         )
         after = args.source.stat()
         if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
