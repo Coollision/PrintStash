@@ -20,6 +20,45 @@
 
 ### Added
 
+- Rust mesh previews now interpolate visible-pixel normals and apply the
+  canonical lighting without allocating NumPy arrays for each shading step.
+  Custom shaders and older native extensions retain the Python path. Full-ZIP
+  comparisons verify geometry and encoded previews against the reference.
+
+- Rust can now read binary STL geometry and calculate mesh dimensions and
+  volume. Geometry measurements use bounded triangle batches and avoid unused
+  inertia calculations. Native STL previews verify memory release before
+  requesting a full garbage collection. Python remains selectable through `VAULT_MESH_LOADER`
+  and `VAULT_MESH_GEOMETRY`; full-ZIP comparisons check saved geometry too.
+- 3MF previews stream mesh XML through the optional Rust extension, preserving
+  component placements and repeated instances. `VAULT_MESH_LOADER=python`
+  selects the existing loader for comparison. The renderer culls back-facing triangles
+  before allocating per-corner shading arrays.
+- Mesh previews can use a Rust rasterization extension, included in both Docker
+  variants. Python remains available through `VAULT_MESH_RASTERIZER`, and the
+  full-ZIP benchmark can compare both engines with matching imported files.
+- AI Search adds transactional text indexing for Models, Collections, Multipart
+  Models and Documents, authorized lexical suggestions, hybrid results with match
+  evidence, and local image/geometry search. Image queries support file selection,
+  drag-and-drop and device camera capture. Pinned BGE, CLIP and OpenShape models
+  use one bounded CPU runtime; acquisition and activation require explicit action.
+  AI inference is optional and off by default; library features and ordinary
+  keyword search require no model, inference server or OpenAI account.
+- AI Search settings manage encrypted compatible endpoints, model provenance,
+  capacity estimates and resumable index rebuilds. Serving generations remain
+  available during replacement; float, int8/binary and approved MRL transforms
+  preserve native vectors. SQLite/PostgreSQL derivatives can fall back to portable
+  retrieval and rebuild after restore. Local models warm after restart while
+  lexical search remains available.
+- Separate captions preserve human descriptions and require explicit render
+  consent. Editable print-history filters use actual duration and timezone-aware
+  calendar bounds; optional personal natural-language consent enables parsing and
+  Saved Views. Optional local SPLADE expansion stores bounded weighted terms
+  separately from original text. The AI master disables these inference consumers;
+  query text and images stay out of durable search data and request/error logs.
+- PostgreSQL supports the existing backup API through verified portable snapshots.
+  A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
+  cyclic library references and native vector bytes without re-embedding.
 - Model Families preserve independent Models and Revisions while recording human
   variant roles, an explicit canonical selection and relative measurements.
   Membership moves and Family restoration are atomic; Model trash reserves its
@@ -38,6 +77,49 @@
   separate from verified geometry, and analysis never downloads model weights.
 
 ### Fixed
+
+- Mobile startup ships smaller translation bundles by sharing message keys across
+  languages and compacting translations identical to their keys.
+
+- First-time visits no longer reload the page when offline support installs,
+  avoiding duplicate startup work on mobile. Updates to an existing service
+  worker still refresh the application once.
+
+- Clearing an AI search returns to the library immediately; abandoned queries cannot restore old results, and stalled searches offer a retry after 30 seconds. Search results now use a thumbnail grid with an optional list view, on-demand match details, and fewer duplicated controls.
+
+- Local AI model downloads accept Hugging Face’s current CDN redirects while
+  retaining exact host checks and pinned file verification.
+
+- AI Search keeps the return to guided setup above the advanced controls, including
+  when settings fail to refresh. Switching views preserves keyboard focus.
+
+- Storage settings use GB cache limits, a simpler usage summary and expandable
+  diagnostics. AI Search now guides users through choosing local or server processing,
+  explicit downloads, library preparation, and a ready-to-search action. Server tuning
+  and the complete advanced controls remain available. Storage leads with used and
+  free space and hides empty cleanup actions. Library archive actions use consistent buttons.
+
+- Search backfill yields to complete user write requests, including upload staging
+  and cleanup, without holding a database transaction while waiting.
+- AI Search bounds permission checks and Model-card loading to result identities,
+  avoids repeated full top-k sorting during portable vector scans, and keeps
+  periodic SQLite projection-repair transactions short during browsing.
+- Search backfill drains bounded batches between periodic pauses, removing the
+  one-second delay per embedding batch while preserving maintenance and shutdown
+  coordination. Settled active generations stop a burst without inference.
+- Family browsing uses recent changes when relevance scores are unavailable,
+  preserving valid cursors for collapsed cards and the Families list.
+
+- Restoring AI Search backups no longer requires optional vector extensions to
+  inspect unversioned databases. Durable vectors remain searchable through the
+  portable backend while native acceleration is disabled.
+
+- AI Search activation acquires the SQLite writer lock before verification, so
+  concurrent worker commits cannot invalidate the cutover snapshot. Search and
+  ordinary Model results start without the optional Families annotation package.
+
+- Caption text and unsaved edits now clear when the signed-in account changes,
+  including account changes received from another browser tab.
 
 - Idle similarity polling no longer transiently blocks backup restoration with a storage-retention conflict.
 
