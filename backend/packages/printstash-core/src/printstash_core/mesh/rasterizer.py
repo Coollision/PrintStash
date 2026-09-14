@@ -66,7 +66,7 @@ _CHUNK_PIXEL_BUDGET = 250_000
 
 
 @dataclass(frozen=True)
-class _PhongShader:
+class PhongShader:
     """Reference callback plus the same light parameters for the optional kernel."""
 
     reference: Shade
@@ -362,7 +362,7 @@ def render_mesh_thumbnail(
             rgb = diffuse + rim_str * fres * rim_color + spec_str * spec
             return np.clip(rgb, 0.0, 1.0)
 
-        shade = _PhongShader(
+        shade = PhongShader(
             _shade,
             tuple(
                 float(value)

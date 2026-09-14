@@ -6,7 +6,10 @@ import heapq
 import json
 from dataclasses import asdict, dataclass
 from itertools import islice
-from typing import Iterable, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Literal, cast
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 from .embedding import EmbeddingError
 from .vectors import normalize
@@ -19,7 +22,7 @@ class IndexTransform:
     quantization: Literal["float32", "int8", "binary"] = "float32"
     version: str = "unit-prefix-v1"
     int8_scale: float = 1 / 127
-    bit_order: str = "little"
+    bit_order: Literal["little"] = "little"
 
     def __post_init__(self):
         if (
@@ -47,7 +50,11 @@ class IndexTransform:
             and index_dimension not in mrl_dimensions
         ):
             raise EmbeddingError("embedding_mrl_unavailable")
-        return cls(native_dimension, index_dimension, quantization)
+        return cls(
+            native_dimension,
+            index_dimension,
+            cast(Literal["float32", "int8", "binary"], quantization),
+        )
 
     def metadata(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
@@ -55,7 +62,7 @@ class IndexTransform:
     @classmethod
     def restore(
         cls,
-        value: str,
+        value: object,
         *,
         native_dimension: int,
         index_dimension: int,
@@ -124,7 +131,7 @@ class IndexTransform:
         # dimensions not divisible by eight; Hamming distance is unchanged.
         return np.packbits(values > 0, bitorder=self.bit_order).tobytes()
 
-    def distances(self, query: bytes, codes: tuple[bytes, ...]):
+    def distances(self, query: bytes, codes: tuple[bytes, ...]) -> NDArray[Any]:
         """Bounded block distances for the portable compressed-index adapter."""
         import numpy as np
 

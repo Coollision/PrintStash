@@ -42,7 +42,7 @@ def fts_query(query: str) -> str:
 
 
 def frequencies(title: str, tags: str, text: str) -> tuple[int, dict[str, float]]:
-    weighted: Counter[str] = Counter()
+    weighted: dict[str, float] = {}
     length = 0
     for field, weight in (
         (title, TITLE_WEIGHT),
@@ -52,7 +52,7 @@ def frequencies(title: str, tags: str, text: str) -> tuple[int, dict[str, float]
         tokens = terms(field)
         length += len(tokens)
         for term, count in Counter(tokens).items():
-            weighted[term] += count * weight
+            weighted[term] = weighted.get(term, 0.0) + count * weight
     return length, dict(weighted)
 
 

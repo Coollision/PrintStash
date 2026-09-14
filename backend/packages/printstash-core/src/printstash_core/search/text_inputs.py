@@ -3,6 +3,7 @@
 import json
 import re
 from dataclasses import dataclass
+from typing import cast
 
 from printstash_core.inference import EmbeddingError, EmbeddingInput, EmbeddingSpace
 from printstash_core.search.passages import RECIPE_VERSION
@@ -25,7 +26,7 @@ class TextRecipe:
             or (
                 self.encoder_manifest_sha256 is not None
                 and (
-                    not isinstance(self.encoder_manifest_sha256, str)
+                    not isinstance(cast(object, self.encoder_manifest_sha256), str)
                     or re.fullmatch(r"[0-9a-f]{64}", self.encoder_manifest_sha256)
                     is None
                 )

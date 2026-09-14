@@ -8,7 +8,9 @@ from typing import Any
 from .native_rasterizer import kernel
 
 
-def measure_mesh(mesh: Any, *, face_chunk_size: int = 65_536) -> dict | None:
+def measure_mesh(
+    mesh: Any, *, face_chunk_size: int = 65_536
+) -> dict[str, float | int | None] | None:
     """Return import measurements, or None when the native path is unavailable."""
     import numpy as np
     import trimesh

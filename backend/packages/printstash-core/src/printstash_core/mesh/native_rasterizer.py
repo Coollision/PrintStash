@@ -65,7 +65,7 @@ def rasterise_triangles(
 ) -> int:
     import numpy as np
 
-    from .rasterizer import _PhongShader
+    from .rasterizer import PhongShader
 
     native = kernel()
     if native is None:
@@ -82,7 +82,7 @@ def rasterise_triangles(
         raise ValueError("invalid native rasterizer arrays")
     triangles = tri.tobytes()
     if (
-        isinstance(shade, _PhongShader)
+        isinstance(shade, PhongShader)
         and hasattr(native, "rasterize_phong")
         and vert_nrm.dtype in (np.dtype(np.float32), np.dtype(np.float64))
     ):
@@ -122,7 +122,7 @@ def rasterise_triangles(
     # Only the final RGB bytes scale with visible pixels. Interpolation and the
     # lighting callback work on bounded batches, with no whole-image gathers.
     if (
-        isinstance(shade, _PhongShader)
+        isinstance(shade, PhongShader)
         and hasattr(native, "shade_fragments")
         and vert_nrm.dtype in (np.dtype(np.float32), np.dtype(np.float64))
     ):

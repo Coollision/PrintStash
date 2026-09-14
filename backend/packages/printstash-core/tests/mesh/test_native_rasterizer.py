@@ -226,7 +226,7 @@ def phong_shader(request):
         rasterise_triangles=capture,
     )
     assert callbacks
-    assert isinstance(callbacks[0], rasterizer._PhongShader)
+    assert isinstance(callbacks[0], rasterizer.PhongShader)
     return callbacks[0]
 
 

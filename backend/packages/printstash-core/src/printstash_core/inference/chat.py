@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from .context import InferenceContext
 from .embedding import EmbeddingError
@@ -13,7 +13,7 @@ from .embedding import EmbeddingError
 class ChatInput:
     instruction: str
     text: str
-    schema: dict
+    schema: dict[str, Any]
     image_jpegs: tuple[bytes, ...] = ()
     max_output_tokens: int = 512
 
@@ -22,7 +22,7 @@ class ChatInput:
             not self.instruction
             or len(self.instruction) > 8192
             or len(self.text) > 16384
-            or not isinstance(self.schema, dict)
+            or not isinstance(cast(object, self.schema), dict)
             or len(self.image_jpegs) > 12
             or sum(len(image) for image in self.image_jpegs) > 512 * 1024
             or any(not image.startswith(b"\xff\xd8\xff") for image in self.image_jpegs)
@@ -34,7 +34,7 @@ class ChatInput:
 
 @dataclass(frozen=True)
 class ChatResult:
-    value: dict
+    value: dict[str, Any]
     dialect: Literal["json_schema", "tools", "json", "responses"]
     guarantee: Literal["schema_constrained", "tool_constrained", "validated_json"]
     repaired: bool = False

@@ -7,7 +7,7 @@ import json
 import re
 import struct
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Literal, cast
 
 from printstash_core.inference import EmbeddingError, EmbeddingSpace
 from printstash_core.inference.vectors import normalize
@@ -28,7 +28,7 @@ class VisualRecipe:
 
     def __post_init__(self):
         if (
-            not isinstance(self.encoder_space_hash, str)
+            not isinstance(cast(object, self.encoder_space_hash), str)
             or re.fullmatch(r"[0-9a-f]{64}", self.encoder_space_hash) is None
             or type(self.image_size) is not int
             or not 32 <= self.image_size <= 512

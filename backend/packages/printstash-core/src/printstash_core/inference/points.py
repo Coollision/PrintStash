@@ -6,13 +6,18 @@ neighbors. Fixing FPS's starting index makes the native vectors reproducible.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from .embedding import EmbeddingError, EmbeddingInput
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 POINT_RECIPE = "surface10k-seed166-unitball-yup-rgb04-fps64-start0-radius04-first256-v1"
 POINT_COUNT = 10_000
 
 
-def point_input(vertices, faces) -> EmbeddingInput:
+def point_input(vertices: NDArray[Any], faces: NDArray[Any]) -> EmbeddingInput:
     """Sample complete triangle geometry using the shared surface sampler."""
     import numpy as np
 

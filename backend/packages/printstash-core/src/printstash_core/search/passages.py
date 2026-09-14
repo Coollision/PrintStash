@@ -13,6 +13,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from enum import Enum
+from typing import cast
 
 RECIPE_VERSION = 1
 CHUNK_TOKENS = 400
@@ -38,7 +39,7 @@ class SearchSubject:
     subject_id: int
 
     def __post_init__(self) -> None:
-        if not isinstance(self.subject_type, SubjectType):
+        if not isinstance(cast(object, self.subject_type), SubjectType):
             raise ValueError("invalid search subject type")
         if type(self.subject_id) is not int or not 0 < self.subject_id < 2**63:
             raise ValueError("invalid search subject id")
