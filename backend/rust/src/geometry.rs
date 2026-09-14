@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 type Bounds = Option<[[f64; 3]; 2]>;
 
 fn measure(triangles: &[u8]) -> Result<(Bounds, f64), &'static str> {
-    if triangles.len() % 72 != 0 {
+    if !triangles.len().is_multiple_of(72) {
         return Err("invalid triangle buffer length");
     }
     let mut low = [f64::INFINITY; 3];

@@ -107,7 +107,7 @@ pub fn shade_fragments<'py>(
         &lighting,
     )?;
     let pixels = width * height;
-    if records.len() % 24 != 0 || records.len() / 24 > pixels {
+    if !records.len().is_multiple_of(24) || records.len() / 24 > pixels {
         return Err(PyValueError::new_err("invalid fragment buffer length"));
     }
     PyBytes::new_with(py, records.len() / 24 * 3, |output| {
@@ -146,11 +146,11 @@ pub(crate) fn validate(
     if ![4, 8].contains(&itemsize) || ![4, 8].contains(&normal_itemsize) {
         return Err(PyValueError::new_err("unsupported float width"));
     }
-    if triangles.len() % (9 * itemsize) != 0 {
+    if !triangles.len().is_multiple_of(9 * itemsize) {
         return Err(PyValueError::new_err("invalid triangle buffer length"));
     }
     if normals.len() / normal_itemsize != triangles.len() / itemsize
-        || normals.len() % normal_itemsize != 0
+        || !normals.len().is_multiple_of(normal_itemsize)
     {
         return Err(PyValueError::new_err("invalid normal buffer length"));
     }

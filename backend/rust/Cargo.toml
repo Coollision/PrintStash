@@ -2,7 +2,7 @@
 name = "printstash-mesh-native"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.88"
 license = "AGPL-3.0-only"
 
 [lib]
@@ -12,6 +12,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pyo3 = { version = "=0.28.3", features = ["abi3-py311"] }
 quick-xml = { version = "=0.38.3", default-features = false }
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
 
 [profile.release]
 lto = "thin"

@@ -428,9 +428,9 @@ class TestArchiveImport:
     async def test_archive_3mf_streams_to_a_complete_import(
         self, api, tmp_path, e2e_db, monkeypatch
     ):
-        pytest.importorskip("printstash_mesh_native")
         import hashlib
 
+        import printstash_mesh_native as native
         import trimesh
 
         from app.db.models import File
@@ -447,6 +447,7 @@ class TestArchiveImport:
             raise AssertionError("legacy mesh loading was used")
 
         monkeypatch.setattr(trimesh, "load_scene", forbid_legacy)
+        monkeypatch.setattr(native, "parse_3mf_xml", forbid_legacy)
         uploaded = await api.post(
             "/api/v1/ingest/archive",
             headers=headers,
@@ -521,40 +522,39 @@ class TestArchiveImport:
         with Image.open(io.BytesIO(preview.content)) as image:
             assert image.getbbox() is not None
 
+    @pytest.mark.asyncio
+    async def test_parallel_archive_preserves_duplicate_publication_order(
+        self, api, tmp_path, e2e_db, monkeypatch
+    ):
+        from app.db.models import File
+        from app.modules.media import render_budget
+        from tests.factories.geometry import tetrahedron
 
-@pytest.mark.asyncio
-async def test_parallel_archive_preserves_duplicate_publication_order(
-    api, tmp_path, e2e_db, monkeypatch
-):
-    from app.db.models import File
-    from app.modules.media import render_budget
-    from tests.factories.geometry import tetrahedron
-
-    headers = await _setup_and_login(api, tmp_path)
-    monkeypatch.setitem(_overlay, "import_workers", 2)
-    monkeypatch.setattr(render_budget, "effective_cpus", lambda: 4)
-    monkeypatch.setattr(render_budget, "memory_budget", lambda: 1024**3)
-    source = tetrahedron().export(file_type="stl")
-    archive = io.BytesIO()
-    with zipfile.ZipFile(archive, "w") as writer:
-        writer.writestr("first.stl", source)
-        writer.writestr("duplicate.stl", source)
-    uploaded = await api.post(
-        "/api/v1/ingest/archive",
-        headers=headers,
-        files={"file": ("parallel.zip", archive.getvalue(), "application/zip")},
-    )
-    assert uploaded.status_code == 200, uploaded.text
-    selected = await api.post(
-        f"/api/v1/ingest/archive/{uploaded.json()['archive_id']}/select",
-        headers=headers,
-        json={"names": ["first.stl", "duplicate.stl"]},
-    )
-    assert selected.status_code == 202, selected.text
-    job = await _await_job(api, headers, selected.json()["job_id"])
-    assert (job["state"], job["processed"], job["succeeded"]) == ("completed", 2, 2)
-    rows = e2e_db.exec(select(File).order_by(File.id)).all()
-    assert [row.original_filename for row in rows] == ["first.stl", "duplicate.stl"]
-    assert [row.version for row in rows] == [1, 2]
-    assert rows[0].model_id == rows[1].model_id
-    assert all(row.thumbnail_path for row in rows)
+        headers = await _setup_and_login(api, tmp_path)
+        monkeypatch.setitem(_overlay, "import_workers", 2)
+        monkeypatch.setattr(render_budget, "effective_cpus", lambda: 4)
+        monkeypatch.setattr(render_budget, "memory_budget", lambda: 1024**3)
+        source = tetrahedron().export(file_type="stl")
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as writer:
+            writer.writestr("first.stl", source)
+            writer.writestr("duplicate.stl", source)
+        uploaded = await api.post(
+            "/api/v1/ingest/archive",
+            headers=headers,
+            files={"file": ("parallel.zip", archive.getvalue(), "application/zip")},
+        )
+        assert uploaded.status_code == 200, uploaded.text
+        selected = await api.post(
+            f"/api/v1/ingest/archive/{uploaded.json()['archive_id']}/select",
+            headers=headers,
+            json={"names": ["first.stl", "duplicate.stl"]},
+        )
+        assert selected.status_code == 202, selected.text
+        job = await _await_job(api, headers, selected.json()["job_id"])
+        assert (job["state"], job["processed"], job["succeeded"]) == ("completed", 2, 2)
+        rows = e2e_db.exec(select(File).order_by(File.id)).all()
+        assert [row.original_filename for row in rows] == ["first.stl", "duplicate.stl"]
+        assert [row.version for row in rows] == [1, 2]
+        assert rows[0].model_id == rows[1].model_id
+        assert all(row.thumbnail_path for row in rows)

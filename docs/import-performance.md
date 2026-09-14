@@ -61,11 +61,16 @@ The optional `printstash-mesh-native` extension moves triangle coverage and
 depth selection into Rust. It also parses 3MF mesh coordinates and face indices
 from a stream, reads binary STL geometry, and measures mesh bounds and volume.
 Both renderers use the same camera, normals, lighting and image
-encoder. ZIP decompression, STEP tessellation, storage and job coordination
-remain in the existing pipeline.
+encoder. Stored and DEFLATE model parts inside 3MF packages are read and
+decompressed in Rust using `zip`, `flate2` and `zlib-rs`. The XML parser reads
+64 KiB buffers without Python callbacks and retains size limits and CRC checks.
+Package inventory validation and scene assembly remain in Python. Older native
+extensions and other compression methods retain the Python ZIP reader.
+Outer ZIP extraction, STEP tessellation, storage and job coordination remain
+in the existing pipeline.
 
 Both Docker variants build and install the extension. Rebuild the image to use
-it. For a source checkout, install Rust 1.83 or newer, then run from `backend/`:
+it. For a source checkout, install Rust 1.88 or newer, then run from `backend/`:
 
 ```bash
 uv sync --extra dev
@@ -97,7 +102,7 @@ contains them. Requesting Rust without the extension fails before the benchmark 
 Add `--similarity` to both commands to compare the same import settings with
 analysis enabled. Fingerprint completion remains outside this timer.
 
-The native kernels run on one thread and release the Python interpreter lock
+The native rendering kernels run on one thread and release the Python interpreter lock
 while computing visibility, interpolating normals and applying the canonical
 lighting. They accept immutable byte buffers and return packed final fragments
 (pixel index, depth and RGB); they do not access storage or mutate Python arrays.

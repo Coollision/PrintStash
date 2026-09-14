@@ -4,6 +4,10 @@
 
 ### Performance
 
+- Stored and DEFLATE 3MF model parts now decompress directly into the Rust XML
+  parser using `zip` and `zlib-rs`, without Python read callbacks. Reads retain
+  byte limits and CRC checks; older extensions and other compression methods
+  keep the compatible path.
 - ZIP imports compute mesh geometry and previews ahead of the ordered writer.
   Worker counts adapt to CPU and memory limits; `VAULT_IMPORT_WORKERS=1` keeps
   serial execution. Shared memory reservations bound outstanding mesh work.

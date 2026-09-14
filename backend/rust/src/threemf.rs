@@ -39,7 +39,7 @@ impl Read for Source {
 }
 
 #[derive(Default)]
-struct Mesh {
+pub(crate) struct Mesh {
     vertices: Vec<[f64; 3]>,
     faces: Vec<[u64; 3]>,
 }
@@ -68,7 +68,7 @@ fn triple<T: FromStr + Copy>(
     }
 }
 
-fn parse(source: Source) -> Result<(Vec<u8>, Vec<Mesh>), String> {
+pub(crate) fn parse(source: impl Read) -> Result<(Vec<u8>, Vec<Mesh>), String> {
     let mut reader = Reader::from_reader(BufReader::with_capacity(65_536, source));
     let mut writer = Writer::new(Vec::new());
     let mut buffer = Vec::new();
@@ -161,7 +161,7 @@ fn parse(source: Source) -> Result<(Vec<u8>, Vec<Mesh>), String> {
 }
 
 type PackedMesh<'py> = (Bound<'py, PyBytes>, Bound<'py, PyBytes>);
-type ParsedModel<'py> = (Bound<'py, PyBytes>, Vec<PackedMesh<'py>>);
+pub(crate) type ParsedModel<'py> = (Bound<'py, PyBytes>, Vec<PackedMesh<'py>>);
 
 #[pyfunction]
 #[pyo3(signature = (source, max_bytes=536_870_912))]
@@ -178,6 +178,14 @@ pub fn parse_3mf_xml<'py>(
             })
         })
         .map_err(PyValueError::new_err)?;
+    pack(py, shell, meshes)
+}
+
+pub(crate) fn pack<'py>(
+    py: Python<'py>,
+    shell: Vec<u8>,
+    meshes: Vec<Mesh>,
+) -> PyResult<ParsedModel<'py>> {
     let mut output = Vec::with_capacity(meshes.len());
     for mesh in meshes {
         let vertices = PyBytes::new_with(py, mesh.vertices.len() * 24, |bytes| {

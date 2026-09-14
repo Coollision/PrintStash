@@ -25,13 +25,14 @@ def package(tmp_path):
         unit="millimeter",
         extras=None,
         raw=None,
+        compression=zipfile.ZIP_DEFLATED,
     ):
         path = tmp_path / "model.3mf"
         xml = (
             raw
             or f'<model unit="{unit}"><resources>{objects}</resources><build>{build}</build></model>'
         )
-        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(path, "w", compression) as archive:
             archive.writestr("3D/3dmodel.model", xml)
             for name, data in (extras or {}).items():
                 archive.writestr(name, data)
@@ -82,6 +83,36 @@ class TestPartPath:
 
 
 class TestLoadScene:
+    def test_retains_legacy_extension_compatibility(self, package, monkeypatch):
+        import printstash_mesh_native as native
+
+        monkeypatch.delattr(native, "ThreeMfArchive")
+        scene = threemf.load_scene(package())
+        np.testing.assert_array_equal(
+            scene.dump()[0].vertices, [[0, 0, 0], [10, 0, 0], [0, 20, 0]]
+        )
+
+    @pytest.mark.parametrize("compression", [12, 14], ids=["bzip2", "lzma"])
+    def test_retains_other_compression_compatibility(self, package, compression):
+        scene = threemf.load_scene(package(compression=compression))
+        np.testing.assert_array_equal(
+            scene.dump()[0].vertices, [[0, 0, 0], [10, 0, 0], [0, 20, 0]]
+        )
+
+    @pytest.mark.parametrize("compression", [0, 8], ids=["stored", "deflated"])
+    def test_imports_without_python_decompression(
+        self, package, monkeypatch, compression
+    ):
+        def unavailable(*args, **kwargs):
+            raise AssertionError("Python member decompression is unavailable")
+
+        path = package(compression=compression)
+        monkeypatch.setattr(zipfile.ZipFile, "open", unavailable)
+        scene = threemf.load_scene(path)
+        np.testing.assert_array_equal(
+            scene.dump()[0].vertices, [[0, 0, 0], [10, 0, 0], [0, 20, 0]]
+        )
+
     def test_missing_native_returns_none(self, monkeypatch, tmp_path):
         monkeypatch.setattr(threemf, "available", lambda: False)
         assert threemf.load_scene(tmp_path / "absent.3mf") is None

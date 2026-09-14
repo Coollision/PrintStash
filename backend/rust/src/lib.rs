@@ -9,6 +9,7 @@ mod geometry;
 mod shading;
 mod stl;
 mod threemf;
+mod threemf_archive;
 
 const MAX_PIXELS: usize = 16_777_216;
 
@@ -43,7 +44,7 @@ fn visibility(
     if itemsize != 4 && itemsize != 8 {
         return Err("unsupported float width");
     }
-    if triangles.len() % (9 * itemsize) != 0 {
+    if !triangles.len().is_multiple_of(9 * itemsize) {
         return Err("invalid triangle buffer length");
     }
     if depth.len() != pixels * 8 {
@@ -242,6 +243,7 @@ fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(shading::shade_fragments, module)?)?;
     module.add_function(wrap_pyfunction!(rasterize_phong, module)?)?;
     module.add_function(wrap_pyfunction!(threemf::parse_3mf_xml, module)?)?;
+    module.add_class::<threemf_archive::ThreeMfArchive>()?;
     module.add_function(wrap_pyfunction!(geometry::measure_triangles, module)?)?;
     module.add_function(wrap_pyfunction!(stl::load_binary_stl, module)?)?;
     Ok(())
