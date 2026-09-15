@@ -1,6 +1,9 @@
-"""Framework-neutral software triangle rasteriser for mesh thumbnails.
+"""Framework-neutral mesh thumbnail facade with a Python reference renderer.
 
-Pure NumPy + Pillow — no GL, display, database, storage, or application state.
+The default uses a complete Rust job when the native extension is installed.
+Explicit stage injection or an installation without that extension uses the
+NumPy/Pillow reference implementation. Neither path needs a display, database,
+storage, or application state.
 
 Compatibility contract: the same code path supports the OSS profile
 (NumPy 2 / Trimesh 5 / Pillow 12 / Cascadio 0.1.1) and the second consumer's
@@ -16,7 +19,8 @@ Lighting model (view-space, camera at -Z looking toward +Z):
   - Ambient:    constant floor                 → no pure-black faces
 
 The reference path uses Python and NumPy. Optional injected native callbacks
-accelerate preparation and rendering without requiring Rust for source installs. Rasterisation is fully vectorised: candidate
+support stage parity checks and compatibility consumers. Reference rasterisation
+is fully vectorised: candidate
 pixels for all triangles are expanded into flat arrays and resolved against
 the z-buffer with a single lexsort per chunk, so cost scales with covered
 pixel area rather than with Python-level triangle count.
@@ -28,14 +32,8 @@ O(chunk_size) rather than O(total_faces) — a million-triangle mesh no longer
 materialises several ~70 MB float32 arrays at once (#29). Only the vertex-scale
 arrays (the projected vertices and the welded smooth-normal table) are held whole.
 
-Future architecture (not yet implemented): ``render_mesh_thumbnail`` is a pure
-function — it takes an already-loaded mesh and returns PNG bytes, touching no
-shared state — so it can be moved wholesale into a separate thumbnail worker
-process. The intended split is: the API process accepts the upload; a worker
-renders one job at a time under a timeout and the memory-aware cap; on failure or
-over-cap it falls back to the embedded preview; and an OOM kills only the worker,
-never the API. Keeping this function isolatable is what makes that move a
-drop-in later.
+``render_mesh_thumbnail`` accepts an already-loaded mesh and returns encoded
+bytes. Process supervision and resource admission belong to its caller.
 """
 
 from __future__ import annotations
@@ -301,6 +299,48 @@ def render_mesh_thumbnail(
     Lets callers that need both geometry and a thumbnail load the mesh once.
     Returns raw PNG bytes, or None on failure.
     """
+    # Production render jobs are entirely native. Explicit stage injections keep
+    # the reference renderer available to parity tests and legacy consumers.
+    if all(
+        callback is None
+        for callback in (
+            rasterise_triangles,
+            frame_factory,
+            normal_preparer,
+            mesh_preparer,
+            image_encoder,
+        )
+    ):
+        from . import native_rasterizer
+
+        native = native_rasterizer.kernel()
+        if hasattr(native, "render_preview"):
+            if mesh is None or mesh.faces is None or len(mesh.faces) == 0:
+                if logger is not None:
+                    logger.warning("mesh_render: empty mesh for %s", name)
+                return None
+            try:
+                return native_rasterizer.render_preview(
+                    mesh,
+                    width=width,
+                    height=height,
+                    chunk=face_chunk_size,
+                    output_format=output_format,
+                    view_rotation=view_rotation,
+                    matte=matte,
+                )
+            except ImportError:
+                if logger is not None:
+                    logger.error("mesh_render: numpy unavailable; cannot transfer mesh")
+                return None
+            except Exception:
+                if logger is not None:
+                    logger.warning(
+                        "mesh_render: render_thumbnail failed for %s",
+                        name,
+                        exc_info=True,
+                    )
+                return None
     try:
         import numpy as np
 

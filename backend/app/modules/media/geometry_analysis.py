@@ -140,35 +140,16 @@ def canonical_frames():
 
 
 def _render_views(mesh, image_size, frames):
-    import io
+    from printstash_core.mesh.native_rasterizer import render_views
 
-    import numpy as np
-    from PIL import Image
-    from printstash_core.mesh.rasterizer import render_mesh_thumbnail
-
-    views = []
-    for frame in frames:
-        rendered = render_mesh_thumbnail(
-            mesh,
-            "",
-            width=image_size,
-            height=image_size,
-            view_rotation=np.asarray(frame, dtype=np.float64)
-            if frame is not None
-            else None,
-            matte=True,
-        )
-        if rendered is None:
-            raise GeometryError("embedding_view_failed")
-        with Image.open(io.BytesIO(rendered)) as image:
-            rgba = image.convert("RGBA")
-            background = Image.new("RGBA", rgba.size, "white")
-            background.alpha_composite(rgba)
-            rgb = background.convert("RGB").tobytes()
-        views.append(
-            EmbeddingInput("image", rgb=rgb, width=image_size, height=image_size)
-        )
-    return tuple(views)
+    try:
+        images = render_views(mesh, image_size, image_size, frames)
+    except (ValueError, RuntimeError) as exc:
+        raise GeometryError("embedding_view_failed") from exc
+    return tuple(
+        EmbeddingInput("image", rgb=rgb, width=image_size, height=image_size)
+        for rgb in images
+    )
 
 
 @dataclass(frozen=True)

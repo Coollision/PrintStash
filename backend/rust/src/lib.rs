@@ -12,6 +12,7 @@ mod mesh_prepare;
 mod orchestration;
 mod prepared_preview;
 mod preview;
+mod render_job;
 mod shading;
 mod stl;
 mod stl_pipeline;
@@ -267,6 +268,10 @@ fn rasterize_phong<'py>(
 
 #[pymodule]
 fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(render_job::render_preview, module)?)?;
+    module.add_function(wrap_pyfunction!(render_job::render_views, module)?)?;
+    module.add_function(wrap_pyfunction!(render_job::render_stl_fallback, module)?)?;
+    module.add_function(wrap_pyfunction!(render_job::render_stl_streaming, module)?)?;
     module.add_class::<orchestration::NativeBudget>()?;
     module.add_class::<orchestration::NativeReservation>()?;
     module.add_class::<orchestration::NativeExecutor>()?;

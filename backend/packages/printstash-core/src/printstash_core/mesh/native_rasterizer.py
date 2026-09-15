@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 if TYPE_CHECKING:
     from .rasterizer import FloatArray, IntArray, PreparedMesh, Shade, UInt8Array
@@ -31,6 +31,26 @@ class FrameKernel(Protocol):
 
 
 class Kernel(Protocol):
+    def render_preview(
+        self,
+        vertices: bytes,
+        faces: bytes,
+        width: int,
+        height: int,
+        chunk: int,
+        format: str,
+        recipe: tuple[float, ...],
+        supersampling: tuple[int, int, int],
+        rotation: list[list[float]] | None,
+        matte: bool,
+    ) -> tuple[bytes, tuple[float, ...]]: ...
+
+    def render_views(self, *args: Any) -> list[bytes]: ...
+
+    def render_stl_fallback(self, *args: Any) -> tuple[Any, ...]: ...
+
+    def render_stl_streaming(self, *args: Any) -> tuple[Any, ...]: ...
+
     def PreparedPreview(
         self, vertices: bytes, faces: bytes, chunk: int
     ) -> PreparedMesh: ...
@@ -291,4 +311,82 @@ def encode_preview(
         True,
         True,
         output_format,
+    )
+
+
+def render_preview(
+    mesh: Any,
+    *,
+    width: int = 640,
+    height: int = 480,
+    chunk: int = 64000,
+    output_format: str = "PNG",
+    view_rotation: Any = None,
+    matte: bool = False,
+) -> bytes:
+    """Transport mesh buffers into one Rust job; return the encoded preview."""
+    import numpy as np
+
+    from .preview_profile import PREVIEW_PROFILE as p
+
+    native = kernel()
+    if native is None or not hasattr(native, "render_preview"):
+        raise RuntimeError("Rust preview engine is not installed")
+    image, _seconds = native.render_preview(
+        np.asarray(mesh.vertices, dtype=np.float32).tobytes(),
+        np.asarray(mesh.faces, dtype=np.int64).tobytes(),
+        width,
+        height,
+        max(int(chunk), 1),
+        output_format,
+        (
+            p.margin_fraction,
+            p.hero_azimuth_degrees,
+            p.hero_elevation_degrees,
+            p.flat_tilt_degrees,
+            p.flat_thickness_ratio,
+            *p.material_albedo,
+        ),
+        (
+            p.supersample_max_output_width,
+            p.supersample_small_factor,
+            p.supersample_large_factor,
+        ),
+        None
+        if view_rotation is None
+        else np.asarray(view_rotation, dtype=np.float64).tolist(),
+        matte,
+    )
+    return image
+
+
+def render_views(mesh: Any, width: int, height: int, frames: Any) -> list[bytes]:
+    """Transfer one mesh for all inference views; Rust shares preparation."""
+    import numpy as np
+
+    from .preview_profile import PREVIEW_PROFILE as p
+
+    native = kernel()
+    if native is None:
+        raise RuntimeError("Rust preview engine is not installed")
+    return native.render_views(
+        np.asarray(mesh.vertices, dtype=np.float32).tobytes(),
+        np.asarray(mesh.faces, dtype=np.int64).tobytes(),
+        width,
+        height,
+        64000,
+        (
+            p.margin_fraction,
+            p.hero_azimuth_degrees,
+            p.hero_elevation_degrees,
+            p.flat_tilt_degrees,
+            p.flat_thickness_ratio,
+            *p.material_albedo,
+        ),
+        (
+            p.supersample_max_output_width,
+            p.supersample_small_factor,
+            p.supersample_large_factor,
+        ),
+        frames,
     )

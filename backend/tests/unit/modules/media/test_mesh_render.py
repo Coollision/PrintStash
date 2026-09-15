@@ -329,39 +329,30 @@ class TestRenderThumbnail:
         assert (alpha > 200).mean() > 0.10
 
     @pytest.mark.parametrize("renderer", ["python", "auto"])
-    def test_bounds_face_batches_sent_to_the_renderer(
-        self, monkeypatch, renderer
-    ) -> None:
-        # This observes the legacy Python/buffer adapters. Owned Rust preparation
-        # has image parity across chunk sizes in rust/tests/test_prepared_preview.py.
-        monkeypatch.setattr(mesh_render.native_rasterizer, "prepare_mesh", None)
-        # Observe the input batch sizes while both adapters do their real work.
+    def test_backend_uses_one_rust_job(self, monkeypatch, renderer):
         import trimesh
 
+        native = mesh_render.native_rasterizer.kernel()
+        original = native.render_preview
+        calls = []
+
+        def observe(*args):
+            calls.append(args[4])
+            return original(*args)
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("Python render stage entered")
+
+        monkeypatch.setattr(native, "render_preview", observe)
+        monkeypatch.setattr(mesh_render, "_rasterise_triangles", forbidden)
         monkeypatch.setitem(_overlay, "mesh_rasterizer", renderer)
-        mesh = trimesh.creation.icosphere(subdivisions=5, radius=10.0)  # 20480 faces
-        chunk = 1000
-        _set_chunk_size(monkeypatch, chunk)
-
-        seen_max = {"n": 0}
-        real = mesh_render._rasterise_triangles
-
-        def _spy(img, zbuf, tri, vert_nrm, shade, base_color, width, height):
-            seen_max["n"] = max(seen_max["n"], int(tri.shape[0]))
-            return real(img, zbuf, tri, vert_nrm, shade, base_color, width, height)
-
-        class ObservedFrame(mesh_render.native_rasterizer.NativeFrame):
-            def draw(self, tri, normals, shade, base_color):
-                seen_max["n"] = max(seen_max["n"], int(tri.shape[0]))
-                return super().draw(tri, normals, shade, base_color)
-
-        monkeypatch.setattr(mesh_render.native_rasterizer, "NativeFrame", ObservedFrame)
-        monkeypatch.setattr(mesh_render, "_rasterise_triangles", _spy)
-        png = mesh_render.render_mesh_thumbnail(mesh, "big.stl", width=64, height=64)
-
-        assert png is not None
-        assert len(mesh.faces) > chunk  # the mesh really needed more than one chunk
-        assert 0 < seen_max["n"] <= chunk
+        _set_chunk_size(monkeypatch, 1000)
+        mesh = trimesh.creation.icosphere(subdivisions=3)
+        result = mesh_render.render_mesh_thumbnail(
+            mesh, "mesh.stl", width=64, height=64
+        )
+        assert result is not None
+        assert calls == [1000]
 
 
 # ---------------------------------------------------------------------------

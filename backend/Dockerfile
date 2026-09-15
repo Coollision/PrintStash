@@ -9,6 +9,8 @@ RUN apt-get update \
 WORKDIR /src/mesh-native
 COPY rust/Cargo.toml rust/Cargo.lock rust/pyproject.toml ./
 COPY rust/src ./src
+COPY rust/render-core/Cargo.toml ./render-core/Cargo.toml
+COPY rust/render-core/src ./render-core/src
 RUN /tmp/maturin/bin/maturin build --release --locked --out /wheels
 
 FROM scratch AS mesh-native-wheel
@@ -80,10 +82,11 @@ COPY --from=bgcode-builder /opt/libbgcode/share/licenses/libbgcode /usr/local/sh
 COPY --chmod=0644 pyproject.toml uv.lock ./
 COPY --chmod=0644 packages/printstash-core/pyproject.toml ./packages/printstash-core/pyproject.toml
 COPY --chmod=0644 packages/printstash-core/src ./packages/printstash-core/src
+COPY --chmod=0644 rust/pyproject.toml ./rust/pyproject.toml
 COPY --from=mesh-native-builder /wheels /tmp/mesh-native-wheels
 
 FROM base AS dependencies-lite
-RUN uv sync --frozen --no-dev --no-editable \
+RUN uv sync --frozen --no-dev --no-editable --no-install-package printstash-mesh-native \
  && uv pip install /tmp/mesh-native-wheels/*.whl \
  && .venv/bin/python -c 'import printstash_mesh_native' \
  && rm -rf /tmp/mesh-native-wheels \
@@ -95,7 +98,7 @@ COPY --from=opendal-builder /wheels /tmp/opendal-wheels
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-client \
  && rm -rf /var/lib/apt/lists/* \
- && uv sync --frozen --no-dev --no-editable --extra full \
+ && uv sync --frozen --no-dev --no-editable --no-install-package printstash-mesh-native --extra full \
  && uv pip install /tmp/mesh-native-wheels/*.whl \
  && .venv/bin/python -c 'import printstash_mesh_native' \
  && rm -rf /tmp/mesh-native-wheels \

@@ -55,12 +55,15 @@ jobs:
       - name: Build the native extension
         working-directory: backend
         run: |
-          uv sync --extra dev --frozen
+          RUSTUP_TOOLCHAIN=1.91.0 uv sync --extra dev --frozen
           RUSTUP_TOOLCHAIN=1.91.0 uv pip install ./rust
           uv run python -c 'import printstash_mesh_native'
           uv run ruff check rust/tests scripts/bench_import.py
           cargo +1.91.0 fmt --manifest-path rust/Cargo.toml --check
           cargo +1.91.0 clippy --manifest-path rust/Cargo.toml --locked -- -D warnings
+          cargo +1.91.0 fmt --manifest-path rust/render-core/Cargo.toml --check
+          cargo +1.91.0 clippy --manifest-path rust/render-core/Cargo.toml --locked --all-targets -- -D warnings
+          cargo +1.91.0 test --manifest-path rust/render-core/Cargo.toml --locked
       - name: Check native visibility and Python parity
         working-directory: backend
         run: uv run pytest -q rust/tests packages/printstash-core/tests/mesh

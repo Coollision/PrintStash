@@ -23,10 +23,17 @@ class VisualRecipe:
     image_size: int
     profile: VisualProfile
     aggregation: Aggregation = "mean"
-    version: str = "canonical-views-media-thumbnail-v1"
+    version: str | None = None
     thumbnail_recipe: str = PREVIEW_PROFILE.recipe_fingerprint + "-w640"
 
     def __post_init__(self):
+        expected_version = (
+            "canonical-views-rust-rgb-v2"
+            if self.profile == "multiview"
+            else "canonical-views-media-thumbnail-v1"
+        )
+        if self.version is None:
+            object.__setattr__(self, "version", expected_version)
         if (
             not isinstance(cast(object, self.encoder_space_hash), str)
             or re.fullmatch(r"[0-9a-f]{64}", self.encoder_space_hash) is None
@@ -36,7 +43,7 @@ class VisualRecipe:
             or self.aggregation not in {"mean", "max"}
             or self.profile == "thumbnail"
             and self.aggregation != "mean"
-            or self.version != "canonical-views-media-thumbnail-v1"
+            or self.version != expected_version
             or self.thumbnail_recipe != PREVIEW_PROFILE.recipe_fingerprint + "-w640"
         ):
             raise EmbeddingError("search_visual_recipe_invalid")
@@ -76,7 +83,12 @@ class VisualRecipe:
     @classmethod
     def for_space(cls, space: EmbeddingSpace) -> VisualRecipe:
         try:
-            recipe = cls(**json.loads(space.render_recipe))
+            values = json.loads(space.render_recipe)
+            if not isinstance(values, dict) or not isinstance(
+                values.get("version"), str
+            ):
+                raise ValueError("missing explicit renderer version")
+            recipe = cls(**values)
         except (TypeError, ValueError):
             raise EmbeddingError("search_visual_recipe_invalid") from None
         if (

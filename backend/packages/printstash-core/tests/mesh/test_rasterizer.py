@@ -287,7 +287,15 @@ class TestRenderMeshThumbnail:
 
         monkeypatch.setattr(builtins, "__import__", without_numpy)
 
-        assert render_mesh_thumbnail(box_mesh(), "box.stl", logger=log) is None
+        assert (
+            render_mesh_thumbnail(
+                box_mesh(),
+                "box.stl",
+                logger=log,
+                rasterise_triangles=rasterizer._rasterise_triangles,
+            )
+            is None
+        )
         assert log.errors == [
             "mesh_render: numpy/Pillow unavailable; cannot render thumbnail"
         ]
@@ -327,7 +335,12 @@ class TestRenderMeshThumbnail:
         log = RecordingLogger()
 
         render_mesh_thumbnail(
-            inverted_plate(), "inverted.stl", width=48, height=48, logger=log
+            inverted_plate(),
+            "inverted.stl",
+            width=48,
+            height=48,
+            logger=log,
+            rasterise_triangles=rasterizer._rasterise_triangles,
         )
 
         assert log.warnings == [

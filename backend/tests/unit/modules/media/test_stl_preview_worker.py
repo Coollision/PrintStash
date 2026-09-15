@@ -618,35 +618,27 @@ class TestMain:
         assert self._run(self._argv(source, tmp_path)) == 3
 
     def test_reports_a_source_that_changes_between_the_two_passes(
-        self, stl, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+        self, stl, tmp_path, monkeypatch
+    ):
+        import printstash_mesh_native as native
+
         source = stl(_binary_stl([TRIANGLE, SECOND]))
-        # Exercise the Python reader fault seam; native identity checks are
-        # covered separately by rust/tests/test_stl_pipeline.py.
-        monkeypatch.setenv("VAULT_MESH_RASTERIZER", "python")
-        real_read_pass = worker._read_pass
 
-        def rewrite_after_reading(path, limits, callback):
-            stats = real_read_pass(path, limits, callback)
-            path.write_bytes(_binary_stl([TRIANGLE]))
-            return stats
+        # Actual identity checks are exercised in render-core/tests/source.rs;
+        # this boundary test asserts the supervisor's failure classification.
+        def changed(*args):
+            raise ValueError("source changed between passes")
 
-        monkeypatch.setattr(worker, "_read_pass", rewrite_after_reading)
-
-        # Two passes over a file somebody can still edit is a TOCTOU; the second
-        # pass must not render a frame computed from bytes that are gone.
+        monkeypatch.setattr(native, "render_stl_streaming", changed)
         assert self._run_in_process(source, tmp_path, monkeypatch) == 3
 
-    def test_reports_an_unexpected_failure_distinctly(
-        self, stl, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_reports_an_unexpected_failure_distinctly(self, stl, tmp_path, monkeypatch):
+        import printstash_mesh_native as native
+
         source = stl(_binary_stl([TRIANGLE]))
 
-        def exploding(*_args: object, **_kwargs: object):
+        def exploding(*args):
             raise RuntimeError("renderer exploded")
 
-        monkeypatch.setattr(worker, "_render", exploding)
-
-        # Exit 4 is "something I did not plan for", which the parent logs rather
-        # than treating as a rejected file.
+        monkeypatch.setattr(native, "render_stl_streaming", exploding)
         assert self._run_in_process(source, tmp_path, monkeypatch) == 4

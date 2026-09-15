@@ -4,6 +4,15 @@
 
 ### Performance
 
+- Backend preview rendering now runs as complete Rust jobs: camera selection,
+  lighting, mesh preparation, rasterization, image processing and encoding.
+  Streamed and sampled STL previews use the same standalone Rust crate. The
+  application transfers inputs and results; the browser keeps Three.js.
+- AI comparison views share one prepared mesh across their Rust render batch and
+  return RGB directly, avoiding repeated preparation and PNG round trips.
+  Geometry fingerprints and multiview embedding recipes have new identities so
+  cached results from the previous renderer are not reused under the new recipe.
+  Existing thumbnail embedding recipe identities are preserved.
 - Native previews resize and encode images in Rust, including depth shading and
   final PNG/JPEG/WebP thumbnail normalization. Lossless codecs retain decoded
   pixels; resized edges can differ slightly from Pillow.

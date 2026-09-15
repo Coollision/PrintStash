@@ -78,35 +78,20 @@ def render_mesh_thumbnail(
     *,
     output_format: Literal["PNG", "WEBP"] = "PNG",
 ) -> Optional[bytes]:
-    """Render through core with application settings and logging injected."""
-    frame_factory = None
-    normal_preparer = None
-    mesh_preparer = None
-    image_encoder = None
-    if settings.mesh_rasterizer != "python":
-        native = native_rasterizer.kernel()
-        if hasattr(native, "process_image"):
-            image_encoder = native_rasterizer.encode_preview
-        if hasattr(native, "PreparedPreview"):
-            mesh_preparer = native_rasterizer.prepare_mesh
-        if hasattr(native, "NativeFrame"):
-            frame_factory = native_rasterizer.NativeFrame
-        if hasattr(native, "smooth_normals"):
-            normal_preparer = native_rasterizer.prepare_normals
-    return _core.render_mesh_thumbnail(
-        mesh,
-        name,
-        width=width,
-        height=height,
-        face_chunk_size=settings.mesh_render_face_chunk_size,
-        logger=logger,
-        rasterise_triangles=_rasterise_triangles,
-        output_format=output_format,
-        frame_factory=frame_factory,
-        normal_preparer=normal_preparer,
-        mesh_preparer=mesh_preparer,
-        image_encoder=image_encoder,
-    )
+    """Render in Rust; this facade only transfers the mesh and encoded result."""
+    if mesh is None or mesh.faces is None or len(mesh.faces) == 0:
+        return None
+    try:
+        return native_rasterizer.render_preview(
+            mesh,
+            width=width,
+            height=height,
+            chunk=settings.mesh_render_face_chunk_size,
+            output_format=output_format,
+        )
+    except Exception:  # noqa: BLE001 - the engine reports failed derivatives
+        logger.warning("mesh_render: Rust preview failed for %s", name, exc_info=True)
+        return None
 
 
 __all__ = [

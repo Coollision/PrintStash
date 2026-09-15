@@ -773,55 +773,35 @@ def main(argv: list[str] | None = None) -> int:
         deadline=time.monotonic() + args.timeout_seconds,
     )
     try:
-        source_stat = args.source.stat()
-        if source_stat.st_size > limits.max_source_bytes:
-            raise _BudgetExceeded("source budget")
-        reservoir = _FramingReservoir()
+        from printstash_core.mesh.native_rasterizer import kernel
+        from printstash_core.mesh.preview_profile import PREVIEW_PROFILE as p
 
-        def collect(vertices) -> None:
-            reservoir.add(vertices.mean(axis=1))
-
-        native_source = None
-        if os.environ.get("VAULT_MESH_RASTERIZER", "auto") != "python":
-            from printstash_core.mesh.native_rasterizer import kernel
-
-            source_type = getattr(kernel(), "NativeStlSource", None)
-            if source_type is not None and _source_is_binary(args.source) is not None:
-                native_source = source_type(
-                    args.source,
-                    limits.max_triangles,
-                    limits.max_source_bytes,
-                    limits.chunk_triangles,
-                    limits.deadline - time.monotonic(),
-                )
-        if native_source is not None:
-            count, scanned, lower, upper, sampled = native_source.analyze()
-            first = _PassStats(count, scanned, tuple(lower), tuple(upper))
-            reservoir.values = sampled
-        else:
-            first = _read_pass(args.source, limits, collect)
-        if first.triangle_count > limits.max_triangles:
-            raise _BudgetExceeded("triangle budget")
-        first_after = args.source.stat()
-        if (
-            first_after.st_size != source_stat.st_size
-            or first_after.st_mtime_ns != source_stat.st_mtime_ns
-        ):
-            raise _InvalidSTL("source changed during first pass")
-        before = first_after
-        candidates = _render(
+        result = kernel().render_stl_streaming(
             args.source,
-            args.output,
             args.width,
             args.height,
-            limits,
-            first,
-            reservoir,
-            native_source=native_source,
+            limits.max_triangles,
+            limits.max_source_bytes,
+            limits.max_candidates,
+            limits.chunk_triangles,
+            max(0.001, limits.deadline - time.monotonic()),
+            (
+                p.margin_fraction,
+                p.hero_azimuth_degrees,
+                p.hero_elevation_degrees,
+                p.flat_tilt_degrees,
+                p.flat_thickness_ratio,
+                *p.material_albedo,
+            ),
+            limits.max_lines,
+            limits.max_line_bytes,
         )
-        after = args.source.stat()
-        if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
-            raise _InvalidSTL("source changed during render")
+        image, count, _parsed, lower, upper, scanned, _complete, candidates, seconds = (
+            result
+        )
+        temporary = args.output.with_suffix(args.output.suffix + ".tmp")
+        temporary.write_bytes(image)
+        os.replace(temporary, args.output)
         _write_manifest(
             args.manifest,
             {
@@ -829,12 +809,13 @@ def main(argv: list[str] | None = None) -> int:
                 "status": "complete",
                 "width": args.width,
                 "height": args.height,
-                "triangle_count": first.triangle_count,
-                "parsed_triangles": first.triangle_count,
-                "scanned_bytes": first.scanned_bytes,
+                "triangle_count": count,
+                "parsed_triangles": count,
+                "scanned_bytes": scanned,
                 "raster_candidates": candidates,
-                "bounds_min": list(first.bounds_min),
-                "bounds_max": list(first.bounds_max),
+                "bounds_min": list(lower),
+                "bounds_max": list(upper),
+                "rust_stage_seconds": list(seconds),
             },
         )
         return 0

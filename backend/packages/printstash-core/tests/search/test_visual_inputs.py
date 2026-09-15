@@ -112,3 +112,18 @@ class TestVisualRecipeAdmission:
         space = VisualRecipe.space(paired_space(), image_size=224, profile="thumbnail")
         with pytest.raises(EmbeddingError, match="search_visual_recipe_invalid"):
             VisualRecipe.for_space(replace(space, render_recipe=payload))
+
+
+def test_multiview_rejects_previous_renderer_recipe():
+    import json
+
+    current = VisualRecipe.space(paired_space(), image_size=224, profile="multiview")
+    old = json.loads(current.render_recipe)
+    old["version"] = "canonical-views-media-thumbnail-v1"
+    with pytest.raises(EmbeddingError, match="search_visual_recipe_invalid"):
+        VisualRecipe.for_space(replace(current, render_recipe=json.dumps(old)))
+
+
+def test_thumbnail_recipe_retains_existing_version():
+    recipe = VisualRecipe("a" * 64, 224, "thumbnail")
+    assert recipe.version == "canonical-views-media-thumbnail-v1"

@@ -2162,6 +2162,7 @@ dependencies = [
     { name = "orjson" },
     { name = "pillow" },
     { name = "printstash-core", extra = ["network", "printers-all"] },
+    { name = "printstash-mesh-native" },
     { name = "prometheus-client" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pwdlib", extra = ["argon2", "bcrypt"] },
@@ -2268,6 +2269,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.3,<13" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7" },
     { name = "printstash-core", extras = ["network", "printers-all"], editable = "packages/printstash-core" },
+    { name = "printstash-mesh-native", directory = "rust" },
     { name = "prometheus-client", specifier = ">=0.26,<1" },
     { name = "psutil", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3,<4" },
@@ -2380,6 +2382,11 @@ requires-dist = [
     { name = "wsproto", marker = "extra == 'testkit'", specifier = ">=1.2,<2" },
 ]
 provides-extras = ["http", "network", "testkit", "mesh", "bambu", "elegoo", "printers-all", "dev"]
+
+[[package]]
+name = "printstash-mesh-native"
+version = "0.1.0"
+source = { directory = "rust" }
 
 [[package]]
 name = "prometheus-client"

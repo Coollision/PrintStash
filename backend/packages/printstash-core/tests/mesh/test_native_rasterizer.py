@@ -325,7 +325,12 @@ class TestNativePhong:
         if thin_axis is not None:
             mesh.vertices[:, thin_axis] *= 0.01
         expected = rasterizer.render_mesh_thumbnail(
-            mesh, "box", width=96, height=72, matte=matte
+            mesh,
+            "box",
+            width=96,
+            height=72,
+            matte=matte,
+            rasterise_triangles=rasterizer._rasterise_triangles,
         )
         actual = rasterizer.render_mesh_thumbnail(
             mesh,
