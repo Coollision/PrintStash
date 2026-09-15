@@ -1,11 +1,11 @@
 """Observable image parity and bounded native mesh preparation failures."""
 
 import numpy as np
+import printstash_mesh_native as native
 import pytest
+import reference_native_adapter as native_rasterizer
+import reference_rasterizer as rasterizer  # noqa: E402
 import trimesh
-
-native = pytest.importorskip("printstash_mesh_native")
-from printstash_core.mesh import native_rasterizer, rasterizer  # noqa: E402
 
 
 @pytest.mark.parametrize("kind", ["box", "sphere", "thin", "degenerate"], ids=str)

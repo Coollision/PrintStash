@@ -72,10 +72,6 @@ class TestExtract:
 
 
 class TestWebpNormalization:
-    @pytest.fixture(autouse=True, params=["python", "rust"])
-    def renderer(self, request, monkeypatch):
-        monkeypatch.setitem(_overlay, "mesh_rasterizer", request.param)
-
     @pytest.mark.parametrize("normalize", [True, False])
     def test_preserves_rgba_pixels(self, normalize: bool) -> None:
         from PIL import Image, ImageDraw
@@ -149,3 +145,14 @@ class TestWebpNormalization:
         encoded = source.getvalue()
 
         assert to_webp(encoded) == encoded
+
+
+def test_unsupported_codec_cannot_fall_back_to_pillow():
+    from PIL import Image
+
+    from app.modules.media.thumbnail import ThumbnailValidationError
+
+    source = io.BytesIO()
+    Image.new("RGB", (2, 2), "white").save(source, format="BMP")
+    with pytest.raises(ThumbnailValidationError, match="thumbnail_format_unsupported"):
+        to_webp(source.getvalue())

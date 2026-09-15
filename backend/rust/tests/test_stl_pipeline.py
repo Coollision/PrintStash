@@ -6,8 +6,7 @@ import time
 import numpy as np
 import printstash_mesh_native as native
 import pytest
-
-from app.modules.media import stl_preview_worker as worker
+import reference_stl as worker
 
 
 @pytest.fixture

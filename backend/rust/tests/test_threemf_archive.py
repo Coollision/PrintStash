@@ -25,7 +25,9 @@ def package(tmp_path):
 
 
 class TestThreeMfArchive:
-    @pytest.mark.parametrize("compression", [0, 8], ids=["stored", "deflated"])
+    @pytest.mark.parametrize(
+        "compression", [0, 8, 12, 14], ids=["stored", "deflated", "bzip2", "lzma"]
+    )
     def test_preserves_packed_model_bytes(self, package, compression):
         archive = native.ThreeMfArchive(package(compression))
         assert archive.read_part(PART, len(XML), zlib.crc32(XML), len(XML)) == (
@@ -54,7 +56,12 @@ class TestThreeMfArchive:
         )
 
     def test_rejects_unsupported_compression(self, package):
-        archive = native.ThreeMfArchive(package(zipfile.ZIP_BZIP2))
+        path = package(zipfile.ZIP_STORED)
+        data = bytearray(path.read_bytes())
+        struct.pack_into("<H", data, 8, 98)
+        struct.pack_into("<H", data, data.index(b"PK\x01\x02") + 10, 98)
+        path.write_bytes(data)
+        archive = native.ThreeMfArchive(path)
         with pytest.raises(ValueError, match="[Cc]ompression"):
             archive.read_part(PART, len(XML), zlib.crc32(XML), len(XML))
 

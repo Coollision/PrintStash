@@ -3,11 +3,10 @@
 import io
 
 import numpy as np
+import printstash_mesh_native as native
 import pytest
 import trimesh
 from PIL import Image
-
-native = pytest.importorskip("printstash_mesh_native")
 from printstash_core.mesh.preview_profile import PREVIEW_PROFILE as p  # noqa: E402
 
 RECIPE = (

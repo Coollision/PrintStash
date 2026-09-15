@@ -207,68 +207,26 @@ def _read_binary_samples(
 ) -> _SampledSTL | None:
     from printstash_core.mesh.native_rasterizer import kernel
 
-    from app.core.config import settings
-
-    native = kernel() if settings.mesh_rasterizer != "python" else None
-    sample = getattr(native, "sample_binary_stl", None)
-    if sample is not None and 1 <= budget <= _MAX_SAMPLED_TRIANGLES:
-        try:
-            result = sample(path, budget)
-        except OSError:
-            return None
-        if result is None:
-            return None
-        packed, count, parsed, lower, upper, scanned, complete = result
-        coordinates = array("f")
-        coordinates.frombytes(packed)
-        return _SampledSTL(
-            coordinates,
-            count,
-            parsed,
-            tuple(lower),
-            tuple(upper),
-            scanned,
-            parsed,
-            complete,
-        )
-    info = info or _binary_stl_info(path)
-    if info is None:
+    if not 1 <= budget <= _MAX_SAMPLED_TRIANGLES:
         return None
-    triangle_count, _ = info
-    sample_count = min(triangle_count, budget)
-    if sample_count == 0:
-        return None
-    coordinates = array("f")
-    lower = [float("inf")] * 3
-    upper = [float("-inf")] * 3
-    parsed = 0
     try:
-        with path.open("rb") as stream:
-            for index in _binary_sample_indices(triangle_count, sample_count):
-                stream.seek(_BINARY_HEADER_BYTES + index * _BINARY_TRIANGLE.size)
-                record = stream.read(_BINARY_TRIANGLE.size)
-                if len(record) != _BINARY_TRIANGLE.size:
-                    break
-                values = _BINARY_TRIANGLE.unpack(record)
-                triangle = tuple(float(value) for value in values[3:12])
-                if not all(_valid_coordinate(value) for value in triangle):
-                    continue
-                coordinates.extend(triangle)
-                _update_bounds(lower, upper, triangle)
-                parsed += 1
-    except (OSError, ValueError):
+        result = kernel().sample_binary_stl(path, budget)
+    except OSError:
         return None
-    if parsed == 0:
+    if result is None:
         return None
+    packed, count, parsed, lower, upper, scanned, complete = result
+    coordinates = array("f")
+    coordinates.frombytes(packed)
     return _SampledSTL(
-        coordinates=coordinates,
-        triangle_count=triangle_count,
-        sampled_triangles=parsed,
-        bounds_min=(lower[0], lower[1], lower[2]),
-        bounds_max=(upper[0], upper[1], upper[2]),
-        scanned_bytes=_BINARY_HEADER_BYTES + sample_count * _BINARY_TRIANGLE.size,
-        parsed_triangles=parsed,
-        complete=parsed == sample_count and sample_count == triangle_count,
+        coordinates,
+        count,
+        parsed,
+        tuple(lower),
+        tuple(upper),
+        scanned,
+        parsed,
+        complete,
     )
 
 

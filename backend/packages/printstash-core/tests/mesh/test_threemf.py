@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import zipfile
 
 import numpy as np
@@ -17,7 +16,7 @@ IDENTITY = "1 0 0 0 1 0 0 0 1 0 0 0"
 
 @pytest.fixture
 def package(tmp_path):
-    pytest.importorskip("printstash_mesh_native")
+    __import__("printstash_mesh_native")
 
     def write(
         objects=OBJECT,
@@ -41,27 +40,6 @@ def package(tmp_path):
     return write
 
 
-class TestAvailable:
-    def test_missing_extension_is_optional(self, monkeypatch):
-        def missing(name):
-            raise ModuleNotFoundError("missing", name=name)
-
-        monkeypatch.setattr(importlib, "import_module", missing)
-        assert threemf.available() is False
-
-    def test_old_extension_is_optional(self, monkeypatch):
-        monkeypatch.setattr(importlib, "import_module", lambda name: object())
-        assert threemf.available() is False
-
-    def test_broken_extension_is_not_hidden(self, monkeypatch):
-        def broken(name):
-            raise ModuleNotFoundError("broken", name="dependency")
-
-        monkeypatch.setattr(importlib, "import_module", broken)
-        with pytest.raises(ModuleNotFoundError, match="broken"):
-            threemf.available()
-
-
 class TestPartPath:
     @pytest.mark.parametrize(
         "reference,expected",
@@ -83,14 +61,12 @@ class TestPartPath:
 
 
 class TestLoadScene:
-    def test_retains_legacy_extension_compatibility(self, package, monkeypatch):
+    def test_rejects_outdated_native_extension(self, package, monkeypatch):
         import printstash_mesh_native as native
 
         monkeypatch.delattr(native, "ThreeMfArchive")
-        scene = threemf.load_scene(package())
-        np.testing.assert_array_equal(
-            scene.dump()[0].vertices, [[0, 0, 0], [10, 0, 0], [0, 20, 0]]
-        )
+        with pytest.raises(AttributeError, match="ThreeMfArchive"):
+            threemf.load_scene(package())
 
     @pytest.mark.parametrize("compression", [12, 14], ids=["bzip2", "lzma"])
     def test_retains_other_compression_compatibility(self, package, compression):
@@ -99,7 +75,9 @@ class TestLoadScene:
             scene.dump()[0].vertices, [[0, 0, 0], [10, 0, 0], [0, 20, 0]]
         )
 
-    @pytest.mark.parametrize("compression", [0, 8], ids=["stored", "deflated"])
+    @pytest.mark.parametrize(
+        "compression", [0, 8, 12, 14], ids=["stored", "deflated", "bzip2", "lzma"]
+    )
     def test_imports_without_python_decompression(
         self, package, monkeypatch, compression
     ):
@@ -112,10 +90,6 @@ class TestLoadScene:
         np.testing.assert_array_equal(
             scene.dump()[0].vertices, [[0, 0, 0], [10, 0, 0], [0, 20, 0]]
         )
-
-    def test_missing_native_returns_none(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(threemf, "available", lambda: False)
-        assert threemf.load_scene(tmp_path / "absent.3mf") is None
 
     @pytest.mark.parametrize(
         "transform",

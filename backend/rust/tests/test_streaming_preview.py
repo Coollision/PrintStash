@@ -3,7 +3,7 @@
 import numpy as np
 import printstash_mesh_native as native
 import pytest
-from printstash_core.mesh.rasterizer import RasterBudget, _rasterise_triangles
+from reference_rasterizer import RasterBudget, _rasterise_triangles
 
 
 class TestStreamingDepth:

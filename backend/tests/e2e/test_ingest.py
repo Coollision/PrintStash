@@ -437,7 +437,6 @@ class TestArchiveImport:
         from tests.factories.geometry import three_mf
 
         headers = await _setup_and_login(api, tmp_path)
-        monkeypatch.setitem(_overlay, "mesh_loader", "auto")
         source = three_mf()
         archive = io.BytesIO()
         with zipfile.ZipFile(archive, "w") as writer:
@@ -471,10 +470,9 @@ class TestArchiveImport:
         with Image.open(io.BytesIO(preview.content)) as image:
             assert image.getbbox() is not None
 
-    @pytest.mark.parametrize("engine", ["auto", "python"], ids=str)
     @pytest.mark.asyncio
     async def test_archive_stl_import_retains_geometry(
-        self, api, tmp_path, e2e_db, monkeypatch, engine
+        self, api, tmp_path, e2e_db, monkeypatch
     ):
         import hashlib
 
@@ -482,8 +480,6 @@ class TestArchiveImport:
         from tests.factories.geometry import tetrahedron
 
         headers = await _setup_and_login(api, tmp_path)
-        monkeypatch.setitem(_overlay, "mesh_loader", engine)
-        monkeypatch.setitem(_overlay, "mesh_geometry", engine)
         source = tetrahedron().export(file_type="stl")
         archive = io.BytesIO()
         with zipfile.ZipFile(archive, "w") as writer:

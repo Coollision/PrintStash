@@ -125,7 +125,6 @@ class TestLoadMesh:
 
         path = tmp_path / "streamed.3mf"
         path.write_bytes(three_mf())
-        monkeypatch.setitem(_overlay, "mesh_loader", "auto")
 
         def forbidden(*args, **kwargs):
             raise AssertionError("legacy loader was used")
@@ -138,39 +137,19 @@ class TestLoadMesh:
         assert len(mesh.faces) == 4
         assert mesh.bounds.tolist() == [[0, 0, 0], [10, 20, 30]]
 
-    def test_python_selection_uses_the_legacy_loader(self, tmp_path, monkeypatch):
+    def test_failed_native_parser_does_not_use_python(self, tmp_path, monkeypatch):
         from printstash_core.mesh import threemf
 
         from tests.factories.geometry import three_mf
 
-        path = tmp_path / "legacy.3mf"
+        path = tmp_path / "native-required.3mf"
         path.write_bytes(three_mf())
-        monkeypatch.setitem(_overlay, "mesh_loader", "python")
 
-        def forbidden(*args, **kwargs):
-            raise AssertionError("native loader was used")
+        def failed(*args, **kwargs):
+            raise RuntimeError("native parse failed")
 
-        monkeypatch.setattr(threemf, "load_scene", forbidden)
-
-        mesh = mesh_processing._load_mesh(path)
-
-        assert mesh is not None
-        assert len(mesh.faces) == 4
-
-    def test_missing_native_parser_keeps_3mf_loading(self, tmp_path, monkeypatch):
-        from printstash_core.mesh import threemf
-
-        from tests.factories.geometry import three_mf
-
-        path = tmp_path / "optional.3mf"
-        path.write_bytes(three_mf())
-        monkeypatch.setitem(_overlay, "mesh_loader", "auto")
-        monkeypatch.setattr(threemf, "available", lambda: False)
-
-        mesh = mesh_processing._load_mesh(path)
-
-        assert mesh is not None
-        assert len(mesh.faces) == 4
+        monkeypatch.setattr(threemf, "load_scene", failed)
+        assert mesh_processing._load_mesh(path) is None
 
     def test_real_over_triangle_mesh_uses_streaming_fallback(
         self, tmp_path: Path, monkeypatch

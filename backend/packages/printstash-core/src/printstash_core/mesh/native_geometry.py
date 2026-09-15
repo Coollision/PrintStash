@@ -10,15 +10,11 @@ from .native_rasterizer import kernel
 
 def measure_mesh(
     mesh: Any, *, face_chunk_size: int = 65_536
-) -> dict[str, float | int | None] | None:
-    """Return import measurements, or None when the native path is unavailable."""
+) -> dict[str, float | int | None]:
+    """Return bounded native import measurements."""
     import numpy as np
-    import trimesh
 
-    native = kernel()
-    measure = getattr(native, "measure_triangles", None)
-    if measure is None or not isinstance(mesh, trimesh.Trimesh):
-        return None
+    measure = kernel().measure_triangles
     if type(face_chunk_size) is not int or face_chunk_size < 1:
         raise ValueError("invalid geometry chunk size")
     vertices = np.asarray(mesh.vertices, dtype=np.float64)

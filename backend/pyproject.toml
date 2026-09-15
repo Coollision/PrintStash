@@ -106,6 +106,7 @@ ai = [
 ]
 
 [tool.pytest.ini_options]
+pythonpath = ["packages/printstash-core/tests/reference"]
 # -ra surfaces every skip and xfail reason in the summary, so a resource-gated subset
 # that silently stopped running is visible rather than invisible.
 addopts = "--capture=sys --strict-markers -ra"

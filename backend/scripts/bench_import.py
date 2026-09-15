@@ -152,9 +152,6 @@ def run(
     output: Path,
     timeout: float,
     similarity: bool = False,
-    renderer: str = "auto",
-    loader: str = "auto",
-    geometry: str = "auto",
     export_previews: Path | None = None,
     workers: int = 1,
 ) -> dict:
@@ -176,27 +173,8 @@ def run(
         if native_binary_spec and native_binary_spec.origin
         else None
     )
-    if renderer == "rust" and native_path is None:
-        raise RuntimeError(
-            "Rust renderer requested but printstash-mesh-native is not installed"
-        )
-    selected_renderer = "rust" if renderer != "python" and native_path else "python"
-    selected_loader = (
-        "rust"
-        if loader == "auto"
-        and native_path
-        and hasattr(importlib.import_module("printstash_mesh_native"), "parse_3mf_xml")
-        else "python"
-    )
-    selected_geometry = (
-        "rust"
-        if geometry == "auto"
-        and native_path
-        and hasattr(
-            importlib.import_module("printstash_mesh_native"), "measure_triangles"
-        )
-        else "python"
-    )
+    if native_path is None:
+        raise RuntimeError("Required printstash-mesh-native extension is not installed")
     with archive.open("rb") as source:
         archive_digest = hashlib.file_digest(source, "sha256").hexdigest()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -219,9 +197,6 @@ def run(
                 "VAULT_SECRETS_KEY_FILE": str(root / "secrets.key"),
                 "VAULT_SETUP_MODE": "trusted_network",
                 "VAULT_SETUP_ALLOWED_HOSTS": "127.0.0.1",
-                "VAULT_MESH_RASTERIZER": renderer,
-                "VAULT_MESH_LOADER": loader,
-                "VAULT_MESH_GEOMETRY": geometry,
                 "VAULT_IMPORT_WORKERS": str(workers),
             }
         )
@@ -429,27 +404,12 @@ def run(
                             ).write_bytes(encoded)
                     report = {
                         **environment,
-                        "native_capabilities": (
-                            sorted(
-                                name
-                                for name in (
-                                    "NativeFrame",
-                                    "smooth_normals",
-                                    "streaming_depth",
-                                    "component_labels",
-                                    "parse_3mf_xml",
-                                    "ThreeMfArchive",
-                                    "measure_triangles",
-                                    "load_binary_stl",
-                                    "rasterize_phong",
-                                )
-                                if hasattr(
-                                    importlib.import_module("printstash_mesh_native"),
-                                    name,
-                                )
+                        "native_capabilities": sorted(
+                            name
+                            for name in dir(
+                                importlib.import_module("printstash_mesh_native")
                             )
-                            if native_path
-                            else []
+                            if not name.startswith("_")
                         ),
                         "similarity_on_ingest": similarity,
                         "engine_source_sha256": engine_digest.hexdigest(),
@@ -467,22 +427,12 @@ def run(
                                 log_path.read_text(),
                             )
                         ],
-                        "renderer_requested": renderer,
-                        "renderer_selected": selected_renderer,
-                        "loader_requested": loader,
-                        "loader_selected": selected_loader,
-                        "geometry_requested": geometry,
-                        "geometry_selected": selected_geometry,
-                        "native_module_sha256": (
-                            hashlib.sha256(native_path.read_bytes()).hexdigest()
-                            if native_path
-                            and (
-                                selected_renderer == "rust"
-                                or selected_loader == "rust"
-                                or selected_geometry == "rust"
-                            )
-                            else None
-                        ),
+                        "renderer_selected": "rust",
+                        "loader_selected": "rust",
+                        "geometry_selected": "rust",
+                        "native_module_sha256": hashlib.sha256(
+                            native_path.read_bytes()
+                        ).hexdigest(),
                         "archive": archive.name,
                         "archive_sha256": archive_digest,
                         "archive_bytes": archive.stat().st_size,
@@ -559,12 +509,7 @@ def main() -> None:
     )
     parser.add_argument("--export-previews", type=Path)
     parser.add_argument("--timeout", type=float, default=3600)
-    parser.add_argument(
-        "--renderer", choices=("auto", "python", "rust"), default="auto"
-    )
     parser.add_argument("--workers", type=int, choices=range(33), default=1)
-    parser.add_argument("--loader", choices=("auto", "python"), default="auto")
-    parser.add_argument("--geometry", choices=("auto", "python"), default="auto")
     parser.add_argument(
         "--similarity",
         action="store_true",
@@ -598,9 +543,6 @@ def main() -> None:
         args.output.resolve(),
         args.timeout,
         args.similarity,
-        args.renderer,
-        args.loader,
-        args.geometry,
         args.export_previews,
         args.workers,
     )

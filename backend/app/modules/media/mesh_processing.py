@@ -428,11 +428,11 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
 
     try:
         loaded = None
-        if suffix == ".3mf" and settings.mesh_loader == "auto":
+        if suffix == ".3mf":
             from printstash_core.mesh.threemf import load_scene
 
             loaded = load_scene(path)
-        elif suffix == ".stl" and settings.mesh_loader == "auto":
+        elif suffix == ".stl":
             from printstash_core.mesh.stl import load_binary_stl
 
             loaded = load_binary_stl(path)
@@ -498,42 +498,13 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
 
 
 def _geometry_from_mesh(mesh) -> Dict[str, Optional[float]]:
-    if mesh is not None and settings.mesh_geometry == "auto":
-        from printstash_core.mesh.native_geometry import measure_mesh
-
-        measured = measure_mesh(mesh)
-        if measured is not None:
-            return measured
-
-    out: Dict[str, Optional[float]] = {
-        "bbox_x_mm": None,
-        "bbox_y_mm": None,
-        "bbox_z_mm": None,
-        "volume_mm3": None,
-        "triangle_count": None,
-    }
+    from printstash_core.mesh.native_geometry import measure_mesh
 
     if mesh is None:
-        return out
-
-    if mesh.vertices.shape[0] > 0:
-        extents = mesh.bounds[1] - mesh.bounds[0]
-        out["bbox_x_mm"] = round(float(extents[0]), 2)
-        out["bbox_y_mm"] = round(float(extents[1]), 2)
-        out["bbox_z_mm"] = round(float(extents[2]), 2)
-
-    if mesh.faces is not None and len(mesh.faces) > 0:
-        out["triangle_count"] = len(mesh.faces)
-
-    try:
-        vol = mesh.volume
-        if vol is not None and vol > 0:
-            out["volume_mm3"] = round(float(vol), 2)
-    except Exception:
-        # Non-watertight meshes raise here; volume is best-effort only.
-        pass
-
-    return out
+        return dict.fromkeys(
+            ("bbox_x_mm", "bbox_y_mm", "bbox_z_mm", "volume_mm3", "triangle_count")
+        )
+    return measure_mesh(mesh)
 
 
 def extract_embedded_3mf_thumbnail(

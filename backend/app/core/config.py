@@ -230,11 +230,8 @@ class Settings(BaseSettings):
     # time and frees them before the next, so peak render memory is O(chunk_size)
     # rather than O(total_faces) — a million-triangle mesh no longer materialises
     # ~70 MB float32 arrays all at once (#29). Lower it to shrink peak RSS further
-    # on tiny containers; raise it for marginally less Python-loop overhead.
+    # on tiny containers; raise it to reduce batch overhead.
     mesh_render_face_chunk_size: int = Field(default=64_000, gt=0)
-    mesh_rasterizer: Literal["auto", "python", "rust"] = "auto"
-    mesh_loader: Literal["auto", "python"] = "auto"
-    mesh_geometry: Literal["auto", "python"] = "auto"
 
     # Width of generated Model preview images. Height keeps the renderer's 4:3
     # aspect ratio. The Settings UI offers bounded presets so higher fidelity is

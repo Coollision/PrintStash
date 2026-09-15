@@ -15,7 +15,6 @@ from importlib.resources import files
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from ..native_rasterizer import kernel
 from ..rasterizer import render_mesh_thumbnail
 from .fingerprint import GeometryError, canonical_sample_triangles
 from .geometry import Surface
@@ -31,11 +30,7 @@ if TYPE_CHECKING:
 SH_RECIPE = "occupancy64-shells32-degree16-pca64-v1"
 # Resampling changes can change thresholded view hashes. Record the actual
 # renderer so native views never masquerade as the legacy NumPy/Pillow recipe.
-VIEW_RECIPE = (
-    "pca-six-orthographic64-matte-dct8-rust-v2"
-    if hasattr(kernel(), "render_preview")
-    else "pca-six-orthographic64-matte-dct8-v1"
-)
+VIEW_RECIPE = "pca-six-orthographic64-matte-dct8-rust-v2"
 
 
 @dataclass(frozen=True)

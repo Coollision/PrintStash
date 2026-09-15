@@ -1,11 +1,12 @@
 """Complete native render jobs preserve the established preview recipe."""
 
 import numpy as np
+import printstash_mesh_native as native
 import pytest
+import reference_native_adapter as stages
+import reference_rasterizer as rasterizer  # noqa: E402
 import trimesh
-
-native = pytest.importorskip("printstash_mesh_native")
-from printstash_core.mesh import native_rasterizer, rasterizer  # noqa: E402
+from printstash_core.mesh import native_rasterizer
 from printstash_core.mesh.preview_profile import PREVIEW_PROFILE as p  # noqa: E402
 
 
@@ -21,8 +22,8 @@ def test_complete_job_preserves_preview(extents, output_format):
         width=80,
         height=60,
         output_format=output_format,
-        mesh_preparer=native_rasterizer.prepare_mesh,
-        image_encoder=native_rasterizer.encode_preview,
+        mesh_preparer=stages.prepare_mesh,
+        image_encoder=stages.encode_preview,
     )
     actual = native_rasterizer.render_preview(
         mesh, width=80, height=60, output_format=output_format
@@ -37,8 +38,8 @@ def test_complete_job_preserves_explicit_view(matte):
     expected = rasterizer.render_mesh_thumbnail(
         mesh,
         "reference",
-        mesh_preparer=native_rasterizer.prepare_mesh,
-        image_encoder=native_rasterizer.encode_preview,
+        mesh_preparer=stages.prepare_mesh,
+        image_encoder=stages.encode_preview,
         **options,
     )
     assert native_rasterizer.render_preview(mesh, **options) == expected

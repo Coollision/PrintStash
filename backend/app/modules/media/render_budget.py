@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import math
 import os
-import threading
 from contextvars import ContextVar
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Protocol
 
 from app.core.config import settings
 
@@ -102,56 +101,30 @@ def estimate_work(path: Path, file_type: str, budget: int) -> int:
     return min(budget, max(128 * MIB, triangles * cost + 128 * MIB))
 
 
-@dataclass
-class Reservation:
-    owner: RenderBudget
-    size: int
-    released: bool = False
-
-    def release(self) -> None:
-        with self.owner.condition:
-            if not self.released:
-                self.owner._used -= self.size
-                self.owner._jobs -= 1
-                self.released = True
-                self.owner.condition.notify_all()
+class Reservation(Protocol):
+    def release(self) -> None: ...
 
 
 class RenderBudget:
     def __init__(self) -> None:
         from printstash_core.mesh.native_rasterizer import kernel
 
-        native = kernel() if settings.mesh_rasterizer != "python" else None
-        native_type = getattr(native, "NativeBudget", None)
-        self.native = native_type() if native_type is not None else None
-        self.condition = threading.Condition()
-        self._used = 0
-        self._jobs = 0
+        self.native = kernel().NativeBudget()
 
     @property
     def used(self) -> int:
-        return self.native.used if self.native is not None else self._used
+        return self.native.used
 
     @property
     def jobs(self) -> int:
-        return self.native.jobs if self.native is not None else self._jobs
+        return self.native.jobs
 
     def acquire(
         self, size: int, *, capacity: int, jobs: int, wait: bool = True
     ) -> Reservation | None:
         if capacity <= 0 or jobs <= 0:
             raise ValueError("invalid admission capacity")
-        size = min(max(1, size), capacity)
-        if self.native is not None:
-            return self.native.acquire(size, capacity, jobs, wait)
-        with self.condition:
-            while self.used + size > capacity or self.jobs >= jobs:
-                if not wait:
-                    return None
-                self.condition.wait()
-            self._used += size
-            self._jobs += 1
-            return Reservation(self, size)
+        return self.native.acquire(min(max(1, size), capacity), capacity, jobs, wait)
 
 
 budget = RenderBudget()

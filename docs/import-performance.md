@@ -55,52 +55,37 @@ Use `--timeout 10800` for a three-hour limit when measuring a slow reference.
 Small archives can identify regressions, but their timings do not establish
 throughput or memory use for a 50 GB library.
 
-## Compare Python and Rust
+## Required Rust engine
 
-The optional `printstash-mesh-native` extension moves triangle coverage and
+The required `printstash-mesh-native` extension moves triangle coverage and
 depth selection into Rust. It also parses 3MF mesh coordinates and face indices
 from a stream, reads binary STL geometry, and measures mesh bounds and volume.
-Both renderers use the same camera, normals, lighting and image
-encoder. Stored and DEFLATE model parts inside 3MF packages are read and
+Rust owns camera selection, normals, lighting and image encoding. Stored and DEFLATE model parts inside 3MF packages are read and
 decompressed in Rust using `zip`, `flate2` and `zlib-rs`. The XML parser reads
 64 KiB buffers without Python callbacks and retains size limits and CRC checks.
-Package inventory validation and scene assembly remain in Python. Older native
-extensions and other compression methods retain the Python ZIP reader.
+Package inventory validation and scene assembly remain in Python. Bzip2 and LZMA
+members also decompress through the Rust ZIP library.
 Outer ZIP extraction, STEP tessellation, storage and job coordination remain
 in the existing pipeline.
 
-Both Docker variants build and install the extension. Rebuild the image to use
-it. For a source checkout, install Rust 1.88 or newer, then run from `backend/`:
+Both Docker variants build and install the required Rust extension. Source
+checkouts need Rust and Cargo before `uv sync --extra dev`; CI and Docker use
+Rust 1.91. The toolchain is needed to build the wheel, not to run it.
+
+Backend rendering, thumbnail encoding, import admission and the import executor
+require Rust. The renderer, loader and geometry engine selectors have been
+removed. Missing or outdated extensions no longer select Python. Python remains
+the application and format-dispatch layer; Three.js remains in the browser.
+
+Compare complete imports across revisions with the same archive and resources:
 
 ```bash
-uv sync --extra dev
-uv pip install ./rust
+uv run python scripts/bench_import.py /path/library.zip --output before.json
+uv run python scripts/bench_import.py /path/library.zip --output after.json --compare before.json
 ```
 
-The package uses [PyO3's Python bindings](https://pyo3.rs/v0.28.3/getting-started.html)
-and an ABI3 wheel for Python 3.11 or newer. CI and the Docker builder use Rust
-1.91. The Rust toolchain is only needed to build the wheel, not to run it.
-Source installations without the extension retain the Python renderer.
-An exact `uv sync` can remove this separately installed extension; install it
-again afterward.
-
-`VAULT_MESH_RASTERIZER` accepts `auto` (the default), `python` or `rust`.
-`auto` uses Rust when the extension is installed. `python` provides an explicit
-fallback. Budgeted STL recovery can also calculate depth in Rust, preserving its
-float32 depth buffer and partial-tile accounting. Binary source reading, depth
-shading and image encoding can run in Rust;
-scene setup remains in the isolated Python worker.
-
-Compare complete imports with explicit engines:
-
-```bash
-uv run python scripts/bench_import.py /path/library.zip --renderer python --output python.json
-uv run python scripts/bench_import.py /path/library.zip --renderer rust --output rust.json --compare python.json
-```
-
-The report records the requested engine, selected engine and compiled module
-hash. It also records generated preview hashes and checks them when the reference
-contains them. Requesting Rust without the extension fails before the benchmark starts.
+The report records the Rust engine and compiled module hash. It also records generated preview hashes and checks them when the reference
+contains them. A missing extension fails before the benchmark starts.
 Add `--similarity` to both commands to compare the same import settings with
 analysis enabled. Fingerprint completion remains outside this timer.
 
@@ -116,11 +101,10 @@ projects the camera view, culls faces and computes crease-aware corner normals.
 It receives the mesh once and processes drawing batches inside Rust, without
 per-batch Python callbacks or triangle/normal array transfers. Position and face
 indices use 32 bits; coordinates use float32 and accumulated normals use float64.
-The camera and material recipes remain shared with the Python path. The native image path uses `fast_image_resize` for SIMD resizing and `image`
+Camera and material values come from the versioned preview recipe. The native image path uses `fast_image_resize` for SIMD resizing and `image`
 for PNG and lossless WebP encoding. It does not create another image thread pool.
 
-Custom lighting callbacks and older native extensions retain the earlier fragment
-adapter, with Python shading batches of at most 16,384 visible pixels when needed.
+Python lighting callbacks and older native extension adapters have been removed.
 Native functions accept immutable inputs and validate dimensions, indices and
 finite values. Rust uses no unsafe blocks; PyO3 supplies the Python boundary.
 
@@ -132,12 +116,10 @@ constant or establish performance for a 50 GB library.
 
 ## Streaming 3MF loading
 
-`VAULT_MESH_LOADER` accepts `auto` (the default) or `python`. In `auto`, the
-native parser reads model XML from the ZIP in blocks of at most 64 KiB. It
+The required native parser reads model XML from the ZIP in blocks of at most 64 KiB. It
 retains numeric vertex and face arrays plus the scene XML needed to place them.
 It does not decompress unrelated previews or project settings. Source installs
-without the parser use the existing Python loader; `python` selects that loader
-explicitly.
+require the same Rust parser as the container images.
 
 The scene loader preserves repeated instances, component transforms and
 references to other model parts in the package. It rejects missing references,
@@ -153,20 +135,10 @@ per-corner shading normals. Whole-mesh vertex normals still use all faces, so
 this earlier culling retains the existing shading and silhouette behavior.
 Geometry measurements and stored source files keep the complete mesh.
 
-To isolate loading performance, keep the renderer fixed and import the complete
-ZIP with each loader:
-
-```bash
-uv run python scripts/bench_import.py /path/library.zip --renderer rust --loader python --output legacy-load.json
-uv run python scripts/bench_import.py /path/library.zip --renderer rust --loader auto --output streaming-load.json --compare legacy-load.json
-```
-
-The report records both loader selections. `--loader auto` selects Rust for 3MF
-and binary STL when the corresponding parser is available. Other formats keep
-their existing loaders. Scene assembly and rendering still retain arrays
-proportional to the mesh size. Streaming does not make the whole pipeline use
-constant memory.
-
+The report records native loading for 3MF and binary STL. ASCII STL, OBJ and STEP
+retain their format loaders; these are not alternate implementations selected
+when the native extension is missing. Compare changes using the complete archive
+and the same renderer, metadata requirements and resource limits.
 
 ## Binary STL recovery without block callbacks
 
@@ -180,11 +152,9 @@ Python for atomic publication. The worker retains its source,
 triangle, candidate, memory and deadline limits. It checks source identity before
 and after each pass and rejects changed files or incomplete renders.
 
-The bounded fallback sampler also reads binary STL records in Rust, preserving
-midpoint sampling, finite-coordinate filtering and completion metadata. ASCII
-reading and fallback triangle coverage still use Python/NumPy. Fallback image
-resizing and encoding run in Rust when available. `VAULT_MESH_RASTERIZER=python`
-selects the earlier preview and fallback implementation.
+The bounded fallback job reads binary or ASCII STL, rasterizes its sample,
+resizes and encodes the preview entirely in Rust. It reports partial coverage
+when sampling or byte limits prevent reading the whole source.
 
 ## Binary STL and geometry measurements
 
@@ -196,24 +166,15 @@ the declared triangle count and file length, so a binary header beginning with
 loader limits both file bytes and expanded vertex/index buffers to 512 MiB;
 application admission limits still apply before loading.
 
-`VAULT_MESH_GEOMETRY` accepts `auto` (the default) or `python`. When the native
-function is installed, `auto` measures the bounds of referenced vertices and
-the signed surface volume in blocks of at most 65,536 faces. It avoids computing
-unused inertia and center-of-mass arrays. Dimensions and positive volumes keep
-the existing rounding to two decimal places. Missing or older extensions use
-the existing measurements.
+Native geometry measurement computes bounds of referenced vertices and signed
+surface volume in blocks of at most 65,536 faces. It avoids unused inertia and
+center-of-mass arrays. Dimensions and positive volumes keep the existing
+rounding to two decimal places.
 
 The geometry calculation retains the existing convention for open surfaces;
 it does not turn an open mesh into a watertight solid. STEP tessellation still
 uses its existing worker, after which the native measurements can process the
 resulting triangles. The source files and rendering quality are unchanged.
-
-Use `--geometry python` or `--geometry auto` in the complete-ZIP benchmark to
-compare measurement engines while keeping the loader and renderer fixed. The
-report records the selected engine and checks saved geometry values against
-the reference. `VAULT_MESH_LOADER=python` separately selects the previous STL
-and 3MF loaders.
-
 
 Preview-only mesh processing verifies mesh reclamation through a weak reference.
 It first collects younger object cycles and runs a full collection if the mesh
@@ -221,11 +182,10 @@ is still alive. This avoids repeatedly scanning unrelated long-lived objects.
 Allocator trimming remains enabled. Fingerprint analysis retains full collection
 because it can create additional mesh copies.
 
-Connected-component extraction can use `petgraph`'s union-find implementation
+Connected-component extraction uses `petgraph`'s union-find implementation
 with compact edge and face indices. It preserves edge connectivity and canonical
 component ordering, including nonmanifold edges and vertices that touch without
-sharing an edge. `VAULT_MESH_GEOMETRY=python` selects the previous path for both
-measurements and component extraction. Other similarity algorithms and model
+sharing an edge. Other similarity algorithms and model
 inference retain their existing implementations.
 
 ## Lossless preview compression
@@ -310,11 +270,11 @@ replace the existing extraction of selected entries before ingestion.
 
 ## Native image processing and worker coordination
 
-The optional extension also handles final thumbnail normalization for PNG, JPEG
+The required extension also handles final thumbnail normalization for PNG, JPEG
 and WebP: bounded decoding, alpha bounds, crop, resize, transparent canvas and
 lossless WebP encoding. Images over 25 million source pixels are rejected before
 pixel decoding; decoder allocations have a separate 256 MiB limit. Empty images
-retain the existing validation error. Other legacy input formats use Pillow.
+retain the existing validation error. Other input formats are rejected without invoking Pillow.
 Already canonical WebP thumbnails are validated and reused without reencoding.
 
 Resizing uses Lanczos3 with alpha handling for ordinary previews and independent
@@ -333,7 +293,9 @@ active work with the interpreter lock released. Errors become per-file results;
 worker exceptions do not retain mesh tracebacks. The application must close the
 executor before deleting staged inputs, as `PreparedImports` does.
 
-`VAULT_MESH_RASTERIZER=python` selects the earlier image and executor paths;
-installations with older extensions also retain those adapters. The inference
+The inference
 query-image preprocessing, format dispatch, progress reporting, SQL transactions
 and STEP/OpenCASCADE conversion are not migrated by this change.
+
+Thumbnail normalization accepts PNG, JPEG and WebP through the Rust image library.
+Other codecs are rejected with `thumbnail_format_unsupported`; they do not invoke Pillow.

@@ -1,4 +1,4 @@
-"""Application compatibility facade for the core software mesh rasteriser."""
+"""Application adapter for the required Rust preview engine."""
 
 from __future__ import annotations
 
@@ -14,49 +14,6 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 FLAT_MESH_THICKNESS_RATIO = _core.FLAT_MESH_THICKNESS_RATIO
-RasterBudget = _core.RasterBudget
-
-
-# Preserve the helper import surface used by the STL fallback and focused tests.
-def _rasterise_triangles(
-    img: Any,
-    zbuf: Any,
-    tri: Any,
-    vert_nrm: Any,
-    shade: Any,
-    base_color: Any,
-    width: int,
-    height: int,
-    *,
-    budget: RasterBudget | None = None,
-) -> int:
-    import numpy as np
-
-    # Budgeted STL recovery retains its centered partial-tile contract. The
-    # ordinary preview path uses float64 depth and can run the native kernel.
-    if (
-        budget is not None
-        or settings.mesh_rasterizer == "python"
-        or zbuf.dtype != np.dtype(np.float64)
-    ):
-        return _core._rasterise_triangles(
-            img, zbuf, tri, vert_nrm, shade, base_color, width, height, budget=budget
-        )
-    if settings.mesh_rasterizer == "rust" or native_rasterizer.kernel() is not None:
-        return native_rasterizer.rasterise_triangles(
-            img, zbuf, tri, vert_nrm, shade, base_color, width, height
-        )
-    return _core._rasterise_triangles(
-        img, zbuf, tri, vert_nrm, shade, base_color, width, height
-    )
-
-
-def _select_view_rotation(verts: Any, _np: Any) -> Any:
-    return _core._select_view_rotation(verts)
-
-
-def _front_rotation_for_thin_axis(thin_axis: int, _np: Any) -> Any:
-    return _core._front_rotation_for_thin_axis(thin_axis)
 
 
 def render_thumbnail(
@@ -79,6 +36,7 @@ def render_mesh_thumbnail(
     output_format: Literal["PNG", "WEBP"] = "PNG",
 ) -> Optional[bytes]:
     """Render in Rust; this facade only transfers the mesh and encoded result."""
+    native_rasterizer.kernel()
     if mesh is None or mesh.faces is None or len(mesh.faces) == 0:
         return None
     try:
@@ -96,7 +54,6 @@ def render_mesh_thumbnail(
 
 __all__ = [
     "FLAT_MESH_THICKNESS_RATIO",
-    "RasterBudget",
     "render_mesh_thumbnail",
     "render_thumbnail",
 ]

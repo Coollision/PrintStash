@@ -49,12 +49,9 @@ class PreparedMesh:
 def prepare_loaded_mesh(mesh: Any, *, file_type: str) -> PreparedMesh:
     import numpy as np
 
-    from app.core.config import settings
-
     resources = split_components(
         np.asarray(mesh.vertices),
         np.asarray(mesh.faces),
-        native=settings.mesh_geometry != "python",
     )
     scene = ExpandedScene(
         resources,

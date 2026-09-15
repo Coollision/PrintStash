@@ -49,8 +49,9 @@ class TestProcessImage:
 
     @pytest.mark.parametrize("format", ["PNG", "WEBP"])
     def test_mesh_preview_uses_native_image_pipeline(self, format):
+        import reference_native_adapter as native_rasterizer
+        import reference_rasterizer as rasterizer
         import trimesh
-        from printstash_core.mesh import native_rasterizer, rasterizer
 
         mesh = trimesh.creation.icosphere(subdivisions=2)
         options = dict(
@@ -141,13 +142,11 @@ class TestShadeDepth:
 
     @pytest.mark.parametrize("scale", [0.01, 1.0, 100.0])
     def test_depth_shading_matches_reference(self, monkeypatch, scale):
+        import reference_stl as worker
         from printstash_core.mesh.preview_profile import PREVIEW_PROFILE
-
-        from app.modules.media import stl_preview_worker as worker
 
         depth = np.random.default_rng(18).normal(size=(31, 37)).astype(np.float32)
         depth[10:20, 12:24] = np.inf
-        monkeypatch.setenv("VAULT_MESH_RASTERIZER", "python")
         reference = np.asarray(
             Image.open(io.BytesIO(worker._encode_depth(depth, scale, 37, 31)))
         ).astype(int)

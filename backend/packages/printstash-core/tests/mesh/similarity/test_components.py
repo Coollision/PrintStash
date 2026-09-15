@@ -17,18 +17,6 @@ from printstash_core.mesh.similarity.components import (
 )
 
 
-@pytest.fixture(params=[False, True], ids=["python", "native"])
-def split_route(request, monkeypatch):
-    if request.param:
-        pytest.importorskip("printstash_mesh_native")
-    from printstash_core.mesh import native_rasterizer
-
-    if not request.param:
-        monkeypatch.setattr(native_rasterizer, "kernel", lambda: None)
-    return request.param
-
-
-@pytest.mark.usefixtures("split_route")
 class TestSplitComponents:
     def test_splits_six_copies_without_changing_source(self, tetra):
         vertices, faces = tetra

@@ -1,54 +1,16 @@
-"""Visible output must survive switching the optional rasterization engine."""
+"""Native kernel output matches independent reference stages."""
 
 from __future__ import annotations
 
-import importlib
 import tracemalloc
 
 import numpy as np
 import pytest
-
-from printstash_core.mesh import native_rasterizer, rasterizer
-
-
-class TestKernel:
-    def test_missing_extension_is_optional(self, monkeypatch):
-        original = importlib.import_module
-
-        def missing(name):
-            if name == "printstash_mesh_native":
-                raise ModuleNotFoundError("not installed", name=name)
-            return original(name)
-
-        monkeypatch.setattr(importlib, "import_module", missing)
-        assert native_rasterizer.kernel() is None
-
-    def test_broken_extension_is_not_hidden(self, monkeypatch):
-        def broken(name):
-            raise ModuleNotFoundError("missing dependency", name="broken_dependency")
-
-        monkeypatch.setattr(importlib, "import_module", broken)
-        with pytest.raises(ModuleNotFoundError, match="missing dependency"):
-            native_rasterizer.kernel()
+import reference_native_adapter as native_rasterizer
+import reference_rasterizer as rasterizer
 
 
 class TestNativeFrame:
-    def test_missing_extension_refuses_frame(self, monkeypatch):
-        monkeypatch.setattr(native_rasterizer, "kernel", lambda: None)
-        with pytest.raises(RuntimeError, match="not installed"):
-            native_rasterizer.NativeFrame(4, 4)
-
-    def test_missing_extension_refuses_preparation(self, monkeypatch):
-        monkeypatch.setattr(native_rasterizer, "kernel", lambda: None)
-        with pytest.raises(RuntimeError, match="not installed"):
-            native_rasterizer.prepare_normals(
-                np.zeros((3, 3), dtype=np.float32),
-                np.array([[0, 1, 2]]),
-                np.arange(3),
-                3,
-                64,
-            )
-
     def test_constant_silhouette_uses_flat_color(self, native):
         frame = native_rasterizer.NativeFrame(4, 4)
         tri = np.array([[[0, 0, 1], [4, 0, 1], [0, 4, 1]]], dtype=np.float32)
@@ -95,9 +57,7 @@ class TestNativeFrame:
 
 @pytest.fixture
 def native():
-    pytest.importorskip(
-        "printstash_mesh_native", reason="install backend/rust for native tests"
-    )
+    __import__("printstash_mesh_native")
     return native_rasterizer.rasterise_triangles
 
 
@@ -118,15 +78,6 @@ def paint(renderer, tri, normals, width=64, height=64, depth=None):
 
 
 class TestRasteriseTriangles:
-    def test_missing_extension_fails_explicitly(self, monkeypatch):
-        monkeypatch.setattr(native_rasterizer, "kernel", lambda: None)
-        with pytest.raises(RuntimeError, match="Rust mesh renderer is not installed"):
-            paint(
-                native_rasterizer.rasterise_triangles,
-                np.zeros((0, 3, 3)),
-                np.zeros((0, 3, 3)),
-            )
-
     def test_does_not_shade_an_empty_image(self, native):
         def unexpected(normals):
             raise AssertionError("empty image reached shading")
@@ -377,22 +328,6 @@ class TestNativePhong:
         assert not actual[1::2].any()
         assert np.isinf(depth[1::2]).all()
 
-    def test_supports_older_native_extension(self, native, phong_shader, monkeypatch):
-        from types import SimpleNamespace
-
-        installed = native_rasterizer.kernel()
-        monkeypatch.setattr(
-            native_rasterizer,
-            "kernel",
-            lambda: SimpleNamespace(rasterize=installed.rasterize),
-        )
-        triangle = np.array([[[0, 0, 1], [16, 0, 1], [0, 16, 1]]], dtype=np.float64)
-        normals = np.ones_like(triangle)
-        image = np.zeros((16, 16, 3), dtype=np.uint8)
-        depth = np.full((16, 16), np.inf)
-        native(image, depth, triangle, normals, phong_shader, np.ones(3) * 255, 16, 16)
-        assert image.any()
-
     def test_preserves_framebuffers_on_invalid_lighting(self, native, phong_shader):
         from dataclasses import replace
 
@@ -462,30 +397,3 @@ class TestNativePhong:
         native(image, depth, triangle, normals, phong_shader, base, 16, 16)
         np.testing.assert_array_equal(image, expected)
         np.testing.assert_array_equal(depth, expected_depth)
-
-    def test_supports_unfused_native_shading(self, native, phong_shader, monkeypatch):
-        from types import SimpleNamespace
-
-        installed = native_rasterizer.kernel()
-        monkeypatch.setattr(
-            native_rasterizer,
-            "kernel",
-            lambda: SimpleNamespace(
-                rasterize=installed.rasterize,
-                shade_fragments=installed.shade_fragments,
-            ),
-        )
-        triangle = np.array([[[0.0, 0.0, 1.0], [16.0, 0.0, 1.0], [0.0, 16.0, 1.0]]])
-        image = np.zeros((16, 16, 3), dtype=np.uint8)
-        depth = np.full((16, 16), np.inf)
-        native(
-            image,
-            depth,
-            triangle,
-            np.ones_like(triangle),
-            phong_shader,
-            np.ones(3) * 255,
-            16,
-            16,
-        )
-        assert image.any()

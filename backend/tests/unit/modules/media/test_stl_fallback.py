@@ -318,9 +318,7 @@ class TestRenderStlThumbnail:
 
         path = tmp_path / "io-error.stl"
         _write_renderable_binary_stl(path, 1)
-        from app.core.config import _overlay
 
-        monkeypatch.setitem(_overlay, "mesh_rasterizer", "python")
         original_open = Path.open
 
         def fail_open(_path: Path, *args, **kwargs):
@@ -329,8 +327,9 @@ class TestRenderStlThumbnail:
         monkeypatch.setattr(Path, "open", fail_open)
         assert stl_fallback._binary_stl_info(path) is None
         assert list(stl_fallback._iter_binary_triangles(path)) == []
-        assert stl_fallback._read_binary_samples(path, 1) is None
         monkeypatch.setattr(Path, "open", original_open)
+        path.unlink()
+        assert stl_fallback._read_binary_samples(path, 1) is None
 
         def fail_stat(_path: Path):
             raise OSError("missing")
@@ -351,15 +350,10 @@ class TestRenderStlThumbnail:
     ) -> None:
         path = tmp_path / "sampler-unreadable.stl"
         _write_renderable_binary_stl(path, 1)
-        from app.core.config import _overlay
 
-        monkeypatch.setitem(_overlay, "mesh_rasterizer", "python")
         info = (1, path.stat().st_size)
 
-        def fail_open(_path: Path, *args, **kwargs):
-            raise OSError("unreadable")
-
-        monkeypatch.setattr(Path, "open", fail_open)
+        path.unlink()
 
         assert stl_fallback._read_binary_samples(path, 1, info=info) is None
 

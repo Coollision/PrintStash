@@ -6,7 +6,6 @@ input order before submission and held until the writer consumes the result.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
@@ -94,17 +93,7 @@ class PreparedImports:
         )
         from printstash_core.mesh.native_rasterizer import kernel
 
-        native = (
-            kernel() if render_budget.settings.mesh_rasterizer != "python" else None
-        )
-        native_type = getattr(native, "NativeExecutor", None)
-        self.executor: Executor = (
-            native_type(self.workers)
-            if native_type is not None
-            else ThreadPoolExecutor(
-                max_workers=self.workers, thread_name_prefix="mesh-import"
-            )
-        )
+        self.executor: Executor = kernel().NativeExecutor(self.workers)
         self.pending: dict[int, tuple[Task, Analysis, render_budget.Reservation]] = {}
         self.next_submit = 0
 

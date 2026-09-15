@@ -228,9 +228,8 @@ class TestGeometryFromMesh:
         self, monkeypatch
     ) -> None:
         class _BrokenVolume:
-            vertices = np.zeros((3, 3), dtype=np.float64)
-            bounds = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])
-            faces = np.zeros((1, 3), dtype=np.int64)
+            vertices = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
+            faces = np.array([[0, 1, 2]], dtype=np.int64)
 
             @property
             def volume(self):

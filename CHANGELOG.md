@@ -4,6 +4,10 @@
 
 ### Performance
 
+- Backend mesh processing requires Rust. Removed renderer, loader and geometry
+  engine selectors, Python rendering callbacks, and optional native fallbacks.
+  Independent reference algorithms live only in test fixtures.
+
 - Backend preview rendering now runs as complete Rust jobs: camera selection,
   lighting, mesh preparation, rasterization, image processing and encoding.
   Streamed and sampled STL previews use the same standalone Rust crate. The
@@ -39,14 +43,13 @@
   a full garbage collection, including meshes loaded from scenes and ASCII STL.
 - Stored and DEFLATE 3MF model parts now decompress directly into the Rust XML
   parser using `zip` and `zlib-rs`, without Python read callbacks. Reads retain
-  byte limits and CRC checks; older extensions and other compression methods
-  keep the compatible path.
+  byte limits and CRC checks. Bzip2 and LZMA also use native decompression.
 - ZIP imports compute mesh geometry and previews ahead of the ordered writer.
   Worker counts adapt to CPU and memory limits; `VAULT_IMPORT_WORKERS=1` keeps
   serial execution. Shared memory reservations bound outstanding mesh work.
-- Both Docker variants include an optional Rust extension for binary STL and
+- Both Docker variants include the required Rust extension for binary STL and
   streamed 3MF mesh loading, geometry measurements, rasterization and canonical
-  lighting. Python remains available for comparison and compatibility.
+  lighting. Python reference stages are restricted to test fixtures.
 - Preview rendering culls back faces and avoids empty raster regions. Lossless
   WebP method 0 reduces encoding work while preserving decoded pixels; encoded
   thumbnails can be larger. The shared preview recipe advances to version 3.
@@ -59,21 +62,18 @@
 
 - Rust mesh previews now interpolate visible-pixel normals and apply the
   canonical lighting without allocating NumPy arrays for each shading step.
-  Custom shaders and older native extensions retain the Python path. Full-ZIP
+  Full-ZIP
   comparisons verify geometry and encoded previews against the reference.
 
 - Rust can now read binary STL geometry and calculate mesh dimensions and
   volume. Geometry measurements use bounded triangle batches and avoid unused
   inertia calculations. Native STL previews verify memory release before
-  requesting a full garbage collection. Python remains selectable through `VAULT_MESH_LOADER`
-  and `VAULT_MESH_GEOMETRY`; full-ZIP comparisons check saved geometry too.
-- 3MF previews stream mesh XML through the optional Rust extension, preserving
-  component placements and repeated instances. `VAULT_MESH_LOADER=python`
-  selects the existing loader for comparison. The renderer culls back-facing triangles
+  requesting a full garbage collection. Full-ZIP comparisons check saved geometry too.
+- 3MF previews stream mesh XML through the Rust extension, preserving
+  component placements and repeated instances. The renderer culls back-facing triangles
   before allocating per-corner shading arrays.
-- Mesh previews can use a Rust rasterization extension, included in both Docker
-  variants. Python remains available through `VAULT_MESH_RASTERIZER`, and the
-  full-ZIP benchmark can compare both engines with matching imported files.
+- Mesh previews use a Rust rasterization extension, included in both Docker
+  variants. The full-ZIP benchmark compares revisions with matching imported files.
 - AI Search adds transactional text indexing for Models, Collections, Multipart
   Models and Documents, authorized lexical suggestions, hybrid results with match
   evidence, and local image/geometry search. Image queries support file selection,

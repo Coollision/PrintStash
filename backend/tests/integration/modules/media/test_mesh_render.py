@@ -14,7 +14,8 @@ class TestMeshRender:
     def test_native_job_matches_previous_stages(self):
         pytest.importorskip("printstash_mesh_native")
         mesh = mesh_processing._load_mesh(TESTDATA_DIR / "benchy/3dbenchy.stl")
-        from printstash_core.mesh import native_rasterizer, rasterizer
+        import reference_native_adapter as native_rasterizer
+        import reference_rasterizer as rasterizer
 
         python = rasterizer.render_mesh_thumbnail(
             mesh,

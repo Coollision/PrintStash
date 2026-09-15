@@ -13,7 +13,6 @@ class TestEnvironmentRecord:
         assert "server startup" in record["timing_excludes"]
         assert record["cache_condition"].startswith("uncontrolled")
 
-
     def test_records_an_image_without_the_git_executable(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PATH", str(tmp_path))
         record = environment_record(tmp_path)
@@ -59,3 +58,27 @@ class TestComparePreviews:
     def test_rejects_missing_reference_pixels(self) -> None:
         with pytest.raises(SystemExit, match="no decoded pixel catalog"):
             compare_previews({}, {"preview_pixel_catalog": []}, mode="pixels")
+
+
+@pytest.mark.parametrize("flag", ["--renderer", "--loader", "--geometry"])
+def test_benchmark_rejects_removed_engine_flags(monkeypatch, flag, tmp_path):
+    import sys
+
+    from scripts import bench_import
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "bench_import",
+            str(tmp_path / "models.zip"),
+            "--output",
+            str(tmp_path / "result.json"),
+            flag,
+            "python",
+        ],
+    )
+    with pytest.raises(SystemExit) as exit:
+        bench_import.main()
+    assert exit.value.code == 2
+    assert not (tmp_path / "result.json").exists()

@@ -1,13 +1,11 @@
 """Load 3MF mesh arrays incrementally while preserving build instances.
 
-The optional Rust extension inflates stored/DEFLATE members directly into its
-XML parser. Older extensions and other compression methods use ZipExtFile.
+Rust inflates stored, DEFLATE, bzip2 and LZMA members into its XML parser.
 Only scene XML and numeric arrays survive; unrelated members are not inflated.
 """
 
 from __future__ import annotations
 
-import importlib
 import posixpath
 import xml.etree.ElementTree as ET
 import zipfile
@@ -16,15 +14,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
-
-def available() -> bool:
-    try:
-        module = importlib.import_module("printstash_mesh_native")
-    except ModuleNotFoundError as exc:
-        if exc.name != "printstash_mesh_native":
-            raise
-        return False
-    return hasattr(module, "parse_3mf_xml")
+from .native_rasterizer import kernel
 
 
 def _part_path(current: str, reference: str) -> str:
@@ -54,14 +44,12 @@ def _transform(attributes: dict[str, str]) -> Any:
 
 
 def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
-    """Return a complete scene, or None when the native parser is unavailable."""
-    if not available():
-        return None
+    """Return a complete scene using the required native parser."""
     import networkx as nx
     import numpy as np
     import trimesh
 
-    native = importlib.import_module("printstash_mesh_native")
+    native = kernel()
 
     if type(max_bytes) is not int or max_bytes < 1:
         raise ValueError("invalid 3MF byte limit")
@@ -77,10 +65,8 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
         primary = next((n for n in names if n.lower() == "3d/3dmodel.model"), None)
         if primary is None:
             raise ValueError("3MF model part is missing")
-        native_archive = None
-        if hasattr(native, "ThreeMfArchive"):
-            native_archive = native.ThreeMfArchive(path)
-            stack.callback(native_archive.close)
+        native_archive = native.ThreeMfArchive(path)
+        stack.callback(native_archive.close)
         parts: dict[str, dict[str, ET.Element]] = {}
         arrays: dict[tuple[str, str], list[tuple[Any, Any]]] = {}
         roots: dict[str, ET.Element] = {}
@@ -93,16 +79,9 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
             if part not in names:
                 raise ValueError("3MF component part is missing")
             info = names[part]
-            if native_archive is not None and info.compress_type in (
-                zipfile.ZIP_STORED,
-                zipfile.ZIP_DEFLATED,
-            ):
-                shell, packed = native_archive.read_part(
-                    part, info.file_size, info.CRC, remaining
-                )
-            else:
-                with archive.open(part) as source:
-                    shell, packed = native.parse_3mf_xml(source, max_bytes=remaining)
+            shell, packed = native_archive.read_part(
+                part, info.file_size, info.CRC, remaining
+            )
             remaining -= names[part].file_size
             root = ET.fromstring(shell)
             if root.tag.rsplit("}", 1)[-1] != "model":

@@ -2332,6 +2332,7 @@ mesh = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pillow" },
+    { name = "printstash-mesh-native" },
     { name = "trimesh" },
 ]
 network = [
@@ -2367,6 +2368,7 @@ requires-dist = [
     { name = "paho-mqtt", marker = "extra == 'printers-all'", specifier = ">=2.1,<3" },
     { name = "pillow", marker = "python_full_version >= '3.13' and extra == 'mesh'", specifier = ">=11,<13" },
     { name = "pillow", marker = "python_full_version < '3.13' and extra == 'mesh'", specifier = ">=10,<13" },
+    { name = "printstash-mesh-native", marker = "extra == 'mesh'", directory = "rust" },
     { name = "pycentauri", marker = "extra == 'elegoo'", specifier = ">=0.6.5,<1" },
     { name = "pycentauri", marker = "extra == 'printers-all'", specifier = ">=0.6.5,<1" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.403" },
