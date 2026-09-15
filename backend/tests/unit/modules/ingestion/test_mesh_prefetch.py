@@ -11,8 +11,9 @@ from app.modules.media import mesh_operations
 from app.modules.media import render_budget as rb
 
 
-@pytest.fixture
-def parallel(monkeypatch, tmp_path):
+@pytest.fixture(params=["python", "rust"])
+def parallel(monkeypatch, tmp_path, request):
+    monkeypatch.setitem(_overlay, "mesh_rasterizer", request.param)
     monkeypatch.setitem(_overlay, "import_workers", 2)
     monkeypatch.setattr(rb, "effective_cpus", lambda: 4)
     monkeypatch.setattr(rb, "memory_budget", lambda: 1024 * rb.MIB)

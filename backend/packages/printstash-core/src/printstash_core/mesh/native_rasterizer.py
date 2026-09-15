@@ -275,3 +275,20 @@ def prepare_mesh(
     if native is None:
         raise RuntimeError("Rust mesh renderer is not installed")
     return native.PreparedPreview(vertices.tobytes(), faces.tobytes(), chunk_size)
+
+
+def encode_preview(
+    rgba: bytes, width: int, height: int, supersample: int, output_format: str
+) -> bytes:
+    """Resize and encode the owned preview through the optional native extension."""
+    return kernel().process_image(
+        rgba,
+        width * supersample,
+        height * supersample,
+        width,
+        height,
+        "lanczos",
+        True,
+        True,
+        output_format,
+    )

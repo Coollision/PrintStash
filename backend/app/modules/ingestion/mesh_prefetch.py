@@ -6,18 +6,29 @@ input order before submission and held until the writer consumes the result.
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 from time import monotonic
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Protocol
 
 from printstash_core.imports import StagedAsset
 
 from app.core.logging import get_logger
 from app.db.models import SUFFIX_TO_FILE_TYPE, FileType
 from app.modules.media import render_budget
+
+
+class Task(Protocol):
+    def result(self, timeout: float | None = None) -> Any: ...
+
+
+class Executor(Protocol):
+    def submit(self, function: Callable[..., Any], *args: Any) -> Task: ...
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None: ...
+
 
 StagedFile = tuple[Path, str] | StagedAsset
 Progress = Callable[[float], None]
@@ -81,12 +92,20 @@ class PreparedImports:
             self.workers,
             self.capacity,
         )
-        self.executor = ThreadPoolExecutor(
-            max_workers=self.workers, thread_name_prefix="mesh-import"
+        from printstash_core.mesh.native_rasterizer import kernel
+
+        native = (
+            kernel() if render_budget.settings.mesh_rasterizer != "python" else None
         )
-        self.pending: dict[
-            int, tuple[Future[None], Analysis, render_budget.Reservation]
-        ] = {}
+        native_type = getattr(native, "NativeExecutor", None)
+        self.executor: Executor = (
+            native_type(self.workers)
+            if native_type is not None
+            else ThreadPoolExecutor(
+                max_workers=self.workers, thread_name_prefix="mesh-import"
+            )
+        )
+        self.pending: dict[int, tuple[Task, Analysis, render_budget.Reservation]] = {}
         self.next_submit = 0
 
     def __enter__(self) -> PreparedImports:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import struct
 from array import array
 from dataclasses import dataclass
@@ -564,24 +565,44 @@ def render_stl_thumbnail(
 
     if not np.isfinite(coarse_zbuffer).any():
         return None
-    alpha = np.where(np.isfinite(coarse_zbuffer), 255, 0).astype(np.uint8)
-    image = np.asarray(
-        Image.fromarray(coarse_image, mode="RGB").resize(
-            (width, height), Image.Resampling.BILINEAR
-        ),
-        dtype=np.uint8,
-    ).copy()
-    alpha = np.asarray(
-        Image.fromarray(alpha, mode="L").resize(
-            (width, height), Image.Resampling.BILINEAR
-        ),
-        dtype=np.uint8,
-    )
-    rgba = np.dstack([image, alpha])
-    output = io.BytesIO()
-    Image.fromarray(rgba, mode="RGBA").save(output, format="PNG", optimize=True)
+    native = None
+    if os.environ.get("VAULT_MESH_RASTERIZER", "auto") != "python":
+        from printstash_core.mesh.native_rasterizer import kernel
+
+        native = kernel()
+    if hasattr(native, "process_image"):
+        alpha = np.where(np.isfinite(coarse_zbuffer), 255, 0).astype(np.uint8)
+        data = native.process_image(
+            np.dstack((coarse_image, alpha)).tobytes(),
+            coverage_width,
+            coverage_height,
+            width,
+            height,
+            "bilinear",
+            False,
+            False,
+            "PNG",
+        )
+    else:
+        alpha = np.where(np.isfinite(coarse_zbuffer), 255, 0).astype(np.uint8)
+        image = np.asarray(
+            Image.fromarray(coarse_image, mode="RGB").resize(
+                (width, height), Image.Resampling.BILINEAR
+            ),
+            dtype=np.uint8,
+        ).copy()
+        alpha = np.asarray(
+            Image.fromarray(alpha, mode="L").resize(
+                (width, height), Image.Resampling.BILINEAR
+            ),
+            dtype=np.uint8,
+        )
+        rgba = np.dstack([image, alpha])
+        output = io.BytesIO()
+        Image.fromarray(rgba, mode="RGBA").save(output, format="PNG", optimize=True)
+        data = output.getvalue()
     return STLThumbnailResult(
-        png=output.getvalue(),
+        png=data,
         bounds_min=sampled.bounds_min,
         bounds_max=sampled.bounds_max,
         triangle_count=sampled.triangle_count,

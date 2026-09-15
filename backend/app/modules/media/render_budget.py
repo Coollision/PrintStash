@@ -111,29 +111,46 @@ class Reservation:
     def release(self) -> None:
         with self.owner.condition:
             if not self.released:
-                self.owner.used -= self.size
-                self.owner.jobs -= 1
+                self.owner._used -= self.size
+                self.owner._jobs -= 1
                 self.released = True
                 self.owner.condition.notify_all()
 
 
 class RenderBudget:
     def __init__(self) -> None:
+        from printstash_core.mesh.native_rasterizer import kernel
+
+        native = kernel() if settings.mesh_rasterizer != "python" else None
+        native_type = getattr(native, "NativeBudget", None)
+        self.native = native_type() if native_type is not None else None
         self.condition = threading.Condition()
-        self.used = 0
-        self.jobs = 0
+        self._used = 0
+        self._jobs = 0
+
+    @property
+    def used(self) -> int:
+        return self.native.used if self.native is not None else self._used
+
+    @property
+    def jobs(self) -> int:
+        return self.native.jobs if self.native is not None else self._jobs
 
     def acquire(
         self, size: int, *, capacity: int, jobs: int, wait: bool = True
     ) -> Reservation | None:
+        if capacity <= 0 or jobs <= 0:
+            raise ValueError("invalid admission capacity")
         size = min(max(1, size), capacity)
+        if self.native is not None:
+            return self.native.acquire(size, capacity, jobs, wait)
         with self.condition:
             while self.used + size > capacity or self.jobs >= jobs:
                 if not wait:
                     return None
                 self.condition.wait()
-            self.used += size
-            self.jobs += 1
+            self._used += size
+            self._jobs += 1
             return Reservation(self, size)
 
 

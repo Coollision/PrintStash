@@ -38,8 +38,27 @@ def to_webp(data: bytes, *, normalize: bool = True, width: int | None = None) ->
     thumbnail as a retryable derivative; hostile input is never stored raw.
     """
     try:
-        from PIL import Image
+        from printstash_core.mesh.native_rasterizer import kernel
         from printstash_core.mesh.preview_profile import PREVIEW_PROFILE
+
+        selected_width = int(settings.model_thumbnail_width) if width is None else width
+        if type(selected_width) is not int or not 320 <= selected_width <= 1280:
+            raise ValueError("thumbnail_width_invalid")
+        native = kernel() if settings.mesh_rasterizer != "python" else None
+        convert = getattr(native, "normalize_thumbnail", None)
+        if convert is not None:
+            try:
+                converted = convert(
+                    data, selected_width, normalize, PREVIEW_PROFILE.margin_fraction
+                )
+            except ValueError as exc:
+                if str(exc) == "thumbnail_empty":
+                    raise ThumbnailValidationError("thumbnail_empty") from exc
+                raise
+            if converted is not None:
+                return converted
+
+        from PIL import Image
 
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)

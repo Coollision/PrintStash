@@ -294,6 +294,7 @@ def render_mesh_thumbnail(
     frame_factory: Callable[[int, int], RasterFrame] | None = None,
     normal_preparer: Callable[..., FloatArray] | None = None,
     mesh_preparer: Callable[..., PreparedMesh] | None = None,
+    image_encoder: Callable[..., bytes] | None = None,
 ) -> bytes | None:
     """Render a PNG thumbnail from an already-loaded mesh.
 
@@ -361,7 +362,7 @@ def render_mesh_thumbnail(
                 shade.parameters + (255.0, 255.0, 255.0),
                 tuple(int(v) for v in np.clip(albedo * 0.6 * 255.0, 0, 255)),
             )
-            return _encode_preview(
+            return (image_encoder or _encode_preview)(
                 rgba_bytes, width, height, supersample, output_format
             )
 
@@ -637,7 +638,9 @@ def render_mesh_thumbnail(
             alpha = np.where(zbuf < np.inf, np.uint8(255), np.uint8(0)).astype(np.uint8)
             rgba_bytes = np.dstack([img, alpha]).tobytes()
 
-        return _encode_preview(rgba_bytes, width, height, supersample, output_format)
+        return (image_encoder or _encode_preview)(
+            rgba_bytes, width, height, supersample, output_format
+        )
 
     except Exception:
         if logger is not None:

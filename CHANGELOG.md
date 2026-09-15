@@ -4,6 +4,13 @@
 
 ### Performance
 
+- Native previews resize and encode images in Rust, including depth shading and
+  final PNG/JPEG/WebP thumbnail normalization. Lossless codecs retain decoded
+  pixels; resized edges can differ slightly from Pillow.
+- Import computation uses a bounded Rayon executor and native memory admission
+  when available. Running work drains before staged inputs are removed, and
+  completed results retain their memory reservation until publication.
+
 - Large STL files that must use bounded recovery reserve that route's memory
   estimate, allowing concurrent recovery when the import budget has room.
 - Binary STL recovery validates and samples source blocks in Rust, then projects

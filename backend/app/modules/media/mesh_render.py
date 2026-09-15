@@ -82,8 +82,11 @@ def render_mesh_thumbnail(
     frame_factory = None
     normal_preparer = None
     mesh_preparer = None
+    image_encoder = None
     if settings.mesh_rasterizer != "python":
         native = native_rasterizer.kernel()
+        if hasattr(native, "process_image"):
+            image_encoder = native_rasterizer.encode_preview
         if hasattr(native, "PreparedPreview"):
             mesh_preparer = native_rasterizer.prepare_mesh
         if hasattr(native, "NativeFrame"):
@@ -102,6 +105,7 @@ def render_mesh_thumbnail(
         frame_factory=frame_factory,
         normal_preparer=normal_preparer,
         mesh_preparer=mesh_preparer,
+        image_encoder=image_encoder,
     )
 
 

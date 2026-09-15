@@ -87,8 +87,9 @@ again afterward.
 `VAULT_MESH_RASTERIZER` accepts `auto` (the default), `python` or `rust`.
 `auto` uses Rust when the extension is installed. `python` provides an explicit
 fallback. Budgeted STL recovery can also calculate depth in Rust, preserving its
-float32 depth buffer and partial-tile accounting. Binary source reading can run
-in Rust; scene setup and image encoding remain in the isolated Python worker.
+float32 depth buffer and partial-tile accounting. Binary source reading, depth
+shading and image encoding can run in Rust;
+scene setup remains in the isolated Python worker.
 
 Compare complete imports with explicit engines:
 
@@ -115,8 +116,8 @@ projects the camera view, culls faces and computes crease-aware corner normals.
 It receives the mesh once and processes drawing batches inside Rust, without
 per-batch Python callbacks or triangle/normal array transfers. Position and face
 indices use 32 bits; coordinates use float32 and accumulated normals use float64.
-The camera and material recipes remain shared with the Python path. Pillow handles
-image resizing and encoding through its existing native codecs.
+The camera and material recipes remain shared with the Python path. The native image path uses `fast_image_resize` for SIMD resizing and `image`
+for PNG and lossless WebP encoding. It does not create another image thread pool.
 
 Custom lighting callbacks and older native extensions retain the earlier fragment
 adapter, with Python shading batches of at most 16,384 visible pixels when needed.
@@ -172,15 +173,17 @@ constant memory.
 For exact binary STL files that exceed full-mesh admission, Rust owns both source
 passes. The first pass validates coordinates, measures bounds and retains the
 same deterministic 4,096-point framing sample. The second pass projects bounded
-blocks into one retained depth buffer. The completed depth buffer crosses into
-Python once for screen-space shading and encoding. The worker retains its source,
+blocks into one retained depth buffer. Rust then shades the completed depth
+buffer and encodes the image without
+allocating the former NumPy neighbour arrays. The encoded image crosses into
+Python for atomic publication. The worker retains its source,
 triangle, candidate, memory and deadline limits. It checks source identity before
 and after each pass and rejects changed files or incomplete renders.
 
 The bounded fallback sampler also reads binary STL records in Rust, preserving
 midpoint sampling, finite-coordinate filtering and completion metadata. ASCII
-recovery and the fallback coverage/shading path still use Python/NumPy. They are
-not part of the callback-free binary source path. `VAULT_MESH_RASTERIZER=python`
+reading and fallback triangle coverage still use Python/NumPy. Fallback image
+resizing and encoding run in Rust when available. `VAULT_MESH_RASTERIZER=python`
 selects the earlier preview and fallback implementation.
 
 ## Binary STL and geometry measurements
@@ -275,7 +278,11 @@ Workers return geometry and encoded thumbnails. Model resolution, deduplication,
 versions, collections, storage publication and durable job states remain on the
 ordered ingestion path. A failed file is reported through that same path, and
 outstanding workers drain before their reservations are released. Rust performs
-the native mesh operations; scheduling and persistence remain in Python.
+the native mesh operations. A bounded Rayon pool executes per-file jobs, native
+condition variables handle waits, and a shared Rust gate reserves bytes and job
+slots across imports and foreground render requests. Python retains format
+dispatch, progress delivery and ordered database publication. Each worker calls
+the existing per-file adapter once; there are no Python callbacks per mesh block.
 
 Within each Artifact publication, repeated content changes are collected before
 refreshing search projections. The projection is flushed before the existing
@@ -300,3 +307,33 @@ The report records requested and effective worker counts. Repeat runs before
 choosing a setting: more workers can increase CPU work and memory use without
 reducing elapsed time. This change does not remove archive entry/size limits or
 replace the existing extraction of selected entries before ingestion.
+
+## Native image processing and worker coordination
+
+The optional extension also handles final thumbnail normalization for PNG, JPEG
+and WebP: bounded decoding, alpha bounds, crop, resize, transparent canvas and
+lossless WebP encoding. Images over 25 million source pixels are rejected before
+pixel decoding; decoder allocations have a separate 256 MiB limit. Empty images
+retain the existing validation error. Other legacy input formats use Pillow.
+Already canonical WebP thumbnails are validated and reused without reencoding.
+
+Resizing uses Lanczos3 with alpha handling for ordinary previews and independent
+channels for the recovery silhouette. Depth shading reads neighbouring samples
+and smooths normals in Rust with bounded buffers. PNG and WebP remain lossless;
+changing the resize implementation can change edge pixels, and changing the
+encoder changes file bytes. Comparisons therefore check decoded pixels as well
+as source hashes, geometry and processing outcomes. Exact compressed-byte parity
+is not a promise across these image engines.
+
+The executor has an explicit worker count and at most twice that count in active
+or queued jobs. Import admission keeps its smaller existing input window. A
+completed task does not release its memory reservation until publication consumes
+it. Shutdown rejects new jobs, cancels pending work when requested and waits for
+active work with the interpreter lock released. Errors become per-file results;
+worker exceptions do not retain mesh tracebacks. The application must close the
+executor before deleting staged inputs, as `PreparedImports` does.
+
+`VAULT_MESH_RASTERIZER=python` selects the earlier image and executor paths;
+installations with older extensions also retain those adapters. The inference
+query-image preprocessing, format dispatch, progress reporting, SQL transactions
+and STEP/OpenCASCADE conversion are not migrated by this change.

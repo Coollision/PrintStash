@@ -411,10 +411,7 @@ def _render(
     reservoir: _FramingReservoir,
     native_source=None,
 ) -> int:
-    import io
-
     import numpy as np
-    from PIL import Image
 
     from app.modules.media.mesh_render import RasterBudget, _rasterise_triangles
 
@@ -564,6 +561,36 @@ def _render(
     if not finite.any() or rendered == 0:
         raise _InvalidSTL("no visible triangles")
 
+    data = _encode_depth(zbuffer, scale, width, height)
+    if len(data) > 8 * 1024 * 1024:
+        raise _BudgetExceeded("output budget")
+    temporary = output.with_suffix(output.suffix + ".tmp")
+    temporary.write_bytes(data)
+    os.replace(temporary, output)
+    return raster_budget.used
+
+
+def _encode_depth(zbuffer, scale, width: int, height: int) -> bytes:
+    from printstash_core.mesh.preview_profile import PREVIEW_PROFILE
+
+    if os.environ.get("VAULT_MESH_RASTERIZER", "auto") != "python":
+        from printstash_core.mesh.native_rasterizer import kernel
+
+        native = kernel()
+        if hasattr(native, "shade_depth") and hasattr(native, "process_image"):
+            rgba = native.shade_depth(
+                zbuffer.tobytes(), width, height, scale, PREVIEW_PROFILE.material_albedo
+            )
+            return native.process_image(
+                rgba, width, height, width, height, "lanczos", False, False, "PNG"
+            )
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    finite = np.isfinite(zbuffer)
+    image = np.zeros((height, width, 3), dtype=np.uint8)
     # Reconstruct a smooth normal field from neighbouring depth samples.  The
     # arrays below are all fixed to the thumbnail dimensions (never triangle
     # count), and invalid neighbours are ignored so a real hole remains
@@ -625,7 +652,7 @@ def _render(
     # without touching transparent pixels.  Accumulate one component at a time
     # so temporary memory stays O(width*height), independent of triangle count.
     smoothed = np.zeros_like(normals)
-    support = np.zeros((coverage_height, coverage_width), dtype=np.float32)
+    support = np.zeros((height, width), dtype=np.float32)
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
             shifted_valid = np.roll(finite, (dy, dx), axis=(0, 1))
@@ -671,12 +698,7 @@ def _render(
     buffer = io.BytesIO()
     rgba.save(buffer, format="PNG", optimize=True)
     data = buffer.getvalue()
-    if len(data) > 8 * 1024 * 1024:
-        raise _BudgetExceeded("output budget")
-    temporary = output.with_suffix(output.suffix + ".tmp")
-    temporary.write_bytes(data)
-    os.replace(temporary, output)
-    return raster_budget.used
+    return data
 
 
 def _write_manifest(path: Path, manifest: dict[str, object]) -> None:

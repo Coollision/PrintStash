@@ -7,7 +7,9 @@ use pyo3::types::PyBytes;
 
 mod components;
 mod geometry;
+mod image_processing;
 mod mesh_prepare;
+mod orchestration;
 mod prepared_preview;
 mod preview;
 mod shading;
@@ -265,6 +267,16 @@ fn rasterize_phong<'py>(
 
 #[pymodule]
 fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<orchestration::NativeBudget>()?;
+    module.add_class::<orchestration::NativeReservation>()?;
+    module.add_class::<orchestration::NativeExecutor>()?;
+    module.add_class::<orchestration::NativeTask>()?;
+    module.add_function(wrap_pyfunction!(image_processing::process_image, module)?)?;
+    module.add_function(wrap_pyfunction!(image_processing::shade_depth, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        image_processing::normalize_thumbnail,
+        module
+    )?)?;
     module.add_class::<preview::NativeFrame>()?;
     module.add_class::<prepared_preview::PreparedPreview>()?;
     module.add_class::<stl_pipeline::NativeStlSource>()?;
