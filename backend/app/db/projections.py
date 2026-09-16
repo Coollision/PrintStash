@@ -58,7 +58,7 @@ def bind_content_projection(
 
 
 def content_changed(session: Session, kind: str, ids: Iterable[int | None]) -> None:
-    """Project staged source edits atomically; no-op when the feature is absent."""
+    """Register staged source edits atomically; no-op when the feature is absent."""
     if _projection is None:
         return
     # Evaluate lazy row identities after INSERT has assigned their primary keys.

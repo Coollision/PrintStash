@@ -1,4 +1,4 @@
-"""API content writes make their durable passages visible in the same commit."""
+"""API content writes persist intent; the projection worker publishes passages."""
 
 import pytest
 from sqlmodel import select
@@ -7,6 +7,8 @@ from app.db.models.search import SearchPassage
 from app.db.projections import bind_content_projection
 from app.db.session import get_session_factory
 from app.modules.search.projection import LibraryProjection
+from tests.ingestion_work import drain_sources
+from tests.search_projection import drain_search
 
 
 @pytest.fixture
@@ -18,7 +20,7 @@ def projection():
 
 class TestSearchPassageLifecycle:
     @pytest.mark.asyncio
-    async def test_indexes_a_new_document_before_commit_returns(
+    async def test_indexes_a_new_document_after_background_projection(
         self, projection, api, superuser_headers
     ):
         response = await api.post(
@@ -29,6 +31,8 @@ class TestSearchPassageLifecycle:
         assert response.status_code == 201, response.text
 
         with get_session_factory().scoped_session() as session:
+            assert session.exec(select(SearchPassage.text)).all() == []
+            drain_search(session)
             assert session.exec(select(SearchPassage.text)).all() == [
                 "Title: Assembly guide\nBody: Slide the lid into the box."
             ]
@@ -76,6 +80,7 @@ class TestSearchPassageLifecycle:
         )
         assert upload.status_code == 202, upload.text
         for _ in range(100):
+            await drain_sources()
             response = await api.get(
                 f"/api/v1/ingest/jobs/{upload.json()['job_id']}",
                 headers=superuser_headers,
@@ -85,6 +90,8 @@ class TestSearchPassageLifecycle:
                 break
             await asyncio.sleep(0.05)
         assert job["state"] == "completed", job
+        with get_session_factory().scoped_session() as session:
+            drain_search(session)
         response = await api.get(
             "/api/v1/search",
             headers=superuser_headers,

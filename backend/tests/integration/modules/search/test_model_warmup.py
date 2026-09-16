@@ -18,6 +18,11 @@ from app.modules.search.model_warmup import ModelWarmup
 from tests.paths import BACKEND_DIR
 
 
+@pytest.fixture(autouse=True)
+def _use_threaded_db(threaded_hub_db):
+    """Warmup polls consent while the requesting connection commits it."""
+
+
 @pytest.fixture
 def delayed_model(warm_model, monkeypatch, tmp_path):
     model, _ = warm_model

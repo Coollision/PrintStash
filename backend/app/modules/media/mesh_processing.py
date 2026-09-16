@@ -443,6 +443,10 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
         # trimesh releases, and flattening ``Scene.geometry`` directly drops
         # those instance transforms. Keep the scene until ``dump`` explicitly
         # bakes every graph path into each mesh instance.
+        if loaded is None and suffix == ".3mf":
+            from app.modules.media.mesh_resources import load_3mf
+
+            loaded = load_3mf(path).whole_mesh
         if loaded is None:
             if file_type is None:
                 loaded = trimesh.load_scene(str(path), process=False)

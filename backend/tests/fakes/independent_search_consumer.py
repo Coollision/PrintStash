@@ -46,6 +46,17 @@ def exercise_search(client):
             break
         time.sleep(0.05)
     assert job["state"] == "completed", job
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        model = client.get(f"/api/v1/models/{job['model_id']}").json()
+        if not model["enrichment_pending"]:
+            break
+        time.sleep(0.05)
+    assert model["enrichment_pending"] is False
+    from tests.search_projection import drain_search
+
+    with get_session_factory().scoped_session() as session:
+        drain_search(session)
     response = client.get("/api/v1/search", params={"q": "red", "mode": "lexical"})
     assert response.status_code == 200, response.text
     assert {row["subject_type"] for row in response.json()["items"]} == expected
@@ -140,6 +151,10 @@ def run():
         )
         assert response.status_code == 201
         doc_id = response.json()["id"]
+        from tests.search_projection import drain_search
+
+        with get_session_factory().scoped_session() as session:
+            drain_search(session)
         lexical = client.get("/api/v1/search", params={"q": "boat", "mode": "lexical"})
         assert lexical.status_code == 200
         assert any(item["subject_id"] == doc_id for item in lexical.json()["items"])

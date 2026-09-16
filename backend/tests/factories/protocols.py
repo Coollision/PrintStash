@@ -42,6 +42,7 @@ from app.db.models import (
     InboxSourceKind,
     IndexGeneration,
     InferenceEndpoint,
+    IngestionReview,
     Model,
     ModelFamily,
     ModelFamilyMember,
@@ -89,9 +90,11 @@ from app.db.models import (
     VaultMigrationObject,
     VaultMigrationRun,
 )
+from app.db.models.media import ArtifactAnalysisGeneration, ThumbnailGeneration
 from app.db.models.search import (
     SearchDependency,
     SearchPassage,
+    SearchProjectionRequest,
     SearchReconciliationState,
 )
 from app.db.models.search_expansion import SearchExpansion, SearchExpansionTerm
@@ -615,6 +618,20 @@ class MakeSearchDependency(Protocol):
     ) -> SearchDependency: ...
 
 
+class MakeArtifactAnalysis(Protocol):
+    def __call__(self, file: File, **overrides: Any) -> ArtifactAnalysisGeneration: ...
+
+
+class MakeThumbnailGeneration(Protocol):
+    def __call__(self, file: File, **overrides: Any) -> ThumbnailGeneration: ...
+
+
+class MakeSearchProjectionRequest(Protocol):
+    def __call__(
+        self, source: ContentSource, **overrides: Any
+    ) -> SearchProjectionRequest: ...
+
+
 class MakeSearchReconciliationState(Protocol):
     def __call__(
         self, kind: SubjectType, **overrides: Any
@@ -639,3 +656,14 @@ class MakeSearchLexicalPosting(Protocol):
 
 class MakeUserSearchPreferences(Protocol):
     def __call__(self, user: User, **overrides: Any) -> UserSearchPreferences: ...
+
+
+class MakeIngestionReview(Protocol):
+    def __call__(
+        self,
+        *,
+        kind: str = "model_files",
+        owner: User | None = None,
+        expired: bool = False,
+        **overrides: Any,
+    ) -> IngestionReview: ...

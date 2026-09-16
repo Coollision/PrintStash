@@ -60,6 +60,18 @@
 
 ### Added
 
+- Imports save source files before generating geometry, previews, capture covers
+  and search projections. Durable background stages recover after restart,
+  expose readiness and retries, and share bounded compute and storage admission.
+  Archive imports expand one selected entry at a time. Review selections persist
+  across restarts. See [ingestion architecture](docs/architecture/ingestion.md).
+- Rust computes connected components and weighted normals; multi-view rendering
+  reuses prepared geometry. 3MF loading preserves physical units and build-item
+  semantics consistently across native and Python paths.
+- Similarity verification builds and queries immutable geometric trees in Rust,
+  releasing Python's interpreter lock while retaining exact surface projections
+  and bounded work. Older installations retain the Python implementation.
+
 - Rust mesh previews now interpolate visible-pixel normals and apply the
   canonical lighting without allocating NumPy arrays for each shading step.
   Full-ZIP
@@ -74,7 +86,7 @@
   before allocating per-corner shading arrays.
 - Mesh previews use a Rust rasterization extension, included in both Docker
   variants. The full-ZIP benchmark compares revisions with matching imported files.
-- AI Search adds transactional text indexing for Models, Collections, Multipart
+- AI Search adds durable background text indexing for Models, Collections, Multipart
   Models and Documents, authorized lexical suggestions, hybrid results with match
   evidence, and local image/geometry search. Image queries support file selection,
   drag-and-drop and device camera capture. Pinned BGE, CLIP and OpenShape models
@@ -114,6 +126,12 @@
   separate from verified geometry, and analysis never downloads model weights.
 
 ### Fixed
+
+- Resumable uploads retain their executable ingestion command if finalization
+  fails after the durable handoff. Background workers preserve shutdown requests
+  even when an active unit fails while draining.
+- 3MF resource loading preserves units, package relationships and repeated
+  build instances that share a part number.
 
 - Mobile startup ships smaller translation bundles by sharing message keys across
   languages and compacting translations identical to their keys.

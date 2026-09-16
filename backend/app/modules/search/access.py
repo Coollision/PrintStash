@@ -10,7 +10,9 @@ from app.db.models import (
     Document,
     Model,
     MultipartModel,
+    SearchDependency,
     SearchPassage,
+    SearchProjectionRequest,
     User,
 )
 from app.db.scopes import live
@@ -112,7 +114,35 @@ def _passage_visibility(session: Session, visible):
         .correlate(SearchPassage)
         .exists()
     )
-    return and_(owner_visible, ~hidden_dependency)
+    # A removed relationship can leave otherwise-authorized text in an old
+    # passage. Hide that text until the durable source change is projected;
+    # live owner/contributor permission checks above remain mandatory too.
+    dirty_owner = (
+        select(SearchProjectionRequest.id)
+        .where(
+            SearchProjectionRequest.source_kind == SearchPassage.subject_type,
+            SearchProjectionRequest.source_id == SearchPassage.subject_id,
+        )
+        .correlate(SearchPassage)
+        .exists()
+    )
+    dirty_dependency = (
+        select(SearchDependency.id)
+        .join(
+            SearchProjectionRequest,
+            and_(
+                SearchProjectionRequest.source_kind == SearchDependency.source_kind,
+                SearchProjectionRequest.source_id == SearchDependency.source_id,
+            ),
+        )
+        .where(
+            SearchDependency.subject_type == SearchPassage.subject_type,
+            SearchDependency.subject_id == SearchPassage.subject_id,
+        )
+        .correlate(SearchPassage)
+        .exists()
+    )
+    return and_(owner_visible, ~hidden_dependency, ~dirty_owner, ~dirty_dependency)
 
 
 def passage_in_scope(allowed_ids):

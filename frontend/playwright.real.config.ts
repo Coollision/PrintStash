@@ -17,6 +17,7 @@ export default defineConfig({
   // server; including it here would point it at this already-configured app.
   testIgnore: [
     "ai-search/**/*.spec.ts",
+    "enrichment/**/*.spec.ts",
     "storage/**/*.spec.ts",
     "storage-presets/**/*.spec.ts",
     "critical/**/*.spec.ts",

@@ -13,6 +13,7 @@ from app.modules.search import configuration, generations, semantic
 from app.modules.search.retrieval import search
 from app.schemas.inference import SearchSettings
 from app.schemas.search_generations import GenerationProposal
+from tests.search_projection import drain_search
 
 
 @pytest.fixture(autouse=True)
@@ -296,6 +297,7 @@ class TestSearch:
         documents = [make_document(f"Workshop note {number}") for number in range(101)]
         content_changed(db_session, "document", [document.id for document in documents])
         db_session.commit()
+        drain_search(db_session)
         advance_indexing(40)
 
         result = search(
@@ -607,6 +609,7 @@ class TestSearch:
         collection = make_collection("Bracket & assembly")
         content_changed(db_session, "collection", [collection.id])
         db_session.commit()
+        drain_search(db_session)
 
         result = search(db_session, actor, "Bracket")
 

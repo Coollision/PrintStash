@@ -10,6 +10,7 @@ from app.modules.search import lexical_index
 from app.modules.search.projection import LibraryProjection
 from app.modules.search.retrieval import search
 from app.schemas.models import ModelUpdate
+from tests.search_projection import drain_search
 
 
 @pytest.fixture(autouse=True)
@@ -29,17 +30,20 @@ class TestLexicalQuery:
         first, second = make_model("Bracket"), make_model("Bracket")
         content_changed(db_session, "model", [first.id, second.id])
         db_session.commit()
+        drain_search(db_session)
         state = db_session.get(SearchLexicalState, 1)
         assert (state.document_count, state.total_length) == (2, 6)
         assert db_session.get(SearchLexicalTerm, "bracket").document_frequency == 2
 
         update_model(first.id, ModelUpdate(name="Support"), actor, db_session)
+        drain_search(db_session)
         db_session.expire_all()
         assert (state.document_count, state.total_length) == (2, 6)
         assert db_session.get(SearchLexicalTerm, "bracket").document_frequency == 1
         assert db_session.get(SearchLexicalTerm, "support").document_frequency == 1
 
         soft_delete_model(db_session, first)
+        drain_search(db_session)
         db_session.expire_all()
         assert (state.document_count, state.total_length) == (1, 3)
         assert db_session.get(SearchLexicalTerm, "support") is None
@@ -50,8 +54,10 @@ class TestLexicalQuery:
         body = make_model("Notes", description="bracket")
         title = make_model("Bracket")
         content_changed(db_session, "model", [body.id, title.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
 
         result = search(db_session, actor, "bracket")
 
@@ -64,9 +70,12 @@ class TestLexicalQuery:
         actor = make_user(superuser=True)
         model = make_model("Bracket")
         content_changed(db_session, "model", [model.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         update_model(model.id, ModelUpdate(name="Hinge"), actor, db_session)
+        drain_search(db_session)
 
         assert [row.subject_id for row in search(db_session, actor, "hinge").items] == [
             model.id
@@ -79,9 +88,12 @@ class TestLexicalQuery:
         actor = make_user(superuser=True)
         model = make_model("Bracket")
         content_changed(db_session, "model", [model.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         soft_delete_model(db_session, model)
+        drain_search(db_session)
 
         assert search(db_session, actor, "bracket").items == []
 
@@ -89,8 +101,10 @@ class TestLexicalQuery:
         actor = make_user(superuser=True)
         model = make_model("Bracket")
         content_changed(db_session, "model", [model.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         model.name = "Hinge"
         db_session.add(model)
         content_changed(db_session, "model", [model.id])
@@ -108,6 +122,7 @@ class TestLexicalQuery:
         model = make_model("Bracket")
         content_changed(db_session, "model", [model.id])
         db_session.commit()
+        drain_search(db_session)
 
         result = search(db_session, actor, "bracket")
 
@@ -120,12 +135,16 @@ class TestLexicalQuery:
         actor = make_user(superuser=True)
         model = make_model("Bracket")
         content_changed(db_session, "model", [model.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         db_session.execute(text("DROP TABLE search_passages_fts"))
         db_session.commit()
+        drain_search(db_session)
 
         update_model(model.id, ModelUpdate(name="Hinge"), actor, db_session)
+        drain_search(db_session)
         result = search(db_session, actor, "hinge")
 
         assert result.lexical_backend == "ranked_like"
@@ -137,11 +156,15 @@ class TestLexicalQuery:
         actor = make_user(superuser=True)
         models = [make_model(f"Bracket {i}") for i in range(3)]
         content_changed(db_session, "model", [row.id for row in models])
+        drain_search(db_session)
         assert lexical_index.rebuild_partition(db_session, limit=2) == 2
         db_session.commit()
+        drain_search(db_session)
         assert lexical_index.capability(db_session) == "ranked_like"
+        drain_search(db_session)
         assert lexical_index.rebuild_partition(db_session, limit=2) == 1
         db_session.commit()
+        drain_search(db_session)
 
         result = search(db_session, actor, "bracket")
 
@@ -154,6 +177,7 @@ class TestLexicalQuery:
         other = make_model("50mm bracket")
         content_changed(db_session, "model", [literal.id, other.id])
         db_session.commit()
+        drain_search(db_session)
 
         result = search(db_session, actor, "%_")
 
@@ -170,8 +194,10 @@ class TestLexicalQuery:
         title = make_model("Bracket")
         body = make_model("Notes", description="bracket")
         content_changed(db_session, "model", [title.id, body.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         previous = bind_content_search(LibrarySearch())
         try:
             rows = list_items(db_session, actor, q="bracket")
@@ -189,8 +215,10 @@ class TestLexicalQuery:
         title = make_model("Bracket")
         body = make_model("Notes", description="bracket")
         content_changed(db_session, "model", [title.id, body.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         previous = bind_content_search(LibrarySearch())
         try:
             first = page_items(
@@ -219,10 +247,13 @@ class TestLexicalQuery:
         actor = make_user(superuser=True)
         model = make_model("Bracket")
         content_changed(db_session, "model", [model.id])
+        drain_search(db_session)
         lexical_index.rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         db_session.execute(text("DROP TABLE search_passages_fts"))
         db_session.commit()
+        drain_search(db_session)
         previous = bind_content_search(LibrarySearch())
         try:
             assert [row.id for row in list_items(db_session, actor, q="bracket")] == [
@@ -250,9 +281,11 @@ class TestBoundedCandidates:
         actor = make_user(superuser=True)
         target = make_model("UniqueNeedle")
         sync_subject(db_session, SearchSubject(SubjectType.MODEL, target.id))
+        drain_search(db_session)
         while lexical_index.rebuild_partition(db_session):
             pass
         db_session.commit()
+        drain_search(db_session)
         statement = ordered_passages(
             db_session, "UniqueNeedle", visible_passage_ids(db_session, actor)
         )
@@ -265,9 +298,11 @@ class TestBoundedCandidates:
         state.native_phase = "broken"
         state.native_after_id = 0
         db_session.add(state)
+        drain_search(db_session)
         while lexical_index.rebuild_partition(db_session):
             pass
         db_session.commit()
+        drain_search(db_session)
         statement = ordered_passages(
             db_session, "UniqueNeedle", visible_passage_ids(db_session, actor)
         )

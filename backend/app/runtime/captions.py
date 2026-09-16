@@ -6,6 +6,7 @@ from app.core.logging import get_logger
 from app.db.session import get_session_factory
 from app.modules.search.caption_worker import CaptionProcessor
 from app.runtime import maintenance
+from app.runtime.workers import run_unit
 
 logger = get_logger(__name__)
 
@@ -21,12 +22,8 @@ def process_one():
 
 async def run_captions():
     while True:
-        unit = asyncio.create_task(asyncio.to_thread(process_one))
         try:
-            await asyncio.shield(unit)
-        except asyncio.CancelledError:
-            await unit
-            raise
+            await run_unit(process_one)
         except Exception:
             logger.warning("Caption work paused; retrying a bounded unit")
         await asyncio.sleep(5)

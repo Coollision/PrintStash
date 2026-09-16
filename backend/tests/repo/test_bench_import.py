@@ -2,7 +2,11 @@
 
 import pytest
 
-from scripts.bench_import import compare_previews, environment_record
+from scripts.bench_import import (
+    compare_fingerprints,
+    compare_previews,
+    environment_record,
+)
 
 
 class TestEnvironmentRecord:
@@ -18,6 +22,26 @@ class TestEnvironmentRecord:
         record = environment_record(tmp_path)
         assert record["git_revision"] is None
         assert record["dependency_versions"]["numpy"] is not None
+
+
+
+class TestCompareFingerprints:
+    def test_accepts_equal_final_output(self):
+        before = {"fingerprint_catalog": [["source", 0, "recipe", "ready", "hash"]]}
+        after = {"fingerprint_catalog": [("source", 0, "recipe", "ready", "hash")]}
+
+        compare_fingerprints(before, after)
+
+    def test_rejects_changed_final_output(self):
+        with pytest.raises(SystemExit, match="final similarity fingerprints differ"):
+            compare_fingerprints(
+                {"fingerprint_catalog": [["source", 0, "recipe", "ready", "before"]]},
+                {"fingerprint_catalog": [["source", 0, "recipe", "ready", "after"]]},
+            )
+
+    def test_requires_final_output_evidence(self):
+        with pytest.raises(SystemExit, match="final fingerprint catalog is missing"):
+            compare_fingerprints({}, {"fingerprint_catalog": []})
 
 
 class TestComparePreviews:
@@ -82,3 +106,11 @@ def test_benchmark_rejects_removed_engine_flags(monkeypatch, flag, tmp_path):
         bench_import.main()
     assert exit.value.code == 2
     assert not (tmp_path / "result.json").exists()
+
+class TestLatencySummary:
+    def test_reports_the_navigation_probe_distribution(self):
+        from scripts.bench_import import latency_summary
+
+        assert latency_summary(
+            [{"library_ms": 100}, {"library_ms": 20}, {"library_ms": 50}]
+        ) == {"samples": 3, "median_ms": 50, "p95_ms": 100, "max_ms": 100}

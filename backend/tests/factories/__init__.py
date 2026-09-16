@@ -109,6 +109,10 @@ from tests.factories.manufacturing import (
     build_multipart_build_part,
     build_multipart_part,
 )
+from tests.factories.media import build_artifact_analysis as build_artifact_analysis
+from tests.factories.media import (
+    build_thumbnail_generation as build_thumbnail_generation,
+)
 from tests.factories.ops import (
     build_artifact_upload,
     build_artifact_upload_part,
@@ -127,6 +131,7 @@ from tests.factories.ops import (
     build_external_library,
     build_failure_domain_declaration,
     build_filament_profile,
+    build_ingestion_review,
     build_library_observation,
     build_notification_channel,
     build_restore_marker,
@@ -176,6 +181,9 @@ from tests.factories.search import (
     build_search_lexical_term as build_search_lexical_term,
 )
 from tests.factories.search import build_search_passage as build_search_passage
+from tests.factories.search import (
+    build_search_projection_request as build_search_projection_request,
+)
 from tests.factories.search import (
     build_search_reconciliation_state as build_search_reconciliation_state,
 )
@@ -233,6 +241,7 @@ __all__ = [
     "build_audit_finding",
     "build_audit_run",
     "build_background_job",
+    "build_ingestion_review",
     "build_capture",
     "build_capture_slot",
     "build_collection",
@@ -319,6 +328,9 @@ __all__ += [
     "build_user_search_preferences",
     "build_inference_endpoint",
     "build_search_dependency",
+    "build_artifact_analysis",
+    "build_thumbnail_generation",
+    "build_search_projection_request",
     "build_search_reconciliation_state",
     "build_similarity_candidate",
     "build_similarity_decision",

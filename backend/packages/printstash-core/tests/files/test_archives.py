@@ -441,3 +441,125 @@ class TestExtractSelectedFailures:
         staged = [path.name for path, _name in extracted]
         assert len(set(staged)) == 2
         assert all(name.endswith(".stl") for name in staged)
+
+
+class TestIncrementalExtraction:
+    def test_expands_only_one_entry_at_a_time(self, tmp_path):
+        from printstash_core.files import iter_selected
+
+        archive = tmp_path / "parts.zip"
+        with zipfile.ZipFile(archive, "w") as output:
+            output.writestr("one.stl", b"first")
+            output.writestr("two.stl", b"second")
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        selected = iter_selected(
+            archive,
+            ["one.stl", "two.stl"],
+            staging_dir=staging,
+            max_entry_bytes=100,
+            importable_suffixes={".stl"},
+        )
+        first, _ = next(selected)
+        assert first.read_bytes() == b"first"
+        assert len(list(staging.iterdir())) == 1
+        second, _ = next(selected)
+        assert not first.exists()
+        assert second.read_bytes() == b"second"
+        selected.close()
+        assert not list(staging.iterdir())
+
+
+class TestArchivesContract:
+    @pytest.mark.parametrize(
+        "entries,names",
+        [
+            ({"folder/": b""}, ["folder/"]),
+            ({"notes.txt": b"notes"}, ["notes.txt"]),
+            ({"part.stl": b"model"}, []),
+        ],
+    )
+    def test_incremental_extraction_skips_non_model_selections(
+        self, tmp_path, entries, names
+    ):
+        from printstash_core.files import iter_selected
+
+        archive = _archive(tmp_path / "selection.zip", entries)
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        assert (
+            list(
+                iter_selected(
+                    archive,
+                    names,
+                    staging_dir=staging,
+                    max_entry_bytes=100,
+                    importable_suffixes={".stl"},
+                )
+            )
+            == []
+        )
+        assert list(staging.iterdir()) == []
+
+    @pytest.mark.parametrize(
+        "name,payload,reason",
+        [
+            ("../escape.stl", b"model", "archive_unsafe_entry"),
+            ("large.stl", b"x" * 101, "archive_entry_too_large"),
+        ],
+    )
+    def test_incremental_extraction_revalidates_selected_entries(
+        self, tmp_path, name, payload, reason
+    ):
+        from printstash_core.files import iter_selected
+
+        archive = _archive(tmp_path / "unsafe.zip", {name: payload})
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        with pytest.raises(ArchivePolicyError, match=reason):
+            list(
+                iter_selected(
+                    archive,
+                    [name],
+                    staging_dir=staging,
+                    max_entry_bytes=100,
+                    importable_suffixes={".stl"},
+                )
+            )
+        assert list(staging.iterdir()) == []
+
+    def test_incremental_extraction_cleans_up_after_exhaustion(self, tmp_path):
+        from printstash_core.files import iter_selected
+
+        archive = _archive(tmp_path / "selected.zip", {"part.stl": b"model"})
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        observed = [
+            (name, path.read_bytes())
+            for path, name in iter_selected(
+                archive,
+                ["part.stl", "part.stl"],
+                staging_dir=staging,
+                max_entry_bytes=100,
+                importable_suffixes={".stl"},
+            )
+        ]
+        assert observed == [("part.stl", b"model")]
+        assert list(staging.iterdir()) == []
+
+    def test_eager_extraction_skips_unselected_entries(self, tmp_path):
+        archive = _archive(
+            tmp_path / "selection.zip", {"other.stl": b"other", "part.stl": b"model"}
+        )
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        extracted = extract_selected(
+            archive,
+            ["part.stl"],
+            staging_dir=staging,
+            max_entry_bytes=100,
+            importable_suffixes={".stl"},
+        )
+        assert [(name, path.read_bytes()) for path, name in extracted] == [
+            ("part.stl", b"model")
+        ]

@@ -237,6 +237,7 @@ class Settings(BaseSettings):
     # aspect ratio. The Settings UI offers bounded presets so higher fidelity is
     # an explicit CPU/RAM/storage tradeoff on self-hosted machines.
     model_thumbnail_width: int = Field(default=640, ge=320, le=1280)
+    thumbnail_processing: Literal["background", "on_demand", "disabled"] = "background"
 
     # Similar Models remains opt-in. Its geometry budget is bounded by the
     # renderer's adaptive budget and the descriptor implementation's own cap.

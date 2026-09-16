@@ -116,6 +116,35 @@ class SearchReconciliationState(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class SearchProjectionRequest(SQLModel, table=True):
+    """Coalesced source change; its bounded fanout resumes after a restart.
+
+    Projection performs database work only. The worker locks this row for one
+    short page transaction, so it needs no independently expiring task lease.
+    """
+
+    __tablename__ = "search_projection_requests"
+    __audit_exclude__: ClassVar[bool] = True
+    __table_args__ = (
+        UniqueConstraint(
+            "source_kind", "source_id", name="uq_search_projection_source"
+        ),
+        Index("ix_search_projection_due", "next_attempt_at", "created_at"),
+        CheckConstraint("source_id > 0", name="source_id"),
+    )
+    id: int | None = Field(default=None, primary_key=True)
+    source_kind: str = Field(max_length=32)
+    source_id: int
+    revision: int = 1
+    cursor_kind: str = Field(default="", max_length=32)
+    cursor_id: int = 0
+    attempts: int = 0
+    next_attempt_at: datetime = Field(default_factory=utcnow)
+    error_code: str | None = Field(default=None, max_length=64)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class SearchLexicalPosting(SQLModel, table=True):
     """Per-passage frequencies used by the PostgreSQL BM25 scorer."""
 

@@ -48,6 +48,20 @@ from tests import factories
 
 
 class TestGeneratedIdentities:
+    def test_search_projection_builder_creates_eligible_work(self, db_session):
+        from app.db.models import SearchPassage
+        from app.db.projections import ContentSource
+        from app.modules.search.projection import process_pending
+
+        model = factories.build_model(db_session, "Bracket")
+        factories.build_search_projection_request(
+            db_session, ContentSource("model", model.id)
+        )
+
+        process_pending(db_session)
+
+        assert db_session.exec(select(SearchPassage.text)).all() == ["Title: Bracket"]
+
     def test_search_dependency_builder_tracks_removed_sources(self, db_session):
         from app.db.projections import ContentSource
         from app.modules.search.projection import affected_subjects
@@ -66,8 +80,10 @@ class TestGeneratedIdentities:
         first = factories.build_document(db_session, "First")
         second = factories.build_document(db_session, "Second")
         factories.build_search_reconciliation_state(
-            db_session, SubjectType.DOCUMENT,
-            watermark_at=second.updated_at, watermark_id=second.id,
+            db_session,
+            SubjectType.DOCUMENT,
+            watermark_at=second.updated_at,
+            watermark_id=second.id,
             partition_after_id=first.id,
         )
 
@@ -851,3 +867,20 @@ class TestSimilarityFactories:
         )
 
         assert unit_component(vector.unit_key) == component
+
+
+class TestFactoriesContract:
+    def test_review_builder_preserves_the_private_owner(self, db_session):
+        from app.modules.ingestion.review_manifests import get
+
+        owner = factories.build_user(db_session)
+        review = factories.build_ingestion_review(db_session, owner=owner)
+        restored = get(review.kind, review.id)
+        assert restored["owner_user_id"] == owner.id
+
+
+    def test_expired_review_builder_is_ineligible_for_acceptance(self, db_session):
+        from app.modules.ingestion.review_manifests import get
+
+        review = factories.build_ingestion_review(db_session, expired=True)
+        assert get(review.kind, review.id) is None

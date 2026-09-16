@@ -33,7 +33,7 @@ def owner(db_session: Session) -> User:
     about listing, redaction and progress rather than about users, so the owner is a
     fixture and the tests name it rather than hardcoding an id.
     """
-    return build_user(db_session, "import-owner")
+    return build_user(db_session, "import-owner", superuser=True)
 
 
 class TestMakerworldCookie:
@@ -236,19 +236,8 @@ class TestHandleCollectionUrl:
                 "resolve_collection_url",
                 AsyncMock(return_value=("Cool Collection", members)),
             ),
-            patch.object(
-                ingest_background,
-                "_stage_members",
-                AsyncMock(
-                    return_value=[
-                        importer.ResolvedGroup(
-                            source_url=members[0].page_url,
-                            title="A",
-                            staged_files=[(staged, "cube.stl")],
-                        )
-                    ]
-                ),
-            ),
+            patch.object(import_resolvers, "resolve_page_url", AsyncMock(return_value=None)),
+            patch.object(importer, "download_to_staging", AsyncMock(return_value=(staged, "cube.stl"))),
         ):
             await ingest_background._handle_collection_url(
                 job_id=job_id,
@@ -655,6 +644,8 @@ class TestRunFileSelectionImport:
     ) -> None:
         use_local_storage(tmp_path)
         job_id = registry.create(owner_user_id=owner.id)
+        staged = tmp_path / "readme.txt"
+        staged.write_text("No models here")
         with (
             patch.object(
                 import_resolvers,
@@ -662,7 +653,7 @@ class TestRunFileSelectionImport:
                 AsyncMock(return_value=["https://cdn.test/readme.txt"]),
             ),
             patch.object(
-                ingest_background, "_download_and_collect", AsyncMock(return_value=[])
+                importer, "download_to_staging", AsyncMock(return_value=(staged, "readme.txt"))
             ),
         ):
             await ingest_background.run_file_selection_import(
@@ -717,13 +708,13 @@ class TestRunCollectionMemberImport:
         use_local_storage(tmp_path)
         job_id = registry.create(owner_user_id=owner.id)
         with patch.object(
-            ingest_background,
-            "_stage_members",
+            import_resolvers,
+            "resolve_page_url",
             AsyncMock(side_effect=RuntimeError("boom")),
         ):
             await ingest_background.run_collection_member_import(
                 job_id=job_id,
-                members=[],
+                members=[import_resolvers.CollectionMember(page_url="https://example.com/model", title="Broken", source_id="1")],
                 target_collection="Cool",
                 tags=None,
                 actor_user_id=owner.id,
@@ -747,3 +738,75 @@ def _zip_bytes(*, entry: str = "cube.stl", content: bytes | None = None) -> byte
     with zipfile.ZipFile(buf, "w") as bundle:
         bundle.writestr(entry, content or _cube_stl_bytes())
     return buf.getvalue()
+
+
+class TestBackgroundContract:
+    @pytest.mark.asyncio
+    async def test_saves_the_first_download_before_acquiring_the_next(self, db_session, make_user, tmp_path, monkeypatch):
+        from sqlmodel import select
+
+        from app.db.models import File
+        use_local_storage(tmp_path)
+        actor = make_user(superuser=True)
+        job_id = registry.create(owner_user_id=actor.id)
+
+        async def links(*_args):
+            return ["https://cdn.test/first.stl", "https://cdn.test/second.stl"]
+
+        async def download(url):
+            if url.endswith("second.stl"):
+                with get_session_factory().scoped_session() as session:
+                    assert len(session.exec(select(File).where(File.ingestion_key.is_not(None))).all()) == 1
+            path = tmp_path / Path(url).name
+            path.write_bytes(_cube_stl_bytes())
+            return path, path.name
+
+        monkeypatch.setattr(import_resolvers, "resolve_selected_download", links)
+        monkeypatch.setattr(importer, "download_to_staging", download)
+        await ingest_background.run_file_selection_import(job_id=job_id, page_url="https://example.com/model",
+            files=[], collection=None, tags=None, actor_user_id=actor.id, session_factory=get_session_factory())
+        assert registry.get(job_id).succeeded == 2
+        assert registry.get(job_id).failed == 0
+
+
+    @pytest.mark.asyncio
+    async def test_resumes_a_partial_selection_without_downloading_saved_files(self, db_session, make_user, tmp_path, monkeypatch):
+        import asyncio
+
+        from sqlmodel import select
+
+        from app.db.models import File
+        use_local_storage(tmp_path)
+        actor = make_user(superuser=True)
+        job_id = registry.create(owner_user_id=actor.id)
+
+        async def links(*_args):
+            return ["https://cdn.test/first.stl", "https://cdn.test/second.stl"]
+
+        async def interrupted_download(url):
+            if url.endswith("second.stl"):
+                raise asyncio.CancelledError("worker stopped")
+            path = tmp_path / "first.stl"
+            path.write_bytes(_cube_stl_bytes())
+            return path, path.name
+
+        monkeypatch.setattr(import_resolvers, "resolve_selected_download", links)
+        monkeypatch.setattr(importer, "download_to_staging", interrupted_download)
+        arguments = dict(job_id=job_id, page_url="https://example.com/model", files=[], collection=None,
+            tags=None, actor_user_id=actor.id, session_factory=get_session_factory())
+        with pytest.raises(asyncio.CancelledError, match="worker stopped"):
+            await ingest_background.run_file_selection_import(**arguments)
+
+        async def remaining_download(url):
+            if not url.endswith("second.stl"):
+                raise AssertionError("saved source was downloaded again")
+            path = tmp_path / "second.stl"
+            path.write_bytes(_cube_stl_bytes())
+            return path, path.name
+
+        monkeypatch.setattr(importer, "download_to_staging", remaining_download)
+        await ingest_background.run_file_selection_import(**arguments)
+        assert registry.get(job_id).succeeded == 2
+        assert registry.get(job_id).failed == 0
+        with get_session_factory().scoped_session() as session:
+            assert len(session.exec(select(File).where(File.ingestion_key.is_not(None))).all()) == 2

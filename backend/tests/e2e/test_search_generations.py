@@ -360,6 +360,10 @@ class TestSearchGenerationLifecycle:
                 )
             )
             assert [response.status_code for response in documents] == [201] * 9
+            from tests.search_projection import drain_search
+
+            with get_session_factory().scoped_session() as session:
+                drain_search(session)
             proposal = await api.post(
                 "/api/v1/config/ai-search/generations",
                 headers=superuser_headers,

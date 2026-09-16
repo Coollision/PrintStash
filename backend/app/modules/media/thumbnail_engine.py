@@ -52,6 +52,7 @@ class ThumbnailFailureReason(str, Enum):
     RENDERER_NO_OUTPUT = "renderer_no_output"
     STORAGE = "storage"
     LEASE_LOST = "lease_lost"
+    NO_EMBEDDED_THUMBNAIL = "no_embedded_thumbnail"
 
 
 @dataclass(frozen=True)

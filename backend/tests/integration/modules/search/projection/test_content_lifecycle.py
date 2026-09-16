@@ -19,6 +19,7 @@ from app.schemas.models import (
 )
 from tests._env import use_local_storage
 from tests.factories import bearer
+from tests.search_projection import drain_search
 
 
 @pytest.fixture(autouse=True)
@@ -56,6 +57,7 @@ class TestDocumentProjection:
             json={"body": "New assembly steps"},
         )
         assert response.status_code == 200, response.text
+        drain_search(db_session)
         assert (
             passage_text(db_session, "document", doc.id)
             == f"Title: {doc.name}\nBody: New assembly steps"
@@ -66,6 +68,7 @@ class TestDocumentProjection:
         content_changed(db_session, "document", [doc.id])
         response = client.delete(f"/api/v1/documents/{doc.id}", headers=bearer(actor))
         assert response.status_code == 204, response.text
+        drain_search(db_session)
         assert passage_text(db_session, "document", doc.id) == ""
 
     def test_reindexes_a_restored_document(
@@ -76,23 +79,26 @@ class TestDocumentProjection:
             f"/api/v1/documents/{doc.id}/restore", headers=bearer(actor)
         )
         assert response.status_code == 200, response.text
+        drain_search(db_session)
         assert "Restore this guide" in passage_text(db_session, "document", doc.id)
 
     def test_removes_a_purged_document(self, client, actor, db_session, make_document):
         doc = make_document()
-        content_changed(db_session, "document", [doc.id])
-        response = client.delete(f"/api/v1/documents/{doc.id}", headers=bearer(actor))
+        identity = doc.id
+        content_changed(db_session, "document", [identity])
+        response = client.delete(f"/api/v1/documents/{identity}", headers=bearer(actor))
         assert response.status_code == 204, response.text
         response = client.delete(
-            f"/api/v1/documents/{doc.id}/permanent", headers=bearer(actor)
+            f"/api/v1/documents/{identity}/permanent", headers=bearer(actor)
         )
         assert response.status_code == 204, response.text
-        assert passage_text(db_session, "document", doc.id) == ""
+        drain_search(db_session)
+        assert passage_text(db_session, "document", identity) == ""
         assert (
             db_session.exec(
                 select(SearchDependency).where(
                     SearchDependency.subject_type == "document",
-                    SearchDependency.subject_id == doc.id,
+                    SearchDependency.subject_id == identity,
                 )
             ).all()
             == []
@@ -107,6 +113,7 @@ class TestDocumentProjection:
             },
         )
         assert response.status_code == 201, response.text
+        drain_search(db_session)
         assert (
             passage_text(db_session, "document", response.json()["id"])
             == "Title: Assembly\nBody: Press the latch firmly."
@@ -125,6 +132,7 @@ class TestDocumentProjection:
             },
         )
         assert response.status_code == 201, response.text
+        drain_search(db_session)
         assert (
             passage_text(db_session, "document", response.json()["id"])
             == "Title: assembly-manual\nFiles: assembly-manual.pdf"
@@ -145,6 +153,7 @@ class TestTaxonomyProjection:
             json={"name": "New"},
         )
         assert response.status_code == 200, response.text
+        drain_search(db_session)
         assert "Collection: new/child" in passage_text(db_session, "model", model.id)
 
     def test_replaces_collection_readme(
@@ -157,6 +166,7 @@ class TestTaxonomyProjection:
             json={"readme": "Snap fit assembly"},
         )
         assert response.status_code == 200, response.text
+        drain_search(db_session)
         assert "Description: Snap fit assembly" in passage_text(
             db_session, "collection", collection.id
         )
@@ -172,6 +182,7 @@ class TestTaxonomyProjection:
             json={"tags": ["flexible"]},
         )
         assert response.status_code == 200, response.text
+        drain_search(db_session)
         assert "Tags: flexible" in passage_text(db_session, "model", model.id)
 
     def test_removes_deleted_tag_text(
@@ -183,6 +194,7 @@ class TestTaxonomyProjection:
         content_changed(db_session, "model", [model.id])
         response = client.delete(f"/api/v1/tags/{tag.id}", headers=bearer(actor))
         assert response.status_code == 204, response.text
+        drain_search(db_session)
         assert "flexible" not in passage_text(db_session, "model", model.id)
 
 
@@ -194,6 +206,7 @@ class TestMultipartProjection:
             json={"name": "Gear assembly"},
         )
         assert response.status_code == 201, response.text
+        drain_search(db_session)
         assert (
             passage_text(db_session, "multipart_model", response.json()["id"])
             == "Title: Gear assembly"
@@ -209,6 +222,7 @@ class TestMultipartProjection:
             json={"name": "Gear assembly"},
         )
         assert response.status_code == 200, response.text
+        drain_search(db_session)
         assert (
             passage_text(db_session, "multipart_model", aggregate.id)
             == "Title: Gear assembly"
@@ -218,12 +232,14 @@ class TestMultipartProjection:
         self, client, actor, db_session, make_multipart_model
     ):
         aggregate = make_multipart_model()
-        content_changed(db_session, "multipart_model", [aggregate.id])
+        identity = aggregate.id
+        content_changed(db_session, "multipart_model", [identity])
         response = client.delete(
-            f"/api/v1/multipart-models/{aggregate.id}", headers=bearer(actor)
+            f"/api/v1/multipart-models/{identity}", headers=bearer(actor)
         )
         assert response.status_code == 204, response.text
-        assert passage_text(db_session, "multipart_model", aggregate.id) == ""
+        drain_search(db_session)
+        assert passage_text(db_session, "multipart_model", identity) == ""
 
 
 class TestModelProjection:
@@ -237,6 +253,7 @@ class TestModelProjection:
             actor,
             db_session,
         )
+        drain_search(db_session)
         assert "Collection: assembly" in passage_text(db_session, "model", model.id)
 
     def test_refreshes_batch_model_tags(self, actor, db_session, make_model):
@@ -244,17 +261,20 @@ class TestModelProjection:
         commands.batch_tag_models(
             ModelBatchTags(model_ids=[model.id], add=["flexible"]), actor, db_session
         )
+        drain_search(db_session)
         assert "Tags: flexible" in passage_text(db_session, "model", model.id)
 
     def test_removes_a_trashed_model(self, db_session, make_model):
         model = make_model()
         content_changed(db_session, "model", [model.id])
         trash.soft_delete_model(db_session, model)
+        drain_search(db_session)
         assert passage_text(db_session, "model", model.id) == ""
 
     def test_reindexes_a_restored_model(self, db_session, make_model):
         model = make_model(trashed=True)
         trash.restore_model(db_session, model)
+        drain_search(db_session)
         assert passage_text(db_session, "model", model.id) == f"Title: {model.name}"
 
     def test_refreshes_revision_notes(self, actor, db_session, make_model, make_file):
@@ -267,6 +287,7 @@ class TestModelProjection:
             actor,
             db_session,
         )
+        drain_search(db_session)
         assert "Revisions: Use a brim" in passage_text(db_session, "model", model.id)
 
     def test_removes_a_trashed_revision_filename(
@@ -277,7 +298,9 @@ class TestModelProjection:
         make_file(model, file_type=FileType.GCODE, filename="current.gcode")
         content_changed(db_session, "model", [model.id])
         revisions.remove_revision(db_session, actor, model.id, file.id)
+        drain_search(db_session)
         assert "obsolete.gcode" not in passage_text(db_session, "model", model.id)
+        drain_search(db_session)
         assert "current.gcode" in passage_text(db_session, "model", model.id)
 
     def test_refreshes_artifact_tags(self, actor, db_session, make_model, make_file):
@@ -286,6 +309,7 @@ class TestModelProjection:
         commands.replace_file_tags(
             model.id, file.id, TagSetUpdate(tags=["flexible"]), actor, db_session
         )
+        drain_search(db_session)
         assert "Tags: flexible" in passage_text(db_session, "model", model.id)
 
     def test_refreshes_provenance_override(
@@ -300,6 +324,7 @@ class TestModelProjection:
             value="Captured bracket",
         )
         db_session.commit()
+        drain_search(db_session)
         assert "Source titles: Captured bracket" in passage_text(
             db_session, "model", model.id
         )
@@ -320,6 +345,7 @@ class TestModelProjection:
             thumb_bytes=None,
             overwrite_thumbnail=False,
         )
+        drain_search(db_session)
         assert "Files: spring.stl" in passage_text(db_session, "model", model.id)
 
     def test_omits_derived_passages_from_audit(self, db_session, make_model):

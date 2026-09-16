@@ -8,6 +8,7 @@ from app.db.projections import bind_content_projection, content_changed
 from app.modules.search.lexical_index import rebuild_partition
 from app.modules.search.projection import LibraryProjection
 from tests.factories import bearer
+from tests.search_projection import drain_search
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +36,7 @@ class TestSearch:
         actor = make_user(superuser=True)
         configuration.update(db_session, SearchSettings(enabled=True))
         db_session.commit()
+        drain_search(db_session)
         body = BytesIO()
         Image.new("RGB", (1, 1), "gray").save(body, "PNG")
 
@@ -67,6 +69,7 @@ class TestSearch:
         actor = make_user(superuser=True)
         configuration.update(db_session, SearchSettings(enabled=True))
         db_session.commit()
+        drain_search(db_session)
         headers = bearer(actor) | {"Content-Type": "image/png"}
         body = b"invalid"
         if kind == "bytes":
@@ -115,6 +118,7 @@ class TestSearch:
         actor = make_user(superuser=True)
         configuration.update(db_session, SearchSettings(enabled=mode != "disabled"))
         db_session.commit()
+        drain_search(db_session)
         slots = threading.BoundedSemaphore(2)
         if mode == "busy":
             slots.acquire()
@@ -142,6 +146,7 @@ class TestSearch:
         content_changed(db_session, "model", [model.id])
         rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         assert (
             client.patch(
                 "/api/v1/search/settings",
@@ -163,6 +168,7 @@ class TestSearch:
         collection = make_collection("Bracket tools")
         content_changed(db_session, "collection", [collection.id])
         db_session.commit()
+        drain_search(db_session)
         response = client.get(
             "/api/v1/search", headers=auth_headers, params={"q": "bracket"}
         )
@@ -234,6 +240,7 @@ class TestSearch:
         content_changed(db_session, "model", [member.id])
         rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
 
         response = client.get(
             "/api/v1/search", headers=bearer(viewer), params={"q": "Secretprototype"}
@@ -256,6 +263,7 @@ class TestSearch:
         content_changed(db_session, "model", [model.id])
         rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         assert client.get(
             "/api/v1/search", headers=bearer(viewer), params={"q": "bracket"}
         ).json()["items"]
@@ -265,6 +273,7 @@ class TestSearch:
             )
         )
         db_session.commit()
+        drain_search(db_session)
 
         response = client.get(
             "/api/v1/search", headers=bearer(viewer), params={"q": "bracket"}
@@ -283,6 +292,7 @@ class TestSearch:
         content_changed(db_session, "document", [doc.id])
         rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
 
         response = client.get(
             "/api/v1/search", headers=bearer(actor), params={"q": "assembly"}
@@ -302,6 +312,7 @@ class TestSearch:
         models = [make_model(f"Bracket {i}") for i in range(3)]
         content_changed(db_session, "model", [row.id for row in models])
         db_session.commit()
+        drain_search(db_session)
         first = client.get(
             "/api/v1/search", headers=bearer(actor), params={"q": "bracket", "limit": 1}
         ).json()
@@ -323,6 +334,7 @@ class TestSearch:
         models = [make_model(f"Bracket {i}") for i in range(3)]
         content_changed(db_session, "model", [row.id for row in models])
         db_session.commit()
+        drain_search(db_session)
         first = client.get(
             "/api/v1/search", headers=bearer(actor), params={"q": "bracket", "limit": 2}
         ).json()
@@ -353,6 +365,7 @@ class TestStructuredSearch:
         content_changed(db_session, "model", [model.id])
         rebuild_partition(db_session)
         db_session.commit()
+        drain_search(db_session)
         make_print_job(
             file,
             state=PrintJobState.COMPLETED,

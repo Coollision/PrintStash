@@ -25,6 +25,7 @@ from app.modules.identity.auth import create_api_key
 from app.modules.ingestion import import_resolvers, inbox
 from app.modules.storage.hashing import sha256_file
 from app.modules.storage.storage_backend.runtime import get_backend
+from tests.ingestion_work import drain_enrichment, drain_sources
 from tests.paths import FIXTURES_DIR, TESTDATA_DIR
 
 
@@ -133,6 +134,7 @@ class TestBrowserCapture:
         )
         assert imported.status_code == 200, imported.text
 
+        await drain_sources()
         completed = await api.get(f"/api/v1/inbox/{item_id}", headers=superuser_headers)
         assert completed.json()["state"] == "completed", completed.text
         file_id = completed.json()["results"][0]["file_id"]
@@ -141,6 +143,7 @@ class TestBrowserCapture:
         assert e2e_db.exec(select(GeometryFingerprint)).all() == []
         from app.runtime import similarity
 
+        await drain_enrichment()
         assert await asyncio.to_thread(similarity.process_one) is True
         e2e_db.expire_all()
         fingerprint = e2e_db.exec(
@@ -246,6 +249,7 @@ class TestBrowserCapture:
                 json={"selected_ids": ["stl-1"]},
             )
             assert imported.status_code == 200, imported.text
+            await drain_sources()
             return (
                 await api.get(f"/api/v1/inbox/{item_id}", headers=superuser_headers)
             ).json()
@@ -379,6 +383,7 @@ class TestBrowserCapture:
             json={"selected_ids": ["good", "bad"]},
         )
         assert first.status_code == 200, first.text
+        await drain_sources()
         partial = (
             await api.get(f"/api/v1/inbox/{item_id}", headers=superuser_headers)
         ).json()
@@ -395,6 +400,7 @@ class TestBrowserCapture:
         )
         assert retried.status_code == 200, retried.text
         assert retried.json()["manifest"]["selected_ids"] == ["bad"]
+        await drain_sources()
         assert resolution_calls == [["good", "bad"], ["bad"]]
         completed = (
             await api.get(f"/api/v1/inbox/{item_id}", headers=superuser_headers)

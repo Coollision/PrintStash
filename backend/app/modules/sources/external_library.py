@@ -30,7 +30,6 @@ from croniter import croniter
 from sqlalchemy import exists, func, or_, update
 from sqlmodel import Session, select
 
-import app.modules.media.mesh_operations as mesh_operations
 from app.core.logging import get_logger
 from app.core.time import ensure_utc, utcnow
 from app.db.models import (
@@ -57,8 +56,6 @@ from app.modules.ingestion.ingestion import (
     strategy_for_artifact,
 )
 from app.modules.library import taxonomy
-from app.modules.media import thumbnail
-from app.modules.printing.profile_detection import upsert_detected_profiles
 from app.modules.sources.library_source import (
     LibrarySource,
     LibrarySourceError,
@@ -73,9 +70,6 @@ from app.modules.storage.hashing import sha256_file
 from app.modules.storage.root_markers import (
     read_root_marker_fd,
 )
-from app.modules.storage.storage_backend.contracts import StorageCollisionError
-from app.modules.storage.storage_backend.runtime import get_backend
-from app.modules.storage.storage_ownership import publish_bytes
 from app.runtime.jobs import registry
 
 from .root_binding import (
@@ -185,22 +179,11 @@ def _strategy_for(file_type: FileType):
     return strategy_for_artifact(file_type)
 
 
-def _process_external_file(
-    strategy, file_type: FileType, read_path: Path
-) -> tuple[dict, bytes | None]:
-    """Process a descriptor-pinned file with its canonical catalog type.
+def _process_external_file(strategy, file_type: FileType, read_path: Path) -> tuple[dict, bytes | None]:
+    """Read only the bounded facts required for G-code compatibility."""
+    from app.modules.media import gcode_parser
 
-    ``/proc/self/fd/N`` is intentionally suffixless.  Mesh processing therefore
-    receives the immutable catalog type explicitly, while all reads remain
-    anchored to the already-open descriptor and never reopen the configured
-    external root by path.
-    """
-    if file_type == FileType.GCODE:
-        return strategy.process(read_path)
-
-    return mesh_operations.analyze_mesh(
-        read_path, file_type=file_type.value, output_format="WEBP"
-    )
+    return (gcode_parser.parse(read_path) if file_type == FileType.GCODE else {}), None
 
 
 def _walk(root: Path) -> dict[str, tuple[int, float]]:
@@ -396,7 +379,7 @@ def _index_external_file(
                 session.commit()
                 session.refresh(model)
 
-    row = persist_artifact(
+    persist_artifact(
         session,
         model=model,
         staged_path=source_path,
@@ -412,16 +395,6 @@ def _index_external_file(
         external_library_id=library.id,
         source_mtime=mtime,
     )
-    try:
-        row.source_key = source_path.relative_to(
-            Path(library.root_path).expanduser().resolve(strict=False)
-        ).as_posix()
-    except ValueError as exc:
-        raise ExternalRootBindingError("mismatch", "path_outside_library_root") from exc
-    row.source_verified_at = utcnow()
-    session.add(row)
-    session.commit()
-    upsert_detected_profiles(session, meta)
 
 
 def _reindex_changed(
@@ -430,6 +403,7 @@ def _reindex_changed(
     source_path: Path,
     size: int,
     mtime: float | None,
+    source_entry: SourceEntry | None = None,
 ) -> bool:
     """Refresh an indexed file whose on-disk size/mtime changed.
 
@@ -437,6 +411,10 @@ def _reindex_changed(
     False when only the mtime moved (we just record the new signature)."""
     read_path = _read_path(source_path)
     new_hash = sha256_file(read_path)
+    if source_entry is not None:
+        file_row.source_key = source_entry.key
+        file_row.source_etag = source_entry.etag
+        file_row.source_version_id = source_entry.version_id
     if new_hash == file_row.sha256:
         file_row.size_bytes = size
         file_row.source_mtime = mtime
@@ -461,36 +439,20 @@ def _reindex_changed(
     if md is None:
         session.add(Metadata(file_id=file_row.id, **md_fields))
     else:
+        # Facts belong to the previous source hash until the worker replaces
+        # them; empty metadata must never expose obsolete dimensions as current.
+        for key in Metadata.model_fields:
+            if key not in {"id", "file_id", "created_at"}:
+                setattr(md, key, None)
         for k, v in md_fields.items():
             setattr(md, k, v)
         session.add(md)
-    # Signature and parsed metadata are one logical observation of the NAS
-    # source. A failed commit leaves both old so the next scan retries parsing.
+    from app.modules.media.analysis_generations import request_enrichment
+
+    request_enrichment(session, file_row, promote_thumbnail=strategy.overwrite_thumbnail, preserve_metadata=bool(meta))
+    content_changed(session, "model", [file_row.model_id])
     session.commit()
     session.refresh(file_row)
-
-    backend = get_backend()
-    assert file_row.id is not None
-    if thumb_bytes:
-        try:
-            publish_bytes(
-                session,
-                backend,
-                backend.thumbnail_key(file_row.id),
-                thumbnail.to_webp(thumb_bytes),
-                object_kind="thumbnail",
-            )
-            session.commit()
-        except (StorageCollisionError, ValueError):
-            # Existing thumbnails are never replaced without a separate,
-            # receipt-validated replacement primitive. Metadata reindexing can
-            # still succeed; preserving a stale derived image is safe.
-            logger.warning(
-                "external reindex preserved existing thumbnail for file %s",
-                file_row.id,
-            )
-
-    upsert_detected_profiles(session, meta)
     return True
 
 
@@ -602,14 +564,8 @@ def _index_remote_file(
             is_external=True,
             external_library_id=library.id,
             source_mtime=source_timestamp(content.entry.modified_at),
+            source_entry=content.entry,
         )
-        row.source_key = entry.key
-        row.source_etag = content.entry.etag
-        row.source_version_id = content.entry.version_id
-        row.source_verified_at = utcnow()
-        session.add(row)
-        session.commit()
-        upsert_detected_profiles(session, meta)
         return row
 
 
@@ -632,6 +588,7 @@ def _reindex_remote_file(
                 display_path,
                 content.entry.size,
                 source_timestamp(content.entry.modified_at),
+                source_entry=content.entry,
             )
             file_row.source_etag = content.entry.etag
             file_row.source_version_id = content.entry.version_id

@@ -1,4 +1,9 @@
 {
+  "Some details could not be prepared": "Some details could not be prepared",
+  "Preview available on request": "Preview available on request",
+  "Retry enrichment": "Retry enrichment",
+  "Generate preview": "Generate preview",
+  "Preparing previews and details": "Preparing previews and details",
   "aiSearch.matchDetails": "Why this result",
   "aiSearch.resultView": "Result view",
   "aiSearch.gridView": "Grid view",

@@ -1,8 +1,10 @@
 """A PostgreSQL installation can back up and restore through the public API."""
 
+import asyncio
 from uuid import uuid4
 
 import pytest
+from printstash_core.search.passages import SubjectType
 from sqlalchemy import create_engine, make_url, text
 from sqlmodel import Session, SQLModel
 
@@ -17,6 +19,7 @@ from app.db.session import (
 )
 from app.db.url import normalize_database_url
 from app.modules.search.projection import LibraryProjection
+from app.runtime.search import process_one
 from tests.containers import postgres_url
 from tests.e2e._backup_helpers import setup_and_login
 
@@ -78,6 +81,14 @@ class TestPostgresBackup:
         assert result.status_code == 200, result.text
         assert result.json()["name"] == "Bracket instructions"
         assert result.json()["body"] == "Mount the shelf"
-        found = await api.get("/api/v1/search", params={"q": "Bracket"}, headers=headers)
+        for _ in range(20):
+            await asyncio.to_thread(process_one, SubjectType.DOCUMENT)
+            found = await api.get(
+                "/api/v1/search", params={"q": "Bracket"}, headers=headers
+            )
+            if found.json()["items"]:
+                break
         assert found.status_code == 200, found.text
-        assert [(item["subject_type"], item["subject_id"]) for item in found.json()["items"]] == [("document", document_id)]
+        assert [
+            (item["subject_type"], item["subject_id"]) for item in found.json()["items"]
+        ] == [("document", document_id)]

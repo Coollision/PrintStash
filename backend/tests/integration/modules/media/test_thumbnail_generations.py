@@ -68,6 +68,113 @@ class _SuccessfulEngine:
 
 
 class TestThumbnailGenerations:
+    @pytest.mark.parametrize("policy", ["background", "on_demand", "disabled"])
+    def test_honors_processing_policies(
+        self, db_session, make_model, make_file, policy
+    ):
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            request_thumbnail,
+        )
+
+        file = make_file(make_model(), file_type=FileType.STL)
+        assert claim_thumbnail(db_session, file) is None
+        generation = request_thumbnail(db_session, file, promote=False, policy=policy)
+        db_session.commit()
+        claim = claim_thumbnail(db_session, file)
+        assert (claim is not None) == (policy == "background")
+        if policy != "background":
+            claim = claim_thumbnail(db_session, file, force=True)
+        assert claim is not None
+        db_session.refresh(generation)
+        assert generation.lease_token == claim.token
+
+    def test_rejects_invalid_policy_without_changing_selection(
+        self, db_session, make_model, make_file
+    ):
+        from app.modules.media.thumbnail_generations import request_thumbnail
+
+        model = make_model()
+        file = make_file(model, file_type=FileType.STL)
+        version = model.thumbnail_selection_version
+        with pytest.raises(ValueError, match="thumbnail_processing_policy"):
+            request_thumbnail(db_session, file, promote=True, policy="unknown")
+        db_session.refresh(model)
+        assert model.thumbnail_selection_version == version
+        assert db_session.exec(select(ThumbnailGeneration)).all() == []
+
+    def test_rejects_malformed_rendered_bytes(self, db_session, make_model, make_file):
+        from dataclasses import replace
+
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            finish_thumbnail,
+            request_thumbnail,
+        )
+
+        model = make_model()
+        file = make_file(model, file_type=FileType.STL)
+        get_backend().write_bytes(b"source", file.path)
+        generation = request_thumbnail(db_session, file, promote=True)
+        db_session.commit()
+        claim = claim_thumbnail(db_session, file)
+        result = finish_thumbnail(
+            db_session,
+            file,
+            claim,
+            replace(_SuccessfulEngine().generate(None), image=b"not an image"),
+        )
+
+        assert result.available is False
+        assert result.failure_reason == "invalid_source"
+        db_session.refresh(generation)
+        db_session.refresh(model)
+        assert generation.state == ThumbnailGenerationState.FAILED
+        assert generation.storage_key is None
+        assert model.thumbnail_path is None
+        assert get_backend().read_bytes(file.path) == b"source"
+
+    def test_rejects_a_vanished_generation(self, db_session, make_model, make_file):
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            finish_thumbnail,
+            request_thumbnail,
+        )
+
+        model = make_model()
+        file = make_file(model, file_type=FileType.STL)
+        generation = request_thumbnail(db_session, file, promote=True)
+        db_session.commit()
+        claim = claim_thumbnail(db_session, file)
+        db_session.delete(generation)
+        db_session.commit()
+
+        result = finish_thumbnail(
+            db_session, file, claim, _SuccessfulEngine().generate(None)
+        )
+
+        assert result.failure_reason == "lease_lost"
+        assert result.available is False
+        assert model.thumbnail_path is None
+        assert db_session.exec(select(ThumbnailGeneration)).all() == []
+
+    def test_coalesces_a_second_claimant(self, db_session, make_model, make_file):
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            request_thumbnail,
+        )
+
+        file = make_file(make_model(), file_type=FileType.STL)
+        generation = request_thumbnail(db_session, file, promote=False)
+        db_session.commit()
+        first = claim_thumbnail(db_session, file)
+        assert first is not None
+
+        assert claim_thumbnail(db_session, file) is None
+        db_session.refresh(generation)
+        assert generation.lease_token == first.token
+        assert generation.attempts == 1
+
     def test_survives_generation_contention_after_compute_claim(
         self, db_session, monkeypatch
     ):
@@ -630,3 +737,66 @@ class TestThumbnailGenerations:
 
         assert result.outcome is ThumbnailEnsureOutcome.FAILED
         assert result.failure_reason == "storage"
+
+
+class TestDeferredPublication:
+    def test_expired_worker_cannot_publish_a_preview(
+        self, db_session, make_model, make_file
+    ):
+        from app.core.time import utcnow
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            finish_thumbnail,
+            request_thumbnail,
+        )
+
+        model = make_model()
+        file = make_file(model, file_type=FileType.STL)
+        generation = request_thumbnail(db_session, file, promote=True)
+        db_session.commit()
+        claim = claim_thumbnail(db_session, file)
+        generation.lease_expires_at = utcnow() - timedelta(seconds=1)
+        db_session.add(generation)
+        db_session.commit()
+
+        result = finish_thumbnail(
+            db_session, file, claim, _SuccessfulEngine().generate(None)
+        )
+
+        db_session.refresh(model)
+        assert result.failure_reason == "lease_lost"
+        assert model.thumbnail_path is None
+
+    def test_cached_older_preview_does_not_replace_newer_selection(
+        self, db_session, make_model, make_file
+    ):
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            finish_thumbnail,
+            request_thumbnail,
+        )
+
+        model = make_model()
+        first = make_file(model, file_type=FileType.STL)
+        request_thumbnail(db_session, first, promote=True)
+        db_session.commit()
+        finish_thumbnail(
+            db_session,
+            first,
+            claim_thumbnail(db_session, first),
+            _SuccessfulEngine().generate(None),
+        )
+        second = make_file(model, file_type=FileType.STL)
+        request_thumbnail(db_session, second, promote=True)
+        db_session.commit()
+        finish_thumbnail(
+            db_session,
+            second,
+            claim_thumbnail(db_session, second),
+            _SuccessfulEngine().generate(None),
+        )
+
+        ensure_thumbnail(db_session, first)
+
+        db_session.refresh(model)
+        assert model.thumbnail_file_id == second.id

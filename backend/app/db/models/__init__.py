@@ -88,6 +88,9 @@ from .ingestion import (
     InboxItemResult as InboxItemResult,
 )
 from .ingestion import (
+    IngestionReview as IngestionReview,
+)
+from .ingestion import (
     StagingLease as StagingLease,
 )
 from .library import (
@@ -150,6 +153,9 @@ from .library import (
 )
 from .library import (
     Tag as Tag,
+)
+from .media import (
+    ArtifactAnalysisGeneration as ArtifactAnalysisGeneration,
 )
 from .media import (
     ThumbnailGeneration as ThumbnailGeneration,
@@ -225,6 +231,7 @@ from .search import SearchLexicalPosting as SearchLexicalPosting
 from .search import SearchLexicalState as SearchLexicalState
 from .search import SearchLexicalTerm as SearchLexicalTerm
 from .search import SearchPassage as SearchPassage
+from .search import SearchProjectionRequest as SearchProjectionRequest
 from .search import SearchReconciliationState as SearchReconciliationState
 from .search_expansion import SearchExpansion as SearchExpansion
 from .search_expansion import SearchExpansionTerm as SearchExpansionTerm

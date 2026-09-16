@@ -37,8 +37,11 @@ remaining in a loading state. Reloading a submitted text search restores its URL
   stages and flushes passage changes in the caller's transaction. It never
   commits, performs inference or reads binary document bodies. Callers must
   serialize concurrent writes to the same Subject.
-- Neutral projection and ranked-read ports. Content owners update passages and
-  lexical statistics in their own transaction; bootstrap binds the adapters.
+- Neutral projection and ranked-read ports. Content owners coalesce durable
+  `SearchProjectionRequest` records in their transaction; a background worker
+  constructs passages and updates lexical statistics. Bounded pages and persisted
+  cursors recover fan-out after restart. Bootstrap binds the adapters. Dirty
+  passages remain excluded until refreshed, and retrieval rechecks current access.
 - Bounded durable watermark, rolling source and orphan repair, paused during
   restore maintenance and drained on shutdown.
 - Weighted SQLite FTS5 and PostgreSQL BM25. PostgreSQL uses a managed generated

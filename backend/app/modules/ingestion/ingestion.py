@@ -33,14 +33,12 @@ from app.db.models import (
     StorageObjectState,
     User,
 )
-from app.db.projections import batch_content_changes, content_changed
+from app.db.projections import content_changed
 from app.db.scopes import live
 from app.db.session import SessionFactory, get_session_factory
 from app.modules.identity import rbac
 from app.modules.library import taxonomy
 from app.modules.media import gcode_parser, thumbnail
-from app.modules.media.mesh_processing import FallbackThumbnail
-from app.modules.printing.profile_detection import upsert_detected_profiles
 from app.modules.storage import storage
 from app.modules.storage.hashing import sha256_file
 from app.modules.storage.storage_backend.contracts import StorageCollisionError
@@ -51,6 +49,7 @@ from app.runtime.jobs import registry
 
 if TYPE_CHECKING:
     from app.modules.library.provenance import ProvenanceContext
+    from app.modules.sources.contracts import SourceEntry
 
 logger = get_logger(__name__)
 
@@ -184,11 +183,12 @@ def verify_durable_artifact(
             or metadata is None
         ):
             raise ArtifactDurabilityError("artifact_rows_not_durable")
-        primary_key = artifact.path
+        from app.modules.storage.artifact_content import resolve
+        source = resolve(artifact)
         thumbnail_key = artifact.thumbnail_path
 
     backend = get_backend()
-    if not backend.exists(primary_key):
+    if not source.exists():
         raise ArtifactDurabilityError("artifact_blob_not_durable")
     if thumbnail_status in {"generated", "fallback_generated"}:
         # New generations are immutable, recipe-versioned objects. Keep the
@@ -393,6 +393,8 @@ def persist_artifact(
     ingestion_key: str | None = None,
     provenance_context: ProvenanceContext | None = None,
     session_factory: SessionFactory | None = None,
+    actor_user_id: int | None = None,
+    source_entry: SourceEntry | None = None,
 ) -> File:
     """Persist a parsed, staged artifact onto *model* — the deep core shared
     by background ingestion and synchronous revision attachment.
@@ -575,44 +577,57 @@ def persist_artifact(
             external_library_id=external_library_id,
             source_mtime=source_mtime,
             ingestion_key=ingestion_key,
+            source_key=source_entry.key if source_entry else None,
+            source_etag=source_entry.etag if source_entry else None,
+            source_version_id=source_entry.version_id if source_entry else None,
+            source_verified_at=utcnow() if is_external else None,
         )
         # One transaction for the whole artifact: a File row committed before its
         # Metadata is a model that renders with no print time, filament or cost and
         # no error to explain it. flush() allocates the id the thumbnail key needs
         # without ending the transaction.
-        with batch_content_changes(session):
-            session.add(file_row)
-            session.flush()
-            assert file_row.id is not None
-            if provenance_context is not None:
-                # The File id exists, but the Artifact has not yet become visible.
-                # A provenance failure therefore follows the established rollback
-                # path for both its link and the bytes/row it describes.
-                _attach_ingested_artifact(session, file_row, provenance_context)
-            # The parser may carry detection-only keys (e.g. printer_preset_name)
-            # that have no Metadata column.
-            md_fields = {k: v for k, v in meta.items() if k in Metadata.model_fields}
-            session.add(Metadata(file_id=file_row.id, **md_fields))
-            requirements = meta.get("material_requirements")
-            if isinstance(requirements, list):
-                for requirement in requirements:
-                    if not isinstance(requirement, dict):
-                        continue
-                    material_type = requirement.get("material_type")
-                    if not isinstance(material_type, str) or not material_type.strip():
-                        continue
-                    session.add(
-                        ArtifactMaterialRequirement(
-                            file_id=file_row.id,
-                            tool_index=int(requirement.get("tool_index") or 0),
-                            material_type=material_type.strip(),
-                            color_hex=requirement.get("color_hex"),
-                        )
+        session.add(file_row)
+        session.flush()
+        assert file_row.id is not None
+        if provenance_context is not None:
+            # The File id exists, but the Artifact has not yet become visible.
+            # A provenance failure therefore follows the established rollback
+            # path for both its link and the bytes/row it describes.
+            _attach_ingested_artifact(session, file_row, provenance_context)
+        # The parser may carry detection-only keys (e.g. printer_preset_name)
+        # that have no Metadata column.
+        md_fields = {k: v for k, v in meta.items() if k in Metadata.model_fields}
+        session.add(Metadata(file_id=file_row.id, **md_fields))
+        requirements = meta.get("material_requirements")
+        if isinstance(requirements, list):
+            for requirement in requirements:
+                if not isinstance(requirement, dict):
+                    continue
+                material_type = requirement.get("material_type")
+                if not isinstance(material_type, str) or not material_type.strip():
+                    continue
+                session.add(
+                    ArtifactMaterialRequirement(
+                        file_id=file_row.id,
+                        tool_index=int(requirement.get("tool_index") or 0),
+                        material_type=material_type.strip(),
+                        color_hex=requirement.get("color_hex"),
                     )
-            content_changed(session, "model", [model_id])
+                )
+        from app.modules.media.analysis_generations import request_enrichment
+
+        request_enrichment(
+            session, file_row,
+            promote_thumbnail=overwrite_thumbnail or not model.thumbnail_path,
+            preserve_metadata=bool(meta), actor_user_id=actor_user_id,
+        )
+        content_changed(session, "model", [model_id])
         # A driver may acknowledge a committed transaction as an exception
         # (for example, a connection loss after COMMIT). From here onward the
         # blob must be preserved until a fresh session resolves the outcome.
+        from app.modules.ingestion.commands import require_execution_claim
+        require_execution_claim(session)
+        require_ingestion_actor(session, actor_user_id, model=model)
         commit_started = True
         session.commit()
     except Exception as exc:
@@ -661,39 +676,9 @@ def persist_artifact(
     if commit_resolved:
         return file_row
 
-    # A thumbnail is a retryable derivative, not part of the File+Metadata
-    # integrity boundary. Publish it only after that transaction commits so its
-    # own durable reservation never competes with an already-open SQLite writer.
-    if thumb_bytes:
-        assert file_row.id is not None
-        try:
-            from app.modules.media.thumbnail_engine import ThumbnailStrategy
-            from app.modules.media.thumbnail_generations import (
-                publish_precomputed_thumbnail,
-            )
-
-            is_fallback = isinstance(thumb_bytes, FallbackThumbnail)
-            publish_precomputed_thumbnail(
-                session,
-                file_row,
-                thumb_bytes,
-                strategy=(
-                    ThumbnailStrategy.FALLBACK
-                    if is_fallback
-                    else ThumbnailStrategy.FULL
-                ),
-                complete=not is_fallback or thumb_bytes.complete,
-                promote=overwrite_thumbnail or not model.thumbnail_path,
-                normalize=file_type != FileType.GCODE,
-                backend=backend,
-            )
-        except Exception:  # noqa: BLE001 - thumbnail is a retryable derivative
-            session.rollback()
-            logger.exception(
-                "thumbnail derivation failed; continuing Artifact persistence",
-                extra={"file_id": file_row.id},
-            )
-
+    # Derived outputs are registered in the source transaction and produced by
+    # the bounded enrichment worker. Precomputed bytes are no longer a barrier
+    # to source readiness; explicit rebuilds use the media publication owner.
     session.refresh(file_row)
     return file_row
 
@@ -813,6 +798,32 @@ def resolve_write_target(
     return WriteTarget(str(canonical_target), True, library_id, None)
 
 
+def require_ingestion_actor(
+    session: Session, actor_user_id: int | None, *, collection: str | None = None,
+    model: Model | None = None,
+) -> User | None:
+    """Recheck current authority at execution and source publication boundaries."""
+    if actor_user_id is None:
+        return None  # Explicit system-owned scanner work.
+    from app.core.errors import ErrorKind, OperationError
+
+    actor = session.exec(select(User).where(User.id == actor_user_id)
+        .execution_options(populate_existing=True).with_for_update()).first()
+    if actor is None or not actor.is_active:
+        raise OperationError("ingestion_actor_unavailable", kind=ErrorKind.FORBIDDEN)
+    if model is not None:
+        rbac.require_model_collection_role(session, actor, model.collection_id, CollectionRole.EDIT)
+    elif not actor.is_superuser:
+        # An accepted archive may create descendants of the granted collection.
+        # Use the nearest live ancestor, with the same inherited RBAC policy.
+        path = "/".join(storage.slugify(part.strip()) for part in (collection or "").split("/") if part.strip())
+        prefixes = ["/".join(path.split("/")[:length]) for length in range(1, len(path.split("/")) + 1)] if path else []
+        candidates = session.exec(select(Collection).where(Collection.path.in_(prefixes), live(Collection))).all()
+        target = max(candidates, key=lambda row: len(row.path), default=None)
+        rbac.require_collection_role(session, actor, target.id if target else None, CollectionRole.EDIT)
+    return actor
+
+
 def run_ingestion_pipeline(
     *,
     job_id: str,
@@ -831,13 +842,9 @@ def run_ingestion_pipeline(
     on_progress: Callable[[float], None] | None = None,
     defer_fingerprint: bool = False,
 ) -> None:
-    """Full ingestion pipeline.
+    """Publish source bytes, compatibility facts and durable enrichment intent.
 
-    Hash, dedup, persist the model, version-manage the file blob, extract
-    thumbnail, build metadata — all behind a single call. The *strategy*
-    determines what parse+thumbnail variant runs (gcode or mesh). The
-    *session_factory* is a callable that returns a new SQLModel Session;
-    when absent, falls back to the module-level engine (legacy).
+    Geometry, previews, profiles and search are processed by background workers.
     """
     logger.info("ingestion_job job_id=%s stage=start result=running", job_id)
 
@@ -879,6 +886,7 @@ def run_ingestion_pipeline(
 
     try:
         with session_factory.scoped_session() as recovery_session:
+            require_ingestion_actor(recovery_session, actor_user_id, collection=collection)
             committed = recovery_session.exec(
                 select(File).where(File.ingestion_key == job_id)
             ).first()
@@ -932,6 +940,10 @@ def run_ingestion_pipeline(
                     existing_file = session.get(File, preflight.file_id)
                     if existing_file is None:
                         raise RuntimeError("captured_artifact_missing")
+                    existing_model = session.get(Model, existing_file.model_id)
+                    if existing_model is None:
+                        raise RuntimeError("captured_model_missing")
+                    require_ingestion_actor(session, actor_user_id, model=existing_model)
                     attach_existing_artifact(session, existing_file, provenance_context)
                     session.commit()
                 registry.finish(
@@ -955,15 +967,10 @@ def run_ingestion_pipeline(
             if preflight.status == "trashed":
                 raise RuntimeError("captured_artifact_trashed")
 
-        meta, thumb_bytes = strategy.process(staged_path, report)
-        if thumb_bytes is None and strategy.file_type not in (FileType.GCODE,):
-            logger.warning(
-                "ingestion_job job_id=%s stage=thumbnail result=missing", job_id
-            )
-        elif thumb_bytes:
-            logger.info(
-                "ingestion_job job_id=%s stage=thumbnail result=generated", job_id
-            )
+        # Compatibility facts remain bounded prerequisites for G-code printing.
+        # Full mesh decoding, rendering and profile enrichment run after saving.
+        meta = gcode_parser.parse(staged_path) if strategy.file_type == FileType.GCODE else {}
+        thumb_bytes = None
 
         dedup_hash = (
             source_hash.lower()
@@ -973,27 +980,13 @@ def run_ingestion_pipeline(
 
         report("persisting")
         durable_ids: tuple[int, int] | None = None
-        thumbnail_status = (
-            "fallback_generated"
-            if isinstance(thumb_bytes, FallbackThumbnail)
-            else "generated"
-            if thumb_bytes
-            else "skipped"
-            if strategy.file_type == FileType.GCODE
-            else "failed"
-        )
-        thumbnail_reason = (
-            None
-            if thumb_bytes
-            else "no_embedded_thumbnail"
-            if strategy.file_type == FileType.GCODE
-            else "renderer_no_output"
-        )
+        from app.core.config import settings
+
+        thumbnail_status = "pending" if settings.thumbnail_processing == "background" else "skipped"
+        thumbnail_reason = None if thumbnail_status == "pending" else settings.thumbnail_processing
         created = False
         with session_factory.scoped_session() as session:
-            actor = (
-                session.get(User, actor_user_id) if actor_user_id is not None else None
-            )
+            actor = require_ingestion_actor(session, actor_user_id, collection=collection)
             model, created = resolve_or_create_model(
                 session,
                 dedup_hash=dedup_hash,
@@ -1032,35 +1025,13 @@ def run_ingestion_pipeline(
                 ingestion_key=job_id,
                 provenance_context=provenance_context,
                 session_factory=session_factory,
+                actor_user_id=actor_user_id,
             )
             assert file_row.id is not None
             durable_ids = (model.id, file_row.id)
-            try:
-                upsert_detected_profiles(session, meta)
-            except Exception:  # noqa: BLE001 - derived data never invalidates Artifact
-                logger.exception(
-                    "ingestion_job job_id=%s derived profiles failed", job_id
-                )
-
         committed_at = utcnow()
         assert durable_ids is not None
         model_id, file_id = durable_ids
-        fingerprint_result = getattr(meta, "fingerprint_result", None)
-        if fingerprint_result is not None or defer_fingerprint:
-            from app.modules.ingestion.extensions import after_commit
-
-            try:
-                fingerprint_status = after_commit(
-                    session_factory, file_id, actor_user_id, fingerprint_result
-                )
-            except Exception:
-                # The Artifact and thumbnail are already durable. A retryable
-                # derivative must never turn that successful ingest into failure.
-                fingerprint_status = "failed"
-                logger.warning(
-                    "ingestion fingerprint publication failed job_id=%s", job_id
-                )
-            registry.update(job_id, fingerprint_status=fingerprint_status)
         registry.update(
             job_id,
             model_id=model_id,
@@ -1094,7 +1065,7 @@ def run_ingestion_pipeline(
         registry.finish(
             job_id,
             state="completed",
-            completion="partial" if thumbnail_status == "failed" else "complete",
+            completion="complete",
             thumbnail_status=thumbnail_status,  # type: ignore[arg-type]
             thumbnail_reason=thumbnail_reason,
             result={"created": created, "name": original_filename},
@@ -1296,11 +1267,20 @@ def add_gcode_revision_to_model(
     revision_status: FileRevisionStatus | None,
     revision_notes: str | None,
     is_recommended: bool,
+    actor_user_id: int | None = None,
+    ingestion_key: str | None = None,
 ) -> File:
     """Attach a staged G-code file as a new revision of an existing model."""
     assert model.id is not None
+    require_ingestion_actor(session, actor_user_id, model=model)
+    if ingestion_key is not None:
+        committed = session.exec(select(File).where(File.ingestion_key == ingestion_key)).first()
+        if committed is not None:
+            if committed.model_id != model.id:
+                raise RuntimeError("revision_ingestion_identity_mismatch")
+            return committed
     blob_hash = sha256_file(staged_path)
-    meta, thumb_bytes = _gcode_strategy().process(staged_path, _noop_progress)
+    meta, thumb_bytes = gcode_parser.parse(staged_path), None
 
     # Revisions follow the model: if it lives in a NAS library, write back there.
     dest = resolve_write_target(
@@ -1333,15 +1313,10 @@ def add_gcode_revision_to_model(
         is_external=dest.is_external,
         external_library_id=dest.external_library_id,
         source_mtime=dest.source_mtime,
+        actor_user_id=actor_user_id,
+        ingestion_key=ingestion_key,
     )
     assert file_row.id is not None
-
-    try:
-        upsert_detected_profiles(session, meta)
-    except Exception:  # noqa: BLE001 - derived profile can be repaired independently
-        logger.exception(
-            "gcode revision profile derivation failed", extra={"file_id": file_row.id}
-        )
 
     model.updated_at = utcnow()
     session.add(model)

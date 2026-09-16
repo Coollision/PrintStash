@@ -125,8 +125,9 @@ class ServerResources:
         self.done.set()
         self.thread.join()
 
-    def report(self, elapsed: float) -> dict:
-        self.stop()
+    def report(self, elapsed: float, *, stop: bool = True) -> dict:
+        if stop:
+            self.stop()
         self.sample()
         user = self.cpu[0] - self.initial_cpu[0]
         system = self.cpu[1] - self.initial_cpu[1]
@@ -145,6 +146,30 @@ class ServerResources:
 def body(response: httpx.Response) -> dict:
     response.raise_for_status()
     return response.json()
+
+
+def pending_enrichment(db, *, similarity=False):
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    pending = 0
+    failed = {}
+    for table in ("artifact_analysis_generations", "thumbnail_generations", "search_projection_requests", "similarity_runs"):
+        if table not in tables or table == "similarity_runs" and not similarity:
+            continue
+        columns = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+        policy = "processing_policy = 'background' AND " if "processing_policy" in columns else ""
+        condition = policy + "state IN ('pending','queued','running','cancelling')" if "state" in columns else "1=1"
+        pending += db.execute(f"SELECT COUNT(*) FROM {table} WHERE {condition}").fetchone()[0]
+        if "state" in columns:
+            failed[table] = db.execute(f"SELECT COUNT(*) FROM {table} WHERE {policy}state = 'failed'").fetchone()[0]
+    return pending, failed
+
+
+def latency_summary(samples):
+    values = sorted(sample["library_ms"] for sample in samples)
+    if not values:
+        return {}
+    return {"samples": len(values), "median_ms": values[len(values)//2],
+            "p95_ms": values[min(len(values)-1, int(len(values)*0.95))], "max_ms": values[-1]}
 
 
 def run(
@@ -302,6 +327,7 @@ def run(
                     )
                     accepted = time.monotonic()
                     samples = []
+                    navigation_samples = []
                     last_print = 0.0
                     while True:
                         now = time.monotonic()
@@ -329,6 +355,9 @@ def run(
                                 )
                             },
                         }
+                        probe = time.monotonic()
+                        body(client.get("/api/v1/models", params={"limit": 20}))
+                        navigation_samples.append({"seconds": time.monotonic() - start, "phase": "ingestion", "library_ms": (time.monotonic() - probe) * 1000})
                         samples.append(sample)
                         if now - last_print >= 10 or status["state"] in (
                             "completed",
@@ -337,6 +366,21 @@ def run(
                             print(json.dumps(sample), flush=True)
                             last_print = now
                         if status["state"] in ("completed", "failed"):
+                            break
+                        time.sleep(0.25)
+                    saved = time.monotonic()
+                    saved_resources = resources.report(saved - start, stop=False)
+                    enrichment_samples = []
+                    while True:
+                        if time.monotonic() - start > timeout:
+                            raise TimeoutError("Background enrichment timed out")
+                        with sqlite3.connect(f"file:{root / 'vault.sqlite'}?mode=ro", uri=True) as db:
+                            outstanding, failed_enrichment = pending_enrichment(db, similarity=similarity)
+                        probe = time.monotonic()
+                        body(client.get("/api/v1/models", params={"limit": 20}))
+                        enrichment_samples.append({"seconds": time.monotonic() - start, "pending": outstanding, "library_ms": (time.monotonic() - probe) * 1000})
+                        navigation_samples.append({**enrichment_samples[-1], "phase": "enrichment"})
+                        if not outstanding:
                             break
                         time.sleep(0.25)
                     finished = time.monotonic()
@@ -362,6 +406,20 @@ def run(
                             "m.volume_mm3, m.triangle_count FROM files f "
                             "LEFT JOIN metadata m ON m.file_id = f.id ORDER BY f.sha256"
                         ).fetchall()
+                        fingerprints = []
+                        missing_fingerprints = []
+                        if similarity:
+                            fingerprints = db.execute(
+                                "SELECT source_sha256, component_index, algorithm_version, state, "
+                                "component_count, instance_count, face_count, vertex_count, "
+                                "physical_hash_0, physical_hash_1, physical_hash_2, physical_hash_3, "
+                                "normalized_hash_0, normalized_hash_1, normalized_hash_2, normalized_hash_3 "
+                                "FROM geometry_fingerprints ORDER BY source_sha256, component_index, algorithm_version"
+                            ).fetchall()
+                            expected_sources = {row[0] for row in db.execute(
+                                "SELECT sha256 FROM files WHERE file_type != 'GCODE'"
+                            )}
+                            missing_fingerprints = sorted(expected_sources - {row[0] for row in fingerprints})
                         preview_files = db.execute(
                             "SELECT source_sha256, storage_key, state FROM thumbnail_generations "
                             "ORDER BY source_sha256, state"
@@ -445,9 +503,19 @@ def run(
                         "extraction_seconds": accepted - uploaded,
                         "processing_seconds": finished - accepted,
                         "total_seconds": finished - start,
+                        "saved_seconds": saved - start,
+                        "measurement_protocol": "job-and-library-poll-250ms-v2",
+                        "failed_enrichment": failed_enrichment,
+                        "navigation_samples": navigation_samples,
+                        "navigation_latency": latency_summary(navigation_samples),
+                        "background_after_save_seconds": finished - saved,
+                        "saved_resources": saved_resources,
+                        "enrichment_samples": enrichment_samples,
                         **resource_report,
                         "catalog": catalog,
                         "geometry_catalog": geometry_catalog,
+                        "fingerprint_catalog": fingerprints,
+                        "missing_fingerprint_sources": missing_fingerprints,
                         "status": status,
                         "samples": samples,
                         "artifact_jobs": artifact_jobs,
@@ -472,6 +540,9 @@ def run(
                         or status["failed"]
                         or status["processed"] != len(names)
                         or len(catalog) != len(names)
+                        or any(failed_enrichment.values())
+                        or missing_fingerprints
+                        or any(row[3] in {"pending", "failed"} for row in fingerprints)
                     ):
                         raise RuntimeError(
                             f"Archive did not import completely; see {output}"
@@ -497,6 +568,14 @@ def compare_previews(before: dict, after: dict, *, mode: str = "bytes") -> None:
         raise SystemExit(
             f"Comparison refused: generated preview {mode} differ; inspect both reports"
         )
+
+
+def compare_fingerprints(before: dict, after: dict) -> None:
+    """Compare final component identity and readiness, never initial job hints."""
+    if "fingerprint_catalog" not in before or "fingerprint_catalog" not in after:
+        raise SystemExit("Comparison refused: final fingerprint catalog is missing")
+    if before["fingerprint_catalog"] != json.loads(json.dumps(after["fingerprint_catalog"])):
+        raise SystemExit("Comparison refused: final similarity fingerprints differ")
 
 
 def main() -> None:
@@ -529,6 +608,8 @@ def main() -> None:
             raise SystemExit(
                 "Comparison refused: reference import did not complete successfully"
             )
+        if before.get("measurement_protocol") != "job-and-library-poll-250ms-v2":
+            raise SystemExit("Comparison refused: measurement protocols differ")
         if before.get("similarity_on_ingest", False) != args.similarity:
             raise SystemExit("Comparison refused: similarity settings differ")
         if (
@@ -567,17 +648,9 @@ def main() -> None:
             raise SystemExit(
                 "Comparison refused: imported geometry measurements differ; inspect both reports"
             )
-        before_previews = Counter(
-            job.get("thumbnail_status") for job in before["artifact_jobs"]
-        )
-        after_previews = Counter(
-            job.get("thumbnail_status") for job in report["artifact_jobs"]
-        )
-        if before_previews != after_previews:
-            raise SystemExit(
-                "Comparison refused: preview outcomes differ; inspect both reports"
-            )
         compare_previews(before, report, mode=args.preview_comparison)
+        if args.similarity:
+            compare_fingerprints(before, report)
         print(
             f"Before {before['total_seconds']:.2f}s; after {report['total_seconds']:.2f}s; speedup {before['total_seconds'] / report['total_seconds']:.2f}x"
         )

@@ -29,6 +29,7 @@ from app.db.models import (
 from app.db.models.search import (
     SearchDependency,
     SearchPassage,
+    SearchProjectionRequest,
     SearchReconciliationState,
 )
 from app.db.projections import ContentSource
@@ -72,6 +73,18 @@ def build_search_reconciliation_state(
 ) -> SearchReconciliationState:
     return save(
         session, SearchReconciliationState(subject_type=kind.value, **overrides)
+    )
+
+
+def build_search_projection_request(
+    session: Session, source: ContentSource, **overrides: Any
+) -> SearchProjectionRequest:
+    """A committed source notification, ready for background projection."""
+    return save(
+        session,
+        SearchProjectionRequest(
+            source_kind=source.kind, source_id=source.id, **overrides
+        ),
     )
 
 

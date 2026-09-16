@@ -39,6 +39,7 @@ export type FileRevisionStatus = "known_good" | "needs_test" | "failed" | "archi
 export type CollectionRole = "view" | "edit" | "admin";
 
 export interface FileRead {
+  enrichment?: ArtifactEnrichmentRead;
   id: number;
   model_id: number;
   original_filename: string;
@@ -70,6 +71,7 @@ export interface ModelSimilarityRead {
 }
 
 export interface ModelRead {
+  enrichment_pending?: boolean;
   family?: ModelFamilySummary | null;
   similarity?: ModelSimilarityRead;
   id: number;
@@ -163,6 +165,7 @@ export interface PrintSummaryRead {
 }
 
 export interface ModelListItem {
+  enrichment_pending?: boolean;
   family?: ModelFamilySummary | null;
   similarity?: ModelSimilarityRead;
   id: number;
@@ -418,7 +421,7 @@ export interface IngestJobStatus {
   skipped?: number;
   failed?: number;
   completion?: "complete" | "partial" | null;
-  thumbnail_status?: "generated" | "fallback_generated" | "skipped" | "failed" | null;
+  thumbnail_status?: "pending" | "generated" | "fallback_generated" | "skipped" | "failed" | null;
   thumbnail_reason?: string | null;
   fingerprint_status?: "ready" | "partial" | "unsupported" | "failed" | "pending" | null;
   retryable?: boolean;
@@ -790,4 +793,22 @@ export interface TagRead {
   slug: string;
   model_count: number;
   multipart_model_count?: number;
+}
+
+export type EnrichmentState =
+  | "unknown"
+  | "pending"
+  | "running"
+  | "ready"
+  | "failed"
+  | "blocked"
+  | "disabled"
+  | "on_demand"
+  | "not_applicable";
+
+export interface ArtifactEnrichmentRead {
+  metadata: EnrichmentState;
+  thumbnail: EnrichmentState;
+  metadata_error: string | null;
+  thumbnail_error: string | null;
 }

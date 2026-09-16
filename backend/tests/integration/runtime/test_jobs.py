@@ -365,3 +365,16 @@ class TestReconcileInterruptedJobs:
         assert restored is not None
         assert restored.state == "failed"
         assert restored.retryable is True
+
+
+class TestJobsContract:
+    def test_terminal_result_wins_over_another_workers_cached_status(self, db_session):
+        first = JobRegistry()
+        second = JobRegistry()
+        job_id = first.create()
+        first.update(job_id, state="running")
+        second.finish(job_id, state="failed", error="cancelled_elsewhere")
+
+        first.finish(job_id, state="completed", model_id=42)
+
+        assert JobRegistry().get(job_id).state == "failed"

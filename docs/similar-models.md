@@ -57,11 +57,12 @@ Advanced settings provide per-class thresholds, a triangle cap (2,000,000),
 verification samples (5,000), candidates per shortlist (20), an optional scan
 interval, and local embeddings. These controls have enforced upper bounds.
 
-Analysis on upload is a separate opt-in. ZIP imports save
-files, geometry and previews first, then queue similarity fingerprints in the
-database. Similarity workers start no new work during uploads or imports; a
-running analysis step can finish before it yields. Import completion means the
-Models are available; their similarity
+Analysis on upload is a separate opt-in. ZIP imports save sources first;
+background enrichment computes geometry and previews and queues similarity
+fingerprints in the database. New source work has scheduling priority, while
+background requests aged at least 60 seconds remain eligible to progress. A
+running analysis step retains its compute permit until it finishes. Import
+completion means the Models are available; their geometry, previews and similarity
 analysis may still be pending. A derivative failure leaves a successful upload
 intact. Runs keep their checkpoints across restarts and can be cancelled
 between work units. Maintenance and storage garbage collection share the normal

@@ -30,9 +30,8 @@ function setup(options: RenderAppOptions = {}) {
 describe("AiSearchSetup", () => {
   it("starts with a processing location choice", async () => {
     const app = setup();
-    expect(
-      await screen.findByRole("heading", { name: "Where should AI Search run?" }),
-    ).toBeVisible();
+    await screen.findByText("Where should AI Search run?");
+    expect(screen.getByRole("heading", { name: "Where should AI Search run?" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Use this machine" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Connect another server" })).toBeVisible();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();

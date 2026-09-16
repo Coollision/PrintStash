@@ -57,10 +57,20 @@ function setup(options: RenderAppOptions = {}) {
     },
   );
 }
+async function waitForParsedSearch() {
+  // Observe the completed navigation before traversing the large result tree.
+  // A recorded POST only proves that parsing started.
+  await waitFor(() =>
+    expect(new URLSearchParams(screen.getByTestId("location").textContent ?? "").get("q")).toBe(
+      "bracket",
+    ),
+  );
+}
 describe("Natural-language search filters", () => {
   it("turns a submitted sentence into canonical editable filters", async () => {
     const app = setup();
-    await waitFor(() => expect(app.requestsWithMethod("POST")).toHaveLength(1));
+    await waitForParsedSearch();
+    expect(app.requestsWithMethod("POST")).toHaveLength(1);
     expect(await screen.findByRole("button", { name: "Remove Successful print" })).toBeVisible();
     expect(screen.getByTestId("location")).toHaveTextContent("q=bracket");
     expect(screen.getByTestId("location")).not.toHaveTextContent("parse=1");
@@ -80,7 +90,8 @@ describe("Natural-language search filters", () => {
   it("removes only the chosen filter without parsing again", async () => {
     const app = setup();
     const user = userEvent.setup();
-    await waitFor(() => expect(app.requestsWithMethod("POST")).toHaveLength(1));
+    await waitForParsedSearch();
+    expect(app.requestsWithMethod("POST")).toHaveLength(1);
     await user.click(await screen.findByRole("button", { name: "Remove Successful print" }));
     expect(screen.queryByRole("button", { name: "Remove Successful print" })).toBeNull();
     expect(screen.getByTestId("location")).toHaveTextContent("print_duration_max_s=10800");
@@ -89,6 +100,7 @@ describe("Natural-language search filters", () => {
   it("edits an inferred duration without parsing again", async () => {
     const app = setup();
     const user = userEvent.setup();
+    await waitForParsedSearch();
     await user.click(
       await screen.findByRole("button", { name: "Edit Actual duration < seconds: 10800" }),
     );
@@ -141,7 +153,7 @@ describe("Natural-language search filters", () => {
       },
     });
     const user = userEvent.setup();
-    await screen.findByRole("button", { name: "Remove Successful print" });
+    await waitForParsedSearch();
     await user.click(screen.getByText("Search options"));
     await user.click(screen.getByRole("button", { name: "Saved views" }));
     await user.click(screen.getByRole("button", { name: /Save current view/ }));
@@ -159,6 +171,7 @@ describe("Natural-language search filters", () => {
   });
   it("uses Spanish for inferred print-history filters", async () => {
     setup({ locale: "es" });
+    await waitForParsedSearch();
     expect(await screen.findByRole("button", { name: "Quitar Impresión correcta" })).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Filtros del historial de impresión" }),

@@ -17,6 +17,7 @@ from app.modules.inference.worker_pool import pool as model_workers
 from app.modules.search.generations import ensure_caption_recipe
 from app.modules.search.indexing import IndexProcessor
 from app.modules.search.lexical_index import rebuild_partition
+from app.modules.search.projection import process_pending
 from app.modules.search.reconciliation import reconcile_partition
 from app.modules.search.vector_index import repair_partition as repair_vectors
 from app.runtime import maintenance
@@ -42,7 +43,9 @@ def process_one(kind: SubjectType) -> int:
             # Projection repair shares SQLite's writer with interactive reader
             # leases. Keep these transactions short; embedding bursts have their
             # own separate batch budget below.
-            changed = reconcile_partition(session, kind, limit=1)
+            changed = process_pending(session)
+            if not changed:
+                changed = reconcile_partition(session, kind, limit=1)
             rebuild_partition(session)
             repair_vectors(session)
             session.commit()
@@ -60,8 +63,9 @@ def process_one(kind: SubjectType) -> int:
 
 async def run_search() -> None:
     for kind in cycle(SubjectType):
+        changed = 0
         try:
-            await _run_unit(partial(process_one, kind))
+            changed = await _run_unit(partial(process_one, kind))
             # Repair runs once per tick. Drain at most 128 embedding inputs
             # (16 default batches), yielding between units and pausing between
             # bursts so a busy or unavailable provider cannot spin forever.
@@ -70,7 +74,7 @@ async def run_search() -> None:
                     break
         except Exception:
             logger.warning("Search indexing paused; retrying a bounded repair unit")
-        await asyncio.sleep(1)
+        await asyncio.sleep(0 if changed else 1)
 
 
 def _index_one() -> bool:
@@ -86,9 +90,6 @@ def _index_one() -> bool:
 
 
 async def _run_unit(operation):
-    unit = asyncio.create_task(asyncio.to_thread(operation))
-    try:
-        return await asyncio.shield(unit)
-    except asyncio.CancelledError:
-        await unit
-        raise
+    from app.runtime.workers import run_unit
+
+    return await run_unit(operation)

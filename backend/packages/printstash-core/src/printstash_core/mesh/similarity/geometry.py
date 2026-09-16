@@ -42,6 +42,8 @@ def prepare_surface(vertices: NDArray[Any], faces: NDArray[Any]) -> Surface:
     import numpy as np
 
     validate_mesh_arrays(vertices, faces, FingerprintBudget())
+    # Tracking belongs to the caller's mutable mesh, not to analysis copies.
+    vertices, faces = np.asarray(vertices), np.asarray(faces)
     try:
         with np.errstate(over="raise", invalid="raise", divide="raise"):
             used = vertices[np.unique(faces)]

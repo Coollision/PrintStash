@@ -31,6 +31,7 @@ from tests.factories.protocols import (
     APrinterWithAQueue,
     GrantRole,
     HeadersFor,
+    MakeArtifactAnalysis,
     MakeArtifactLink,
     MakeCapture,
     MakeCaptureSlot,
@@ -47,6 +48,7 @@ from tests.factories.protocols import (
     MakeInboxItem,
     MakeIndexGeneration,
     MakeInferenceEndpoint,
+    MakeIngestionReview,
     MakeModel,
     MakeMultipartBuild,
     MakeMultipartBuildAttempt,
@@ -70,6 +72,7 @@ from tests.factories.protocols import (
     MakeSearchLexicalState,
     MakeSearchLexicalTerm,
     MakeSearchPassage,
+    MakeSearchProjectionRequest,
     MakeSearchReconciliationState,
     MakeShareLink,
     MakeSimilarityCandidate,
@@ -79,6 +82,7 @@ from tests.factories.protocols import (
     MakeStorageConnection,
     MakeSubjectCaption,
     MakeSystemConfig,
+    MakeThumbnailGeneration,
     MakeUser,
     MakeUserSearchPreferences,
     MakeVaultGeneration,
@@ -684,13 +688,32 @@ def make_search_dependency(db_session: Session) -> MakeSearchDependency:
 
 
 @pytest.fixture
+def make_artifact_analysis(db_session: Session) -> MakeArtifactAnalysis:
+    return _bound(factories.build_artifact_analysis, db_session)
+
+
+@pytest.fixture
+def make_thumbnail_generation(db_session: Session) -> MakeThumbnailGeneration:
+    return _bound(factories.build_thumbnail_generation, db_session)
+
+
+@pytest.fixture
+def make_search_projection_request(db_session: Session) -> MakeSearchProjectionRequest:
+    return _bound(factories.build_search_projection_request, db_session)
+
+
+@pytest.fixture
 def make_search_reconciliation_state(
     db_session: Session,
 ) -> MakeSearchReconciliationState:
     return _bound(factories.build_search_reconciliation_state, db_session)
 
 
-__all__ += ["make_search_dependency", "make_search_reconciliation_state"]
+__all__ += [
+    "make_search_dependency",
+    "make_search_reconciliation_state",
+    "make_search_projection_request",
+]
 
 
 @pytest.fixture
@@ -718,3 +741,8 @@ __all__ += [
 @pytest.fixture
 def make_user_search_preferences(db_session: Session) -> MakeUserSearchPreferences:
     return _bound(factories.build_user_search_preferences, db_session)
+
+
+@pytest.fixture
+def make_ingestion_review(db_session: Session) -> MakeIngestionReview:
+    return _bound(factories.build_ingestion_review, db_session)

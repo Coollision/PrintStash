@@ -10,12 +10,20 @@ uv run python scripts/bench_import.py /path/library.zip --output after.json --co
 
 Each run starts a fresh local server with migrated SQLite and temporary file
 storage. It uploads the ZIP through the API, selects every supported file and
-waits for the import to finish. The script checks the final file count and
+records source completion, then waits for metadata, background previews, lexical
+projection and optionally similarity runs. The script checks the final file count and
 failure count. A comparison also requires matching archive hashes and imported
 file hashes and sizes. Preview outcome counts must also match. New reports
 record dimensions, volume and triangle counts and compare those values too.
 
-The timer includes upload, extraction and processing. Setup, database migration,
+`saved_seconds` ends when the source import completes; `total_seconds` includes
+background work. `background_after_save_seconds` is the difference. Both phases
+probe the library API every 250 ms and record median, p95 and maximum response
+latency. This distinguishes earlier availability from actual responsiveness.
+
+The timers include upload, acquisition and processing. The legacy
+`extraction_seconds` field measures selection acceptance; extraction now happens
+incrementally during processing. Setup, database migration,
 server startup and hashing the input archive are excluded. JSON output records
 the separate timings, progress samples, API polling latency, Artifact job
 statuses, server CPU time and sampled server memory use. Memory sampling runs
@@ -38,22 +46,90 @@ That mode requires a reference containing decoded pixel hashes and rejects any
 changed pixel, dimensions or preview state. Imported source files and geometry
 must still match. It does not allow reduced resolution or lossy compression.
 
-Add `--similarity` to both commands to enable analysis on upload. ZIP imports
-save files, geometry and previews before queuing optional similarity
-analysis. The import timer ends when those files are available. It does not
-measure completion of similarity analysis; pending fingerprint states are
-recorded separately. The temporary server and its analysis queue are removed
-after measurement. Use a persistent test vault to measure analysis through to
-completion.
+Add `--similarity` to both commands to enable similarity indexing. Source
+completion still precedes geometry and previews. The total timer waits for
+similarity runs as well. Comparisons also check final fingerprint states,
+component counts and quantized geometry hashes; failed, pending or missing
+mesh fingerprints invalidate a run. Initial job hints are recorded separately
+and are not final indexing evidence. This option does not enable AI model downloads or
+measure semantic embedding generation; use an explicitly configured persistent
+vault for those workloads. Temporary benchmark storage is removed afterward.
 
-Similarity workers start no new work while an upload or another write operation
-is active. A running analysis step can finish before it yields. Queued analysis
-is stored in the database and survives an application
-restart in a normal vault.
+Source commands have scheduling priority. Background work becomes eligible
+after 60 seconds even with continuous intake. A running calculation retains its
+permit until completion. Queued analysis survives a normal vault restart.
 
 Use `--timeout 10800` for a three-hour limit when measuring a slow reference.
 Small archives can identify regressions, but their timings do not establish
 throughput or memory use for a 50 GB library.
+
+## Ingestion redesign measurement (2026-09-15)
+
+These measurements precede integration with the branch's newer required Rust
+rendering engine. They describe the measured pipeline revision, not a fresh
+benchmark of the combined branch.
+
+The comparison used one synthetic ZIP containing four binary STL meshes, each
+with 327,680 triangles (29,275,026 compressed bytes in total), on the same
+four-CPU Linux host. Each run used fresh SQLite/local storage, the same Rust
+extension binary, and protocol `job-and-library-poll-250ms-v2`. No test suite ran
+concurrently. These results isolate the pipeline redesign; they do not measure
+the Rust kernels against their previous implementation.
+
+Values below are means of two complete runs per configuration. The navigation
+columns average each run's median and p95; they are not pooled percentiles.
+
+| Configuration | Source saved (s) | All work complete (s) | CPU (s) | Peak RSS (MiB) | Navigation median / p95 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous pipeline, one worker | 9.825 | 9.884 | 14.340 | 452.8 | 47.6 / 94.8 |
+| Background pipeline, one enrichment unit | 3.196 | 11.396 | 15.785 | 479.2 | 67.1 / 286.4 |
+| Previous automatic concurrency (two workers on this host) | 7.709 | 7.762 | 13.495 | 615.1 | 52.4 / 294.6 |
+| Background pipeline, default admission | 3.177 | 10.662 | 15.725 | 466.2 | 69.6 / 185.8 |
+
+Compared with the previous default, sources became available **58.8% earlier**
+and sampled peak memory fell **24.2%**. Tail navigation latency improved in
+these runs, while median navigation latency increased. Completing every output
+took **37.4% longer** and used **16.5% more CPU**. The controlled single-worker
+comparison similarly saved sources earlier, but its navigation latency, memory,
+CPU and total completion time all increased. Offloading changes when work runs;
+it does not remove that work or guarantee lower request latency.
+
+All four comparisons required identical source hashes/sizes, measured geometry,
+preview states and encoded preview bytes. These are small-sample observations,
+not throughput guarantees. In particular, the previous default used parallel
+prefetch while the new default bounds enrichment to one local unit; that change
+contributes to the memory/throughput tradeoff. `--workers` records the legacy
+prefetch setting and does not increase the new enrichment worker count.
+
+### Full similarity workload
+
+A separate single-pair comparison enabled fingerprinting and candidate
+verification on four small, differently scaled/deformed 80-triangle meshes
+(4,282-byte ZIP). It compared the previous pipeline with the redesigned pipeline
+**including the new Rust proximity kernel and plain analysis arrays**. Both completed all runs and
+produced the same eight fingerprint records, source/geometry catalog and encoded
+previews.
+
+| Pipeline | Source saved (s) | All work complete (s) | CPU (s) | Peak RSS (MiB) | Navigation median / p95 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous | 3.943 | 153.552 | 203.170 | 415.9 | 44.2 / 185.4 |
+| Background with native proximity | 1.334 | 44.299 | 128.160 | 426.3 | 98.9 / 333.3 |
+
+Full completion was **3.47 times faster** and CPU work fell **36.9%**. Memory and
+navigation latency increased: faster background execution still competes with
+interactive work. Registration proposals and other NumPy calculations remain
+outside the native proximity kernel. This single pair establishes an observed
+improvement for this fixture, not a general speedup for all similarity searches.
+
+The large STL fixture's previous similarity run was interrupted after more than
+three minutes. At inspection its eight fingerprints were ready, while all four
+runs still had candidate verification work. A stack sample located active work
+in Python's surface-tree construction. That interrupted run supplies no complete
+baseline timing and is excluded from speedup calculations.
+A native-proximity run before the final array-boundary fix was also interrupted
+after eight minutes while verification continued to make progress. Neither run
+establishes a complete large-mesh similarity comparison; the final combined
+optimization was measured on the small fixture above.
 
 ## Required Rust engine
 
@@ -87,7 +163,7 @@ uv run python scripts/bench_import.py /path/library.zip --output after.json --co
 The report records the Rust engine and compiled module hash. It also records generated preview hashes and checks them when the reference
 contains them. A missing extension fails before the benchmark starts.
 Add `--similarity` to both commands to compare the same import settings with
-analysis enabled. Fingerprint completion remains outside this timer.
+analysis enabled. Fingerprint completion is included in the total timer when this option is used.
 
 The native rendering kernels run on one thread and release the Python interpreter
 lock during computation. The current extension prepares angle-weighted vertex
@@ -108,6 +184,16 @@ Python lighting callbacks and older native extension adapters have been removed.
 Native functions accept immutable inputs and validate dimensions, indices and
 finite values. Rust uses no unsafe blocks; PyO3 supplies the Python boundary.
 
+Similarity verification also uses a native immutable bounding-box tree when
+available. Both construction and closest-surface queries release the Python
+interpreter lock. The kernel retains the exact triangle projection algorithm,
+limits each tree to 2,000,000 triangles and each query to 5,000 points, and
+enforces a budget of at most 32,000,000 triangle tests. It rejects malformed,
+non-finite or degenerate geometry before returning a tree. Missing or older
+extensions use Python. Analysis strips Trimesh array tracking hooks at the
+numerical boundary, before cleanup and registration; the caller's mesh remains
+unchanged. The Python proximity fallback also uses plain arrays.
+
 The renderer still copies input buffers to give Rust immutable data while the
 interpreter lock is released. Mesh loading and vertex preparation retain arrays
 that grow with the individual mesh. These bounds do not make import memory
@@ -124,7 +210,9 @@ require the same Rust parser as the container images.
 The scene loader preserves repeated instances, component transforms and
 references to other model parts in the package. It rejects missing references,
 cycles and resource-limit violations instead of returning a partial scene.
-The package must contain `3D/3dmodel.model`, as required by the existing loader.
+The loader follows the package model relationship when present, including a
+non-default root model part, and supports the conventional `3D/3dmodel.model`
+fallback. Units, component transforms and build-item printability are preserved.
 Its default limits are 512 MiB of uncompressed package data, 4,096 ZIP members,
 4,096 objects, 10,000 mesh instances and 512 MiB of expanded geometry arrays.
 The XML parser also limits nesting to 256 levels and retained scene XML to
@@ -201,74 +289,32 @@ fingerprint keeps newly generated thumbnails separate from previous outputs;
 existing thumbnail objects remain immutable. The encoder is the existing native
 WebP library. Rust continues to handle the mesh operations described above.
 
-## Adaptive archive workers
+## Background scheduling and admission
 
-ZIP imports compute mesh geometry and previews ahead of the ordered writer.
-`VAULT_IMPORT_WORKERS=0` selects the worker count automatically. It uses roughly
-half the effective CPU allocation, honors CPU affinity and cgroup quotas, and
-requires 512 MiB of mesh budget per worker. The count is capped at 32. Set it to
-`1` for serial execution, or a positive number to request a higher ceiling;
-CPU and memory limits still apply. `VAULT_MAX_RENDER_JOBS` continues to govern
-other mesh operations; use `VAULT_IMPORT_WORKERS=1` to serialize ZIP computation.
-G-code retains its existing ingestion path.
+The source writer no longer computes previews ahead of ordered publication.
+It extracts or downloads one selected item, saves its source and durable work
+requests, then advances. Metadata and thumbnail workers can share one source
+materialization and mesh parse while keeping independent result states.
+See [ingestion architecture](architecture/ingestion.md) for ownership and recovery.
 
-All workers in the server process share memory admission with other mesh
-operations. The budget comes from `VAULT_MESH_MEMORY_BUDGET_FRACTION` and the
-smallest detected host/container memory ceiling. Unknown memory capacity uses a
-conservative scheduler budget. Disabling the existing triangle RAM cap does not
-disable bounded prefetch.
+The local scheduler runs one enrichment unit at a time. Shared compute permits
+bound aggregate activity with similarity work. Filesystem reservations check
+space for source materialization and output publication; mesh processing keeps
+its existing memory admission. These limits do not establish a hard process RSS
+ceiling. Administrators should leave headroom for other services.
 
-The coordinator estimates each file's working memory before submitting it and
-retains that reservation until publication consumes the result. It admits only
-a bounded window of files, so a slow writer stops additional computation.
-Unknown mesh costs and STEP reserve the whole budget. STL sources above the
-configured full-load byte cap reserve at most 1 GiB for their bounded recovery
-route, instead of the full-mesh estimate. This covers the isolated worker's
-256 MiB RSS ceiling, parent fallback processing and retained output. A smaller
-budget still admits only its available capacity; disabling the byte cap keeps
-the conservative full-load estimate. A large mesh waits for
-smaller active jobs instead of losing its preview merely because more import
-workers are configured. Reservations cover estimated parser/render memory and
-retained output; they are not a hard RSS guarantee. Costs vary by format and
-scene structure. The policy uses memory ceilings rather than continuously
-tracking free RAM used by unrelated services, so administrators should leave
-headroom through the budget fraction.
+`--workers` remains in the harness for comparisons with the previous prefetch
+implementation. The report preserves the requested value, but the redesigned
+source path does not use `VAULT_IMPORT_WORKERS` to create geometry workers.
+Do not interpret a larger value as extra background concurrency.
 
-Workers return geometry and encoded thumbnails. Model resolution, deduplication,
-versions, collections, storage publication and durable job states remain on the
-ordered ingestion path. A failed file is reported through that same path, and
-outstanding workers drain before their reservations are released. Rust performs
-the native mesh operations. A bounded Rayon pool executes per-file jobs, native
-condition variables handle waits, and a shared Rust gate reserves bytes and job
-slots across imports and foreground render requests. Python retains format
-dispatch, progress delivery and ordered database publication. Each worker calls
-the existing per-file adapter once; there are no Python callbacks per mesh block.
+Compare repeated runs with the same archive, native module, preview recipe and
+measurement protocol. Check final source hashes, dimensions, volumes, triangle
+counts and preview pixels before interpreting timing differences. Report time
+to availability, total time, CPU, memory and library latency separately: earlier
+source success can coexist with more total work or slower navigation.
 
-Within each Artifact publication, repeated content changes are collected before
-refreshing search projections. The projection is flushed before the existing
-commit, so files and searchable content remain in the same transaction. This
-does not combine unrelated Artifacts into one transaction or relax durability.
-While waiting for parallel mesh work, the coordinator reports activity at roughly
-one-second intervals. Serial processing reports activity at stage boundaries.
-Identical intermediate job states are coalesced within
-that interval; changed and terminal states are persisted immediately. Activity
-does not increase the completed-file count.
-
-Compare the complete archive with the same rendering settings:
-
-```bash
-uv run python scripts/bench_import.py /path/library.zip --workers 1 --output serial.json
-uv run python scripts/bench_import.py /path/library.zip --workers 2 --output two.json --compare serial.json
-uv run python scripts/bench_import.py /path/library.zip --workers 4 --output four.json --compare serial.json
-uv run python scripts/bench_import.py /path/library.zip --workers 0 --output auto.json --compare serial.json
-```
-
-The report records requested and effective worker counts. Repeat runs before
-choosing a setting: more workers can increase CPU work and memory use without
-reducing elapsed time. This change does not remove archive entry/size limits or
-replace the existing extraction of selected entries before ingestion.
-
-## Native image processing and worker coordination
+## Native image processing
 
 The required extension also handles final thumbnail normalization for PNG, JPEG
 and WebP: bounded decoding, alpha bounds, crop, resize, transparent canvas and
@@ -284,18 +330,3 @@ changing the resize implementation can change edge pixels, and changing the
 encoder changes file bytes. Comparisons therefore check decoded pixels as well
 as source hashes, geometry and processing outcomes. Exact compressed-byte parity
 is not a promise across these image engines.
-
-The executor has an explicit worker count and at most twice that count in active
-or queued jobs. Import admission keeps its smaller existing input window. A
-completed task does not release its memory reservation until publication consumes
-it. Shutdown rejects new jobs, cancels pending work when requested and waits for
-active work with the interpreter lock released. Errors become per-file results;
-worker exceptions do not retain mesh tracebacks. The application must close the
-executor before deleting staged inputs, as `PreparedImports` does.
-
-The inference
-query-image preprocessing, format dispatch, progress reporting, SQL transactions
-and STEP/OpenCASCADE conversion are not migrated by this change.
-
-Thumbnail normalization accepts PNG, JPEG and WebP through the Rust image library.
-Other codecs are rejected with `thumbnail_format_unsupported`; they do not invoke Pillow.

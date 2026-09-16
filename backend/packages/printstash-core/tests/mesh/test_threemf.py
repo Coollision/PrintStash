@@ -91,6 +91,20 @@ class TestLoadScene:
             scene.dump()[0].vertices, [[0, 0, 0], [10, 0, 0], [0, 20, 0]]
         )
 
+    def test_retains_build_instances_with_the_same_part_number(self, package):
+        path = package(
+            build=(
+                '<item objectid="1" partnumber="bracket"/>'
+                '<item objectid="1" partnumber="bracket" transform="1 0 0 0 1 0 0 0 1 30 0 0"/>'
+            )
+        )
+
+        scene = threemf.load_scene(path)
+
+        assert len(scene.graph.nodes_geometry) == 2
+        np.testing.assert_array_equal(scene.bounds, [[0, 0, 0], [40, 20, 0]])
+
+
     @pytest.mark.parametrize(
         "transform",
         [IDENTITY, "-1 0 0 0 1 0 0 0 1 30 40 50", "2 0 0 0 2 0 0 0 2 0 0 0"],
@@ -137,7 +151,8 @@ class TestLoadScene:
 
     def test_retains_unit_metadata(self, package):
         scene = threemf.load_scene(package(unit="inch"))
-        assert scene.dump()[0].metadata["units"] == "inch"
+        assert scene.dump()[0].metadata["units"] == "millimeter"
+        assert scene.dump()[0].metadata["source_units"] == "inch"
 
     def test_ignores_unrelated_zip_payloads(self, package):
         scene = threemf.load_scene(
@@ -233,3 +248,76 @@ class TestLoadScene:
         monkeypatch.setattr(trimesh.graph, "multigraph_paths", lambda *a, **k: [])
         with pytest.raises(ValueError, match="incomplete 3MF instance traversal"):
             threemf.load_scene(package())
+
+
+class TestPhysicalScene:
+    def test_converts_inches_to_millimeters(self, package):
+        scene = threemf.load_scene(package(unit="inch"))
+        np.testing.assert_allclose(scene.to_mesh().extents, [254, 508, 0])
+
+    def test_scales_instance_translation_with_document_units(self, package):
+        path = package(
+            unit="inch",
+            build='<item objectid="1" transform="1 0 0 0 1 0 0 0 1 1 0 0"/>',
+        )
+        np.testing.assert_allclose(threemf.load_scene(path).bounds[0], [25.4, 0, 0])
+
+    def test_resolves_a_build_reference_to_another_part(self, package):
+        path = package(
+            objects="",
+            build='<item xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" p:path="/3D/part.model" objectid="1"/>',
+            extras={"3D/part.model": f"<model><resources>{OBJECT}</resources></model>"},
+        )
+        assert len(threemf.load_scene(path).to_mesh().faces) == 1
+
+    def test_follows_the_package_root_relationship(self, package):
+        path = package(
+            extras={
+                "_rels/.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" Target="/3D/other.model"/></Relationships>',
+                "3D/other.model": f'<model unit="inch"><resources>{OBJECT}</resources><build><item objectid="1"/></build></model>',
+            }
+        )
+        np.testing.assert_allclose(
+            threemf.load_scene(path).to_mesh().extents, [254, 508, 0]
+        )
+
+    def test_omits_non_printable_build_items(self, package):
+        path = package(build='<item objectid="1"/><item objectid="1" printable="0"/>')
+        assert len(threemf.load_scene(path).to_mesh().faces) == 1
+
+
+class TestThreemfContract:
+    def test_rejects_unknown_document_units(self, package):
+        with pytest.raises(ValueError, match="unsupported 3MF unit"):
+            threemf.load_scene(package(unit="parsec"))
+
+    @pytest.mark.parametrize(
+        "relationship",
+        [
+            '<Relationship Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" Target="https://example.com/model" TargetMode="External"/>',
+            '<Relationship Type="unrelated" Target="/3D/3dmodel.model"/>',
+            '<Relationship Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" Target="/3D/3dmodel.model"/>'
+            * 2,
+        ],
+    )
+    def test_rejects_ambiguous_or_external_package_roots(self, package, relationship):
+        path = package(
+            extras={
+                "_rels/.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                + relationship
+                + "</Relationships>"
+            }
+        )
+        with pytest.raises(ValueError, match="invalid 3MF root relationship"):
+            threemf.load_scene(path)
+
+    def test_bounds_compressed_root_relationship_expansion(self, package):
+        path = package(
+            extras={
+                "_rels/.rels": "<Relationships>"
+                + " " * (1024 * 1024)
+                + "</Relationships>"
+            }
+        )
+        with pytest.raises(ValueError, match="3MF relationship limit exceeded"):
+            threemf.load_scene(path)

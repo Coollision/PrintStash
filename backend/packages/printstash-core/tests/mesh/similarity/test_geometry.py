@@ -20,6 +20,23 @@ from printstash_core.mesh.similarity.geometry import (
 
 
 class TestPrepareSurface:
+    def test_detaches_analysis_from_caller_array_tracking(self, tetra):
+        class CallerArray(np.ndarray):
+            """A mesh library's tracking belongs to its mutable source model."""
+
+        vertices, faces = tetra
+        tracked = vertices.view(CallerArray)
+        original = vertices.copy()
+        expected = prepare_surface(vertices, faces)
+
+        actual = prepare_surface(tracked, faces)
+
+        assert type(actual.vertices) is np.ndarray
+        np.testing.assert_array_equal(actual.vertices, expected.vertices)
+        np.testing.assert_array_equal(tracked, original)
+        actual.vertices[:] = 0
+        np.testing.assert_array_equal(tracked, original)
+
     def test_preserves_verification_metrics(self, cube):
         vertices, faces = cube
         surface = prepare_surface(vertices + [30, -20, 40], faces)

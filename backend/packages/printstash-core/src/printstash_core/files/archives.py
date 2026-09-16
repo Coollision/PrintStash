@@ -164,3 +164,40 @@ def extract_selected(
             staged.unlink(missing_ok=True)
         raise
     return extracted
+
+
+def iter_selected(
+    path: Path,
+    names: list[str],
+    *,
+    staging_dir: Path,
+    max_entry_bytes: int,
+    importable_suffixes: Set[str],
+):
+    """Yield one temporary selected entry; release it before extracting the next.
+
+    The caller first applies package-wide inspection limits. This iterator owns
+    its temporary file until the consumer moves it or advances/closes the stream.
+    It retains one ZIP directory and one expanded entry, regardless of archive size.
+    """
+    with zipfile.ZipFile(path) as archive:
+        for name in dict.fromkeys(names):
+            info = archive.getinfo(name)
+            if info.is_dir():
+                continue
+            if not safe_entry_name(info.filename):
+                raise ArchivePolicyError("archive_unsafe_entry")
+            if info.file_size > max_entry_bytes:
+                raise ArchivePolicyError("archive_entry_too_large")
+            suffix = Path(info.filename).suffix.lower()
+            if suffix not in importable_suffixes:
+                continue
+            staged = staging_dir / f"{uuid.uuid4().hex}{suffix}"
+            try:
+                with archive.open(info) as source:
+                    stream_to_path(
+                        cast(BinaryIO, source), staged, max_bytes=max_entry_bytes
+                    )
+                yield staged, info.filename.replace("\\", "/")
+            finally:
+                staged.unlink(missing_ok=True)

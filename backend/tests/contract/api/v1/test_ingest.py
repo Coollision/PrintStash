@@ -138,6 +138,9 @@ def _benchy_zip_bytes(*sources: Path) -> bytes:
 def _job(client: TestClient, resp, headers: dict[str, str]) -> dict:
     assert resp.status_code == 202, resp.text
     job_id = resp.json()["job_id"]
+    from tests.integration.api.v1._ingest_assertions import drain_ingestion
+
+    drain_ingestion()
     job = client.get(f"/api/v1/ingest/jobs/{job_id}", headers=headers)
     assert job.status_code == 200, job.text
     return job.json()

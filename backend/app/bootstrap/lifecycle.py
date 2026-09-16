@@ -399,6 +399,12 @@ async def lifespan(app: FastAPI):
 
     app.state.audit_scheduler_task = asyncio.create_task(run_audit_scheduler())
     app.state.notification_task = asyncio.create_task(run_dispatcher_loop())
+    from app.runtime.enrichment import run_enrichment
+
+    app.state.enrichment_task = asyncio.create_task(run_enrichment())
+    from app.runtime.ingestion import run_ingestion
+
+    app.state.ingestion_task = asyncio.create_task(run_ingestion())
     from app.runtime.vault_migrations import run_migrations as run_vault_migrations
 
     app.state.vault_migration_task = asyncio.create_task(run_vault_migrations())
@@ -436,6 +442,8 @@ async def lifespan(app: FastAPI):
         app.state.automatic_backup_task,
         app.state.audit_scheduler_task,
         app.state.notification_task,
+        app.state.enrichment_task,
+        app.state.ingestion_task,
         app.state.vault_migration_task,
         app.state.similarity_task,
         app.state.fleet_scheduler_task,

@@ -1,4 +1,4 @@
-"""Bounded closest-surface queries for registration, without native dependencies.
+"""Bounded closest-surface queries with optional detached native computation.
 
 A median AABB hierarchy prunes triangles. Leaves use exact point/triangle
 projection; at most 128 points by 32 triangles are broadcast at once. Work has a
@@ -31,10 +31,25 @@ class _Node:
 
 
 class SurfaceProximity:
-    def __init__(self, surface: Surface):
+    def __init__(self, surface: Surface, *, native: bool = True):
         import numpy as np
 
-        self.triangles = surface.vertices[surface.faces]
+        from ..native_rasterizer import kernel
+
+        self._native = None
+        # Drop ndarray subclasses before indexing; TrackedArray hooks otherwise
+        # run for every hierarchy node even though this geometry is immutable.
+        triangles = np.asarray(surface.vertices)[np.asarray(surface.faces)]
+        implementation = getattr(kernel(), "SurfaceTree", None) if native else None
+        if implementation is not None:
+            try:
+                self._native = implementation(
+                    np.asarray(triangles, dtype="=f8").tobytes()
+                )
+            except ValueError as exc:
+                raise GeometryError(str(exc)) from exc
+            return
+        self.triangles = triangles
         low, high = self.triangles.min(axis=1), self.triangles.max(axis=1)
         centers = (low + high) / 2
 
@@ -63,6 +78,15 @@ class SurfaceProximity:
             raise GeometryError("invalid_proximity_points")
         if type(max_work) is not int or not 1 <= max_work <= 32_000_000:
             raise GeometryError("invalid_proximity_budget")
+        if self._native is not None:
+            try:
+                packed = self._native.closest(
+                    np.asarray(points, dtype="=f8").tobytes(), max_work
+                )
+            except ValueError as exc:
+                raise GeometryError(str(exc)) from exc
+            result = np.frombuffer(packed, dtype="=f8").reshape(-1, 4)
+            return result[:, 0].copy(), result[:, 1:].copy()
         best = np.full(len(points), np.inf)
         nearest = np.empty_like(points, dtype=np.float64)
         ids = np.arange(len(points))

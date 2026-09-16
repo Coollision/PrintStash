@@ -29,7 +29,9 @@ from tests.factories import (
     build_tag,
     tag_collection,
 )
+from tests.factories.migration_rows import seed_schema_row
 from tests.paths import ALEMBIC_INI
+from tests.search_projection import drain_search
 
 
 @pytest.fixture
@@ -85,9 +87,17 @@ class TestSearchPassages:
 
     def test_projects_existing_models_after_upgrade(self, passage_engine):
         engine, config = passage_engine
-        with Session(engine) as session:
-            model = build_model(session, "Dragón", description="Print without supports")
-            subject = SearchSubject(SubjectType.MODEL, model.id)
+        with engine.begin() as connection:
+            seed_schema_row(
+                connection,
+                "models",
+                id=1,
+                name="Dragón",
+                slug="dragon",
+                hash="a" * 64,
+                description="Print without supports",
+            )
+            subject = SearchSubject(SubjectType.MODEL, 1)
 
         command.upgrade(config, "head")
         with Session(engine) as session:
@@ -148,6 +158,7 @@ class TestSearchPassages:
                 tag_collection(session, collection, tag)
                 content_changed(session, "model", [model.id])
                 session.commit()
+                drain_search(session)
                 assert (
                     "Tags: flexible" in session.exec(select(SearchPassage.text)).one()
                 )
@@ -156,6 +167,7 @@ class TestSearchPassages:
                 )
                 content_changed(session, "tag", [tag.id])
                 session.commit()
+                drain_search(session)
             with Session(engine) as session:
                 assert "flexible" not in "\n".join(
                     session.exec(select(SearchPassage.text)).all()

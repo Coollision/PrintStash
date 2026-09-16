@@ -3,13 +3,20 @@
 import importlib.util
 
 from printstash_core.inference import EmbeddingError
-from sqlmodel import Session
+from sqlalchemy import and_, exists, or_
+from sqlmodel import Session, select
 
-from app.db.models import File, SearchPassage, User
+from app.db.models import (
+    File,
+    SearchDependency,
+    SearchPassage,
+    SearchProjectionRequest,
+    User,
+)
 from app.modules.inference.configuration import embedding_provider
 from app.modules.inference.remote import RemoteEmbeddingProvider
 from app.modules.search import configuration, generations, semantic, visual_sources
-from app.modules.search.access import visible_passage_ids
+from app.modules.search.access import visible_passage_ids, visible_subjects
 from app.schemas.search import SearchStatus
 
 
@@ -18,6 +25,19 @@ def read(session: Session, user: User) -> SearchStatus:
     result = SearchStatus(
         enabled=settings.enabled, semantic_ready=False, legs=["lexical"], generations=[]
     )
+    visible = visible_subjects(session, user)
+    owner_visible = exists(select(visible.c.id).where(
+        visible.c.kind == SearchProjectionRequest.source_kind,
+        visible.c.id == SearchProjectionRequest.source_id,
+    ))
+    dependency_visible = exists(select(SearchDependency.id).join(visible, and_(
+        visible.c.kind == SearchDependency.subject_type,
+        visible.c.id == SearchDependency.subject_id,
+    )).where(SearchDependency.source_kind == SearchProjectionRequest.source_kind,
+             SearchDependency.source_id == SearchProjectionRequest.source_id))
+    result.backlog = session.exec(select(SearchProjectionRequest.id).where(
+        or_(owner_visible, dependency_visible),
+    ).limit(1)).first() is not None
     try:
         active = semantic.registry(session, settings)
     except (ValueError, TypeError):

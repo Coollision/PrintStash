@@ -16,6 +16,22 @@ from typing import Any
 
 from .native_rasterizer import kernel
 
+UNITS = {
+    "micron": 0.001,
+    "millimeter": 1.0,
+    "centimeter": 10.0,
+    "inch": 25.4,
+    "foot": 304.8,
+    "meter": 1000.0,
+}
+
+
+def _unit(root: ET.Element) -> float:
+    name = root.get("unit", "millimeter")
+    if name not in UNITS:
+        raise ValueError("unsupported 3MF unit")
+    return UNITS[name]
+
 
 def _part_path(current: str, reference: str) -> str:
     if "\\" in reference or ":" in reference or "?" in reference or "#" in reference:
@@ -31,7 +47,7 @@ def _part_path(current: str, reference: str) -> str:
     return normalized
 
 
-def _transform(attributes: dict[str, str]) -> Any:
+def _transform(attributes: dict[str, str], unit: float = 1.0) -> Any:
     import numpy as np
 
     matrix = np.eye(4, dtype=np.float64)
@@ -40,6 +56,7 @@ def _transform(attributes: dict[str, str]) -> Any:
         if values.size != 12 or not np.isfinite(values).all():
             raise ValueError("invalid 3MF transform")
         matrix[:3, :4] = values.reshape((4, 3)).T
+        matrix[:3, 3] *= unit
     return matrix
 
 
@@ -63,7 +80,32 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
         if len(names) != len(entries):
             raise ValueError("duplicate 3MF package member")
         primary = next((n for n in names if n.lower() == "3d/3dmodel.model"), None)
-        if primary is None:
+        if "_rels/.rels" in names:
+            relationship = names["_rels/.rels"]
+            if (
+                relationship.file_size > 1024**2
+                or relationship.file_size > max(relationship.compress_size, 1) * 200
+            ):
+                raise ValueError("3MF relationship limit exceeded")
+            with archive.open(relationship) as source:
+                shell, meshes = native.parse_3mf_xml(source, max_bytes=1024**2)
+            relationships = ET.fromstring(shell)
+            candidates = [
+                node
+                for node in relationships
+                if node.tag
+                == "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
+                and node.get("Type")
+                == "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"
+            ]
+            if (
+                meshes
+                or len(candidates) != 1
+                or candidates[0].get("TargetMode", "Internal") != "Internal"
+            ):
+                raise ValueError("invalid 3MF root relationship")
+            primary = _part_path("", candidates[0].get("Target", ""))
+        if primary is None or primary not in names:
             raise ValueError("3MF model part is missing")
         native_archive = native.ThreeMfArchive(path)
         stack.callback(native_archive.close)
@@ -86,6 +128,7 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
             root = ET.fromstring(shell)
             if root.tag.rsplit("}", 1)[-1] != "model":
                 raise ValueError("invalid 3MF model root")
+            unit = _unit(root)
             objects = root.findall("./{*}resources/{*}object")
             table = {}
             parsed = iter(packed)
@@ -99,7 +142,8 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                     vertices, faces = next(parsed)
                     geometry.append(
                         (
-                            np.frombuffer(vertices, dtype=np.float64).reshape(-1, 3),
+                            np.frombuffer(vertices, dtype=np.float64).reshape(-1, 3)
+                            * unit,
                             np.frombuffer(faces, dtype=np.int64).reshape(-1, 3),
                         )
                     )
@@ -113,7 +157,7 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                 raise ValueError("3MF object limit exceeded")
 
         read_part(primary)
-        unit = roots[primary].get("unit", "millimeters")
+        unit = _unit(roots[primary])
         graph = nx.MultiDiGraph()
         world = ("", "world")
         graph.add_node(world)
@@ -121,11 +165,16 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
         if build is None:
             raise ValueError("3MF build is missing")
         for item in build.findall("./{*}item"):
+            if item.get("printable", "1") not in ("1", "true"):
+                continue
+            reference = item.get(
+                "{http://schemas.microsoft.com/3dmanufacturing/production/2015/06}path"
+            )
+            target_part = _part_path(primary, reference) if reference else primary
             graph.add_edge(
                 world,
-                (primary, item.attrib["objectid"]),
-                key=item.get("partnumber"),
-                matrix=_transform(item.attrib),
+                (target_part, item.attrib["objectid"]),
+                matrix=_transform(item.attrib, unit),
             )
         expanded = set()
         pending = deque(graph[world])
@@ -152,7 +201,11 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                     _part_path(part, reference) if reference else part,
                     component.attrib["objectid"],
                 )
-                graph.add_edge(node, target, matrix=_transform(component.attrib))
+                graph.add_edge(
+                    node,
+                    target,
+                    matrix=_transform(component.attrib, _unit(roots[part])),
+                )
                 pending.append(target)
         if not nx.is_directed_acyclic_graph(graph):
             raise ValueError("cyclic 3MF component graph")
@@ -194,7 +247,10 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                 scene.geometry[key] = trimesh.Trimesh(
                     vertices=vertices,
                     faces=faces,
-                    metadata={"units": unit},
+                    metadata={
+                        "units": "millimeter",
+                        "source_units": roots[node[0]].get("unit", "millimeter"),
+                    },
                     process=False,
                 )
             transforms = trimesh.graph.multigraph_collect(graph, traversal, "matrix")

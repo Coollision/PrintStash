@@ -12,6 +12,7 @@ mod mesh_prepare;
 mod orchestration;
 mod prepared_preview;
 mod preview;
+mod proximity;
 mod render_job;
 mod shading;
 mod stl;
@@ -292,6 +293,7 @@ fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(wrap_pyfunction!(mesh_prepare::smooth_normals, module)?)?;
+    module.add_class::<proximity::SurfaceTree>()?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     module.add_function(wrap_pyfunction!(rasterize, module)?)?;
     module.add_function(wrap_pyfunction!(shading::shade_fragments, module)?)?;

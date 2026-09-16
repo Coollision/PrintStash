@@ -1,4 +1,9 @@
 {
+  "Some details could not be prepared": "No se pudieron preparar algunos detalles",
+  "Preview available on request": "Vista previa disponible bajo petición",
+  "Retry enrichment": "Reintentar preparación",
+  "Generate preview": "Generar vista previa",
+  "Preparing previews and details": "Preparando vistas previas y detalles",
   "aiSearch.matchDetails": "Por qué aparece",
   "aiSearch.resultView": "Vista de resultados",
   "aiSearch.gridView": "Vista de cuadrícula",
