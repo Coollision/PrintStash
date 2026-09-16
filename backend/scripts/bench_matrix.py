@@ -149,6 +149,10 @@ def harness_context(work: Path, head: str) -> Path:
         "RUN uv pip install --python /app/.venv/bin/python --no-deps --require-hashes "
         "--only-binary :all: -r /tmp/benchmark-requirements.txt "
         "&& uv pip check --python /app/.venv/bin/python\n"
+        # The release installs core as a wheel, so its source COPY can have
+        # non-traversable directories. Hashing those sources needs read access
+        # in this instrumentation layer, without running the benchmark as root.
+        "RUN chmod -R a+rX /app/packages\n"
         "COPY bench_import.py bench_database.py /app/scripts/\n"
         f"LABEL org.printstash.benchmark.harness-revision={head}\n"
     )

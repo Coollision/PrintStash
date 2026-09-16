@@ -193,8 +193,8 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 41 | refuses incomplete comparison pairs | Error | Empty or unpaired reports | Fails without reporting comparative evidence | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_incomplete_pairs` |
 | 42 | refuses ambiguous benchmark revisions | Error | Branch, short hash or option-like input | Fails before running Git/build commands | Repo | ✅ `tests/repo/test_bench_matrix.py::TestBenchmarkRevision::test_refuses_ambiguous_or_option_like_revisions` |
 | 43 | requires retained performance evidence | Edge | Opt-in CI benchmark workflow | Dedicated job uses read-only token and required evidence/image artifacts | Repo | ✅ `tests/repo/test_ci_workflows.py::TestControlledImportBenchmark` |
-| 44 | completes the intended Model lifecycle | Happy | Unique uploaded bytes; other models may exist in Trash | Correct Model restored and purged | Playwright | ❌ corrected test awaiting run: `frontend/tests/e2e-real/models.spec.ts` |
-| 45 | applies the selected tag before upload | Edge | Asynchronous tag creation | Selected chip visible before transfer; tag filter retains Model | Playwright | ❌ corrected test awaiting run: `frontend/tests/e2e-real/vault.spec.ts` |
+| 44 | completes the intended Model lifecycle | Happy | Unique uploaded bytes; other models may exist in Trash | Correct Model restored and purged | Playwright | ✅ `frontend/tests/e2e-real/models.spec.ts` |
+| 45 | applies the selected tag before upload | Edge | Asynchronous tag creation | Selected chip visible before transfer; tag filter retains Model | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
 | 46 | cancels warmup after consent revocation | Edge | Concurrent real file-backed WAL reader/writer | Loader terminates; provider remains cold | Integration | ✅ `tests/integration/modules/search/test_model_warmup.py` |
 | 47 | refuses invalid performance measurements | Error | Null, boolean, string, nonpositive or nonfinite value | Comparison fails without accepting timing evidence | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_invalid_measurements` |
 | 48 | refuses missing performance measurements | Error | Absent API latency field | Comparison fails with named missing metric | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_missing_measurements` |
@@ -270,3 +270,30 @@ controlled comparison runner, corpus, and corrected WAL warmup have 32 passing
 focused tests; actual
 controlled measurements remain pending. Exact-diff security review through
 `ff6b34b0` reports no findings and does not cover subsequent uncommitted changes.
+
+
+The local fast lane completes with **8,562 passed** (22 warnings); it started
+before the new matrix tests were collected, which pass in the separate focused
+32-test run. Model lifecycle and tag selection pass three real-browser repetitions
+each with retries disabled (**6 passed**). Current full CI remains required.
+
+The first controlled CI run builds both committed releases and the corpus but
+fails before measuring: the unprivileged harness cannot traverse source directories
+copied into the release with non-executable directory modes. The instrumentation
+layer now grants read/traversal access to packaged sources; it changes no source
+bytes, installed dependencies or production image. Complete unprivileged container
+imports then pass on real SQLite and the private PostgreSQL service with both
+source Artifacts retained. These are functional checks, not accepted timing pairs.
+The complete matrix must be rerun.
+
+CI at `ed0a8a4d` passes 86 real-browser tests, including the lifecycle/tag fixes,
+but exposes a bad empty-search fixture: FTS matches any token, so `no-such-model`
+can match `model`. Its correction uses an absent single token with an explicitly
+populated library. The frontend image scan also needs rerunning after Grype's
+vulnerability database download receives a network reset; no scan bypass is used.
+
+
+The corrected unmatched-keyword browser fixture passes three repetitions with
+retries disabled. Its final assertion also checks the rendered "No models found"
+state against a populated library and passes a focused rerun. This verifies a
+completed empty response rather than mistaking a loading skeleton for one.

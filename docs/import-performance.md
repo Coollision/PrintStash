@@ -367,7 +367,9 @@ The runner builds the original, immediate-parent, and current committed full
 release images before measurement. It records immutable image IDs and retains
 release image archives alongside sanitized evidence for 90 days. The same
 hash-pinned psutil instrumentation and v4 harness are layered over each release;
-application dependencies are not upgraded. Subsequent milestones must retain the
+application dependencies are not upgraded. Packaged source directories receive
+read/traversal permissions in the instrumentation layer so an unprivileged runner
+can hash their unchanged bytes. Subsequent milestones must retain the
 M00 image archive and corpus: rebuilding a moving Docker base or regenerating
 fixtures with changed numerical dependencies is not an equivalent baseline.
 

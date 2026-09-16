@@ -89,12 +89,13 @@ test.describe("vault", () => {
     await expect(modelCard(page, plain)).toHaveCount(0);
   });
 
-  test("a meshless search term yields the empty state", async ({ page }) => {
-    await page.goto("/");
-    await page
-      .getByRole("searchbox", { name: "Search library" })
-      .fill(`no-such-model-${Date.now()}`);
+  test("an unmatched keyword yields the empty state", async ({ page }) => {
+    await uploadGcodeModel(page, `e2e-empty-search-${Date.now()}`);
+    // FTS matches any punctuation-separated term: "no-such-model" still
+    // matches "model". Use a single absent token against a populated library.
+    await page.getByRole("searchbox", { name: "Search library" }).fill(`unmatched${Date.now()}`);
     await expect(page).toHaveURL(/[?&]q=/);
     await expect(page.locator('a[href^="/models/"]')).toHaveCount(0);
+    await expect(page.getByText("No models found", { exact: true })).toBeVisible();
   });
 });
