@@ -127,6 +127,8 @@
 
 ### Fixed
 
+- Restore verified file uploads over local-network HTTP; browsers without native SHA-256 support no longer show a misleading server connection error.
+
 - Resumable uploads retain their executable ingestion command if finalization
   fails after the durable handoff. Background workers preserve shutdown requests
   even when an active unit fails while draining.

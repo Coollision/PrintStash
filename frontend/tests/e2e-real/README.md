@@ -142,3 +142,5 @@ storage / AI Search layouts at desktop and mobile widths. The advanced-controls
 return flow checks viewport visibility and keyboard navigation back to guided setup.
 
 - AI Search results: local semantic retrieval, grid/list switching, reload recovery, and clearing a submitted query back to the library (`ai-search/search.spec.ts`).
+
+- `lan-upload.spec.ts`: upload a 112 KiB STL without SubtleCrypto and verify persistence after reload.
