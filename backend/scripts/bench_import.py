@@ -42,6 +42,7 @@ if __package__ in (None, ""):
 from scripts.bench_database import (
     database_record,
     disposable_database,
+    metadata_catalog,
     pending_enrichment,
     read_rows,
 )
@@ -407,6 +408,7 @@ def run(
                     resource_report = resources.report(finished - start)
                     with database_engine.connect() as db:
                         database_details = database_record(db)
+                        parsed_metadata = metadata_catalog(db)
                         catalog = read_rows(
                             db,
                             "SELECT sha256, size_bytes FROM files ORDER BY sha256, size_bytes",
@@ -536,7 +538,7 @@ def run(
                         "processing_seconds": finished - accepted,
                         "total_seconds": finished - start,
                         "saved_seconds": saved - start,
-                        "measurement_protocol": "job-and-library-poll-250ms-v3",
+                        "measurement_protocol": "job-and-library-poll-250ms-v4",
                         "failed_enrichment": failed_enrichment,
                         "navigation_samples": navigation_samples,
                         "navigation_latency": latency_summary(navigation_samples),
@@ -546,6 +548,7 @@ def run(
                         **resource_report,
                         "catalog": catalog,
                         "geometry_catalog": geometry_catalog,
+                        "metadata_catalog": parsed_metadata,
                         "fingerprint_catalog": fingerprints,
                         "missing_fingerprint_sources": missing_fingerprints,
                         "status": status,
@@ -602,6 +605,13 @@ def compare_previews(before: dict, after: dict, *, mode: str = "bytes") -> None:
         )
 
 
+def compare_metadata(before: dict, after: dict) -> None:
+    if "metadata_catalog" not in before or "metadata_catalog" not in after:
+        raise SystemExit("Comparison refused: parsed metadata evidence is missing")
+    if before["metadata_catalog"] != after["metadata_catalog"]:
+        raise SystemExit("Comparison refused: parsed metadata differs")
+
+
 def compare_fingerprints(before: dict, after: dict) -> None:
     """Compare final component identity and readiness, never initial job hints."""
     if "fingerprint_catalog" not in before or "fingerprint_catalog" not in after:
@@ -648,7 +658,7 @@ def main() -> None:
             raise SystemExit(
                 "Comparison refused: reference import did not complete successfully"
             )
-        if before.get("measurement_protocol") != "job-and-library-poll-250ms-v3":
+        if before.get("measurement_protocol") != "job-and-library-poll-250ms-v4":
             raise SystemExit("Comparison refused: measurement protocols differ")
         if before.get("similarity_on_ingest", False) != args.similarity:
             raise SystemExit("Comparison refused: similarity settings differ")
@@ -677,6 +687,7 @@ def main() -> None:
     )
     if before is not None:
         compare_databases(before, report)
+        compare_metadata(before, report)
         if (before["archive_sha256"], before["catalog"]) != (
             report["archive_sha256"],
             json.loads(json.dumps(report["catalog"])),

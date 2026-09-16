@@ -5,6 +5,7 @@ import pytest
 from scripts.bench_import import (
     compare_databases,
     compare_fingerprints,
+    compare_metadata,
     compare_previews,
     environment_record,
 )
@@ -162,3 +163,23 @@ class TestLatencySummary:
         assert latency_summary(
             [{"library_ms": 100}, {"library_ms": 20}, {"library_ms": 50}]
         ) == {"samples": 3, "median_ms": 50, "p95_ms": 100, "max_ms": 100}
+
+
+class TestCompareMetadata:
+    def test_rejects_lost_slicer_facts(self):
+        with pytest.raises(SystemExit, match="parsed metadata differs"):
+            compare_metadata(
+                {"metadata_catalog": {"metadata": [{"estimated_time_s": 90}]}},
+                {"metadata_catalog": {"metadata": [{"estimated_time_s": None}]}},
+            )
+
+    def test_accepts_identical_facts(self):
+        facts = {
+            "metadata": [{"estimated_time_s": 90}],
+            "artifact_material_requirements": [],
+        }
+        compare_metadata({"metadata_catalog": facts}, {"metadata_catalog": facts})
+
+    def test_refuses_missing_evidence(self):
+        with pytest.raises(SystemExit, match="parsed metadata evidence is missing"):
+            compare_metadata({}, {})

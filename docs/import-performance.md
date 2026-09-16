@@ -12,9 +12,11 @@ Each run starts a fresh local server with a migrated database and temporary file
 storage. SQLite is the default. Add `--database postgres` to use a disposable
 PostgreSQL database in the repository's test container (Docker required). The
 benchmark never accepts an existing vault database URL. Both databases use the
-same supported application bootstrap as packaged deployments. Protocol v3 records
+same supported application bootstrap as packaged deployments. Protocol v4 records
 the database backend/server version and requires them to match for comparisons;
-v2 reports cannot be used as v3 references. It uploads the ZIP through the API, selects every supported file and
+Older reports cannot be used as v4 references. Parsed slicer metadata and per-tool
+material requirements must also match; run-specific IDs and timestamps are
+excluded. It uploads the ZIP through the API, selects every supported file and
 records source completion, then waits for metadata, background previews, lexical
 projection and optionally similarity runs. The script checks the final file count and
 failure count. A comparison also requires matching archive hashes and imported

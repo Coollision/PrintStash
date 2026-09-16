@@ -162,19 +162,23 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 12 | requires reference database evidence | Error | Missing reference metadata | Comparison refused | Unit | ✅ `tests/repo/test_bench_import.py::TestCompareDatabases::test_requires_reference_database_evidence` |
 | 13 | benchmarks a complete import | Happy | ZIP with known tetrahedron, fresh real app on each DB | Completed job, exact source digest/size, four triangles, ready preview, serialized DB evidence | E2E | ✅ `tests/e2e/test_import_benchmark.py::TestImportBenchmark::test_benchmarks_a_complete_import` |
 | 14 | measures actual native execution | Happy | Isolated instrumented extension and existing Rust/binding/preview suites | Loaded module is instrumented; executed source coverage exists for bindings and render core | Integration | ✅ `scripts/native-coverage.sh`; instrumented tests and combined workspace report verified locally |
-
 | 15 | rejects the former public test password | Error | Real PostgreSQL benchmark; known former password | Authentication fails; session-specific credentials still support the benchmark | Integration | ✅ `tests/repo/test_bench_database.py::TestDisposableDatabase::test_rejects_public_test_password` |
-| 16 | removes registered native indexes during test reset | Edge | Float, int8 and binary index roots with generation ownership | Root and shadow tables disappear before ownership rows are cleared | Integration | ❌ verification pending: `tests/repo/test_db_parity.py::TestTestDatabase::test_reset_removes_registered_native_index_tables` |
+| 16 | removes registered native indexes during test reset | Edge | Float, int8 and binary index roots with generation ownership | Root and shadow tables disappear before ownership rows are cleared | Integration | ✅ `tests/repo/test_db_parity.py::TestTestDatabase::test_reset_removes_registered_native_index_tables` |
 | 17 | serves independent thumbnail fallback | Error | Native multiview unavailable; distinct thumbnail rendering recipe | Thumbnail generation serves the expected Model without copying incompatible vectors | Integration | ✅ `tests/integration/modules/search/test_visual_index.py::TestVisualIndex::test_prepares_an_independent_thumbnail_fallback` |
 | 18 | serves search without related packages | Edge | Similarity/families packages absent; live projection worker | All four subject types remain searchable after public writes | E2E | ❌ rerun pending: `tests/e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages` |
 | 19 | preserves MinIO migration contents | Happy | Official mirror, identical pinned image digest; ordinary/Unicode/multipart objects | Two migrations preserve all three objects and source volume | Contract | ✅ `scripts/test_minio_migration.sh` |
-| 20 | focuses localized library search | Happy | Spanish locale and slash shortcut | Current accessible searchbox receives focus | Playwright | ❌ rerun pending: `frontend/tests/e2e/i18n.spec.ts` |
-| 21 | preserves import browser workflows | Happy | Current search-status/caption response contracts | Existing upload/capture/detail flows complete without unexpected HTTP errors | Playwright | ❌ rerun pending: `frontend/tests/e2e/{uploads,pending-imports,inbox,model-detail}.spec.ts` |
-| 22 | preserves storage through restart | Edge | WebDAV setup followed by real backend restart | Active provider, stored credentials and safe GC workflow remain usable | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/storage/storage-provider.spec.ts` |
-| 23 | persists print-tracking toggle | Happy | Toggle mutation response before React repaint | New value appears and survives reload | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/settings.spec.ts` |
-| 24 | requires confirmation before staging cleanup | Edge | Real expired ownership receipt in disposable browser vault | File survives preview; confirmation removes it | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/settings.spec.ts` |
-| 25 | filters library with current search control | Happy | Uploaded Model; search query then list/grid selection | Matching Model remains visible in both views | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/vault.spec.ts` |
-| 26 | shows an empty library search | Edge | Query with no matching Model | Model links disappear after query is applied | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/vault.spec.ts` |
+| 20 | focuses localized library search | Happy | Spanish locale and slash shortcut | Current accessible searchbox receives focus | Playwright | ✅ `frontend/tests/e2e/i18n.spec.ts` |
+| 21 | preserves import browser workflows | Happy | Current search-status/caption response contracts | Existing upload/capture/detail flows complete without unexpected HTTP errors | Playwright | ✅ `frontend/tests/e2e/{uploads,pending-imports,inbox,model-detail}.spec.ts` |
+| 22 | preserves storage through restart | Edge | WebDAV setup followed by real backend restart | Active provider, stored credentials and safe GC workflow remain usable | Playwright | ✅ `frontend/tests/e2e-real/storage/storage-provider.spec.ts` |
+| 23 | persists print-tracking toggle | Happy | Toggle mutation response before React repaint | New value appears and survives reload | Playwright | ✅ `frontend/tests/e2e-real/settings.spec.ts` |
+| 24 | requires confirmation before staging cleanup | Edge | Real expired ownership receipt in disposable browser vault | File survives preview; confirmation removes it | Playwright | ✅ `frontend/tests/e2e-real/settings.spec.ts` |
+| 25 | filters library with current search control | Happy | Uploaded Model; search query then list/grid selection | Matching Model remains visible in both views | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
+| 26 | shows an empty library search | Edge | Query with no matching Model | Model links disappear after query is applied | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
+
+| 27 | preserves parsed metadata in performance comparisons | Happy/Error | Real Prusa G-code plus mesh on both DBs; changed or missing comparison facts | Exact slicer time/layer/material/tool color recorded without transient IDs; lossy comparisons refused | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestCompareMetadata` |
+| 28 | edits a linked Nextcloud connection | Edge | Current verified-migration provider form; existing linked target | Credentials remain private; compatible edits succeed and root change is rejected | Playwright | ✅ `frontend/tests/e2e-real/critical/remote-backup.spec.ts` |
+| 29 | resumes verified migration after restart | Edge | Baseline and online delta Artifacts; API restart | Both contents survive cutover; full audit succeeds | Playwright | ✅ `frontend/tests/e2e-real/migration/vault-migration.spec.ts` |
+| 30 | re-enrolls an external root before write-back | Edge | Test-owned root with missing proof | Explicit enrollment succeeds; upload bytes reach that root | Playwright | ✅ `frontend/tests/e2e-real/external-libraries.spec.ts` |
 
 The browser paths above are relative to the repository root. Verification so far:
 corrected both-database benchmark suite **31 passed**; additional comparison/CLI
@@ -197,3 +201,19 @@ Broader gates and controlled benchmark comparisons remain incomplete.
 The MinIO registry correction intentionally retains the historical migration
 source release and digest; it is not a dependency upgrade. Application execution
 ownership, schema and installed release versions remain unchanged in M00.
+
+CI revision `927d81a5` passed frontend lint/format/types/coverage/mock Playwright,
+native source coverage, both architecture native jobs, all eight image builds/scans,
+the core matrix, SQLite async extra, extension and MinIO migration. Its main real
+browser lane passed 86 tests with one external-root test skipped for missing fixture
+configuration; upload/onboarding follow-on suites passed two tests each. The skip
+is not acceptance evidence. CI now supplies an explicit disposable external root.
+Two later browser tests exposed the collapsed migration form: local corrected
+Nextcloud editing and full Vault migration/restart tests both pass. Backend CI and
+new-revision CI remain required. M00 protocol v4 adds exact parsed metadata and
+per-tool requirements to comparison acceptance (24 comparison/CLI tests and two
+real-database import tests pass). No performance comparison is accepted yet.
+
+The external-root browser contract now passes locally with the explicit fixture;
+it distinguishes missing proof from legacy unbound state. Updated benchmark
+code passes Ruff and Pyright.

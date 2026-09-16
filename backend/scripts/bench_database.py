@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import MetaData, Table, create_engine, inspect, select
 from sqlalchemy.engine import Connection, Engine, make_url
 
 from app.db.url import normalize_database_url
@@ -101,3 +101,24 @@ def pending_enrichment(
                 f"SELECT COUNT(*) FROM {table} WHERE {policy}state = 'failed'"
             ).scalar_one()
     return pending, failed
+
+
+def metadata_catalog(connection: Connection) -> dict[str, list[dict]]:
+    """Compare parsed facts by source digest, excluding run-specific identities."""
+    schema = MetaData()
+    files = Table("files", schema, autoload_with=connection)
+    catalog = {}
+    for name in ("metadata", "artifact_material_requirements"):
+        table = Table(name, schema, autoload_with=connection)
+        facts = [
+            column
+            for column in table.columns
+            if column.name not in {"id", "file_id", "created_at", "updated_at"}
+        ]
+        rows = connection.execute(
+            select(files.c.sha256.label("source_sha256"), *facts)
+            .join_from(files, table, table.c.file_id == files.c.id)
+            .order_by(files.c.sha256, *facts)
+        )
+        catalog[name] = [dict(row) for row in rows.mappings()]
+    return catalog
