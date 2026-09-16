@@ -110,6 +110,34 @@ class TestComparePreviews:
 
 
 class TestBenchmarkArguments:
+    @pytest.mark.parametrize("database", ["sqlite", "postgres"])
+    def test_rejects_invalid_external_server_configuration(
+        self, monkeypatch, tmp_path, database
+    ):
+        import sys
+
+        from scripts import bench_import
+
+        monkeypatch.delenv("PRINTSTASH_M00_TEST_ADMIN_URL", raising=False)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "bench_import",
+                str(tmp_path / "absent.zip"),
+                "--output",
+                str(tmp_path / "result.json"),
+                "--database",
+                database,
+                "--postgres-admin-url-env",
+                "PRINTSTASH_M00_TEST_ADMIN_URL",
+            ],
+        )
+        with pytest.raises(SystemExit) as error:
+            bench_import.main()
+        assert error.value.code == 2
+        assert not (tmp_path / "result.json").exists()
+
     def test_supports_the_documented_script_entry_point(self, tmp_path):
         import os
         import subprocess

@@ -1,8 +1,8 @@
 """Disposable databases and read-only inspection for the import benchmark.
 
-PostgreSQL uses the same test-container owner as the contract suite. No caller
-can supply an existing vault URL: each run owns a fresh database and removes
-only that database after the application has stopped.
+PostgreSQL defaults to the contract suite's test-container owner. A host-managed
+isolated service may instead supply its maintenance database URL. An application
+database URL is rejected: each run creates and removes only its own fresh database.
 """
 
 from __future__ import annotations
@@ -19,7 +19,11 @@ from app.db.url import normalize_database_url
 
 
 @contextmanager
-def disposable_database(root: Path, dialect: str) -> Iterator[Engine]:
+def disposable_database(
+    root: Path, dialect: str, *, postgres_admin_url: str | None = None
+) -> Iterator[Engine]:
+    if postgres_admin_url is not None and dialect != "postgres":
+        raise ValueError("A PostgreSQL test server requires --database postgres")
     if dialect == "sqlite":
         path = root / "vault.sqlite"
         path.touch(exist_ok=False)
@@ -32,10 +36,25 @@ def disposable_database(root: Path, dialect: str) -> Iterator[Engine]:
     if dialect != "postgres":
         raise ValueError(f"Unsupported benchmark database: {dialect}")
 
-    # Lazy import keeps the default SQLite benchmark independent of Docker.
-    from tests.containers import postgres_url
+    if postgres_admin_url is None:
+        # Lazy import keeps the default SQLite benchmark independent of Docker.
+        from tests.containers import postgres_url
 
-    base_url = make_url(normalize_database_url(postgres_url()))
+        postgres_admin_url = postgres_url()
+    else:
+        configured = make_url(postgres_admin_url)
+        if (
+            configured.get_backend_name() != "postgresql"
+            or configured.database != "postgres"
+        ):
+            raise ValueError(
+                "The isolated test server must target PostgreSQL's postgres maintenance database"
+            )
+        if configured.query:
+            raise ValueError(
+                "PostgreSQL test server URL query overrides are not supported"
+            )
+    base_url = make_url(normalize_database_url(postgres_admin_url))
     admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
     name = "import_bench_" + uuid4().hex
     try:

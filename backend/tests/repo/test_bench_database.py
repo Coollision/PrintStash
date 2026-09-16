@@ -121,3 +121,63 @@ class TestDisposableDatabase:
         with pytest.raises(ValueError, match="Unsupported benchmark database"):
             with disposable_database(tmp_path, "mysql"):
                 pytest.fail("unsupported dialect was accepted")
+
+
+class TestExternalPostgresServer:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgresql://test:secret@127.0.0.1/existing-vault",
+            "sqlite:///postgres",
+            "postgresql://test:secret@127.0.0.1/postgres?dbname=existing-vault",
+        ],
+    )
+    def test_rejects_application_databases_before_connecting(self, tmp_path, url):
+        with pytest.raises(
+            ValueError, match="maintenance database|query overrides"
+        ) as error:
+            with disposable_database(tmp_path, "postgres", postgres_admin_url=url):
+                pytest.fail("invalid connection was accepted")
+        assert "secret" not in str(error.value)
+        assert not list(tmp_path.iterdir())
+
+    def test_rejects_server_configuration_for_sqlite(self, tmp_path):
+        with pytest.raises(ValueError, match="requires --database postgres"):
+            with disposable_database(
+                tmp_path, "sqlite", postgres_admin_url="postgresql:///postgres"
+            ):
+                pytest.fail("SQLite accepted a server configuration")
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.postgres
+    def test_uses_only_a_fresh_database_on_the_supplied_server(self, tmp_path):
+        from sqlalchemy.engine import make_url
+
+        url = make_url(normalize_database_url(postgres_url())).set(database="postgres")
+        admin = create_engine(url)
+        try:
+            with admin.connect() as db:
+                before = set(
+                    db.exec_driver_sql("SELECT datname FROM pg_database").scalars()
+                )
+            with disposable_database(
+                tmp_path,
+                "postgres",
+                postgres_admin_url=url.render_as_string(hide_password=False),
+            ) as engine:
+                assert engine.url.database not in before
+                with engine.begin() as db:
+                    db.exec_driver_sql("CREATE TABLE sentinel (value INTEGER)")
+                    db.exec_driver_sql("INSERT INTO sentinel VALUES (42)")
+                with engine.connect() as db:
+                    assert (
+                        db.exec_driver_sql("SELECT value FROM sentinel").scalar_one()
+                        == 42
+                    )
+            with admin.connect() as db:
+                assert (
+                    set(db.exec_driver_sql("SELECT datname FROM pg_database").scalars())
+                    == before
+                )
+        finally:
+            admin.dispose()

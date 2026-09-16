@@ -11,7 +11,14 @@ uv run python scripts/bench_import.py /path/library.zip --output after.json --co
 Each run starts a fresh local server with a migrated database and temporary file
 storage. SQLite is the default. Add `--database postgres` to use a disposable
 PostgreSQL database in the repository's test container (Docker required). The
-benchmark never accepts an existing vault database URL. Both databases use the
+benchmark never accepts an existing vault database URL. For release-image runs,
+the host can provision an isolated PostgreSQL service on a private container
+network, then pass its maintenance URL through an environment variable named by
+`--postgres-admin-url-env`. This mode requires the `postgres` maintenance database,
+rejects URL query overrides, and still creates/drops only a generated per-run
+database. Never supply a production service. The benchmark container needs no
+Docker socket or host networking in this mode. Keep its credential environment
+file private and out of evidence; reports record only server kind/version. Both databases use the
 same supported application bootstrap as packaged deployments. Protocol v4 records
 the database backend/server version and requires them to match for comparisons;
 Older reports cannot be used as v4 references. Parsed slicer metadata and per-tool

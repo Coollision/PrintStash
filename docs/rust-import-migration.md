@@ -180,6 +180,10 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 29 | resumes verified migration after restart | Edge | Baseline and online delta Artifacts; API restart | Both contents survive cutover; full audit succeeds | Playwright | ✅ `frontend/tests/e2e-real/migration/vault-migration.spec.ts` |
 | 30 | re-enrolls an external root before write-back | Edge | Test-owned root with missing proof | Explicit enrollment succeeds; upload bytes reach that root | Playwright | ✅ `frontend/tests/e2e-real/external-libraries.spec.ts` |
 
+| 31 | refuses an existing application database URL | Error | Explicit non-maintenance DB, wrong dialect, URL overrides or SQLite with server configuration | Refused before connection/filesystem writes; credentials absent from error | Integration | ✅ `tests/repo/test_bench_database.py::TestExternalPostgresServer` |
+| 32 | isolates databases on a host-managed service | Happy | Real PostgreSQL maintenance connection | Fresh database supports writes; cleanup leaves original database inventory intact | Integration | ✅ `tests/repo/test_bench_database.py::TestExternalPostgresServer::test_uses_only_a_fresh_database_on_the_supplied_server` |
+| 33 | imports through a private PostgreSQL service | Happy/Error | Real host-managed PostgreSQL; absent CLI environment or wrong dialect | Complete metadata-preserving import on valid service; invalid CLI rejected | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestBenchmarkArguments` |
+
 The browser paths above are relative to the repository root. Verification so far:
 corrected both-database benchmark suite **31 passed**; additional comparison/CLI
 suite **21 passed**; database authentication/isolation and container startup suite
@@ -222,3 +226,11 @@ The Python 3.13 compatibility job at `927d81a5` was cancelled by its 30-minute
 job budget after reaching 80% of the non-service suite without a reported failure.
 Its job budget is now 60 minutes; individual test timeouts remain unchanged.
 The cancelled run is incomplete evidence and the full lane must pass.
+
+Release benchmark containers can use a host-managed isolated PostgreSQL service
+without Docker socket access or host networking. The optional maintenance URL is
+read from a named environment variable, accepts only the `postgres` database and
+no query overrides, and still creates a generated database per run. Isolation
+checks pass (19 tests); comparison/CLI and the managed-service import E2E pass
+(27 tests), with Ruff and Pyright clean. The initial socket-mounted command was
+rejected before execution; it supplies no benchmark evidence.

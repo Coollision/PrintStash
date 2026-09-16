@@ -179,6 +179,7 @@ def run(
     export_previews: Path | None = None,
     workers: int = 1,
     database: str = "sqlite",
+    postgres_admin_url: str | None = None,
 ) -> dict:
     backend = Path(__file__).resolve().parent.parent
     environment = environment_record(backend)
@@ -206,7 +207,9 @@ def run(
     log_path = output.with_suffix(".server.log")
     with (
         tempfile.TemporaryDirectory(prefix="printstash-import-bench-") as temporary,
-        disposable_database(Path(temporary), database) as database_engine,
+        disposable_database(
+            Path(temporary), database, postgres_admin_url=postgres_admin_url
+        ) as database_engine,
     ):
         root = Path(temporary)
         env = {
@@ -634,6 +637,10 @@ def main() -> None:
     parser.add_argument("--compare", type=Path)
     parser.add_argument("--database", choices=("sqlite", "postgres"), default="sqlite")
     parser.add_argument(
+        "--postgres-admin-url-env",
+        help="Environment variable holding an isolated PostgreSQL test server's maintenance URL",
+    )
+    parser.add_argument(
         "--preview-comparison", choices=("bytes", "pixels"), default="bytes"
     )
     parser.add_argument("--export-previews", type=Path)
@@ -645,6 +652,15 @@ def main() -> None:
         help="Enable analysis on upload",
     )
     args = parser.parse_args()
+    postgres_admin_url = None
+    if args.postgres_admin_url_env:
+        if args.database != "postgres":
+            parser.error("--postgres-admin-url-env requires --database postgres")
+        postgres_admin_url = os.environ.get(args.postgres_admin_url_env)
+        if not postgres_admin_url:
+            parser.error(
+                "PostgreSQL test server environment variable is empty or missing"
+            )
     before = None
     if args.compare:
         before = json.loads(args.compare.read_text())
@@ -677,6 +693,7 @@ def main() -> None:
         args.export_previews,
         args.workers,
         args.database,
+        postgres_admin_url,
     )
     print(
         f"Complete archive: {report['selected_files']} files in {report['total_seconds']:.2f}s"

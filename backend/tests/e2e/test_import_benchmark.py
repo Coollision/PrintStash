@@ -13,7 +13,12 @@ from tests.factories.geometry import tetrahedron
 
 class TestImportBenchmark:
     @pytest.mark.parametrize(
-        "dialect", ["sqlite", pytest.param("postgres", marks=pytest.mark.postgres)]
+        "dialect",
+        [
+            "sqlite",
+            pytest.param("postgres", marks=pytest.mark.postgres),
+            pytest.param("postgres-managed", marks=pytest.mark.postgres),
+        ],
     )
     def test_benchmarks_a_complete_import(self, tmp_path, dialect):
         source = tetrahedron().export(file_type="stl")
@@ -26,7 +31,25 @@ class TestImportBenchmark:
             package.writestr("spatula.gcode", gcode)
         output = tmp_path / "report.json"
 
-        report = run(archive, output, 120, database=dialect)
+        postgres_admin_url = None
+        if dialect == "postgres-managed":
+            from sqlalchemy.engine import make_url
+
+            from tests.containers import postgres_url
+
+            postgres_admin_url = (
+                make_url(postgres_url())
+                .set(database="postgres")
+                .render_as_string(hide_password=False)
+            )
+            dialect = "postgres"
+        report = run(
+            archive,
+            output,
+            120,
+            database=dialect,
+            postgres_admin_url=postgres_admin_url,
+        )
 
         assert report["status"]["state"] == "completed"
         assert report["catalog"] == sorted(
