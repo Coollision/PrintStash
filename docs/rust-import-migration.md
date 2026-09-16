@@ -175,16 +175,13 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 24 | requires confirmation before staging cleanup | Edge | Real expired ownership receipt in disposable browser vault | File survives preview; confirmation removes it | Playwright | ✅ `frontend/tests/e2e-real/settings.spec.ts` |
 | 25 | filters library with current search control | Happy | Uploaded Model; search query then list/grid selection | Matching Model remains visible in both views | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
 | 26 | shows an empty library search | Edge | Query with no matching Model | Model links disappear after query is applied | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
-
 | 27 | preserves parsed metadata in performance comparisons | Happy/Error | Real Prusa G-code plus mesh on both DBs; changed or missing comparison facts | Exact slicer time/layer/material/tool color recorded without transient IDs; lossy comparisons refused | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestCompareMetadata` |
 | 28 | edits a linked Nextcloud connection | Edge | Current verified-migration provider form; existing linked target | Credentials remain private; compatible edits succeed and root change is rejected | Playwright | ✅ `frontend/tests/e2e-real/critical/remote-backup.spec.ts` |
 | 29 | resumes verified migration after restart | Edge | Baseline and online delta Artifacts; API restart | Both contents survive cutover; full audit succeeds | Playwright | ✅ `frontend/tests/e2e-real/migration/vault-migration.spec.ts` |
 | 30 | re-enrolls an external root before write-back | Edge | Test-owned root with missing proof | Explicit enrollment succeeds; upload bytes reach that root | Playwright | ✅ `frontend/tests/e2e-real/external-libraries.spec.ts` |
-
 | 31 | refuses an existing application database URL | Error | Explicit non-maintenance DB, wrong dialect, URL overrides or SQLite with server configuration | Refused before connection/filesystem writes; credentials absent from error | Integration | ✅ `tests/repo/test_bench_database.py::TestExternalPostgresServer` |
 | 32 | isolates databases on a host-managed service | Happy | Real PostgreSQL maintenance connection | Fresh database supports writes; cleanup leaves original database inventory intact | Integration | ✅ `tests/repo/test_bench_database.py::TestExternalPostgresServer::test_uses_only_a_fresh_database_on_the_supplied_server` |
 | 33 | imports through a private PostgreSQL service | Happy/Error | Real host-managed PostgreSQL; absent CLI environment or wrong dialect | Complete metadata-preserving import on valid service; invalid CLI rejected | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestBenchmarkArguments` |
-
 | 34 | preserves published search content on rollback | Edge | Committed PostgreSQL projection followed by rolled-back source edit | Original passage remains; no request from the rolled-back transaction survives | Integration | ✅ `tests/integration/postgres/test_search_passages.py::TestSearchPassages::test_batch_rollback_preserves_the_previous_publication` |
 
 The browser paths above are relative to the repository root. Verification so far:
