@@ -48,7 +48,7 @@ pub struct SurfaceTree {
 
 impl SurfaceTree {
     fn build(bytes: &[u8]) -> Result<Self, &'static str> {
-        if bytes.is_empty() || bytes.len() % 72 != 0 || bytes.len() / 72 > MAX_TRIANGLES {
+        if bytes.is_empty() || !bytes.len().is_multiple_of(72) || bytes.len() / 72 > MAX_TRIANGLES {
             return Err("invalid_proximity_surface");
         }
         let mut triangles = Vec::with_capacity(bytes.len() / 72);
@@ -140,7 +140,7 @@ impl SurfaceTree {
     }
 
     fn query(&self, bytes: &[u8], max_work: usize) -> Result<Vec<u8>, &'static str> {
-        if bytes.is_empty() || bytes.len() % 24 != 0 || bytes.len() / 24 > 5000 {
+        if bytes.is_empty() || !bytes.len().is_multiple_of(24) || bytes.len() / 24 > 5000 {
             return Err("invalid_proximity_points");
         }
         if max_work == 0 || max_work > MAX_WORK {

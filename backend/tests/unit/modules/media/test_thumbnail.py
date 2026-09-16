@@ -146,13 +146,14 @@ class TestWebpNormalization:
 
         assert to_webp(encoded) == encoded
 
+    def test_unsupported_codec_cannot_fall_back_to_pillow(self):
+        from PIL import Image
 
-def test_unsupported_codec_cannot_fall_back_to_pillow():
-    from PIL import Image
+        from app.modules.media.thumbnail import ThumbnailValidationError
 
-    from app.modules.media.thumbnail import ThumbnailValidationError
-
-    source = io.BytesIO()
-    Image.new("RGB", (2, 2), "white").save(source, format="BMP")
-    with pytest.raises(ThumbnailValidationError, match="thumbnail_format_unsupported"):
-        to_webp(source.getvalue())
+        source = io.BytesIO()
+        Image.new("RGB", (2, 2), "white").save(source, format="BMP")
+        with pytest.raises(
+            ThumbnailValidationError, match="thumbnail_format_unsupported"
+        ):
+            to_webp(source.getvalue())

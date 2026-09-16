@@ -24,7 +24,6 @@ class TestEnvironmentRecord:
         assert record["dependency_versions"]["numpy"] is not None
 
 
-
 class TestCompareFingerprints:
     def test_accepts_equal_final_output(self):
         before = {"fingerprint_catalog": [["source", 0, "recipe", "ready", "hash"]]}
@@ -84,28 +83,30 @@ class TestComparePreviews:
             compare_previews({}, {"preview_pixel_catalog": []}, mode="pixels")
 
 
-@pytest.mark.parametrize("flag", ["--renderer", "--loader", "--geometry"])
-def test_benchmark_rejects_removed_engine_flags(monkeypatch, flag, tmp_path):
-    import sys
+class TestBenchmarkArguments:
+    @pytest.mark.parametrize("flag", ["--renderer", "--loader", "--geometry"])
+    def test_rejects_removed_engine_flags(self, monkeypatch, flag, tmp_path):
+        import sys
 
-    from scripts import bench_import
+        from scripts import bench_import
 
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "bench_import",
-            str(tmp_path / "models.zip"),
-            "--output",
-            str(tmp_path / "result.json"),
-            flag,
-            "python",
-        ],
-    )
-    with pytest.raises(SystemExit) as exit:
-        bench_import.main()
-    assert exit.value.code == 2
-    assert not (tmp_path / "result.json").exists()
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "bench_import",
+                str(tmp_path / "models.zip"),
+                "--output",
+                str(tmp_path / "result.json"),
+                flag,
+                "python",
+            ],
+        )
+        with pytest.raises(SystemExit) as exit:
+            bench_import.main()
+        assert exit.value.code == 2
+        assert not (tmp_path / "result.json").exists()
+
 
 class TestLatencySummary:
     def test_reports_the_navigation_probe_distribution(self):

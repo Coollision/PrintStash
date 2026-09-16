@@ -146,6 +146,8 @@ DEP002 = [
     "greenlet",
     "lxml",
     "networkx",
+    # Loaded through the mesh adapter's dynamic extension import.
+    "printstash-mesh-native",
     "psycopg",
     "python-multipart",
     "uvicorn",

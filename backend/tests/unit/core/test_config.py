@@ -80,9 +80,10 @@ class TestSettings:
                 max_archive_uncompressed_mb=99,
             )
 
-
-@pytest.mark.parametrize("name", ["mesh_rasterizer", "mesh_loader", "mesh_geometry"])
-def test_removed_engine_settings_cannot_select_python(name):
-    settings = FrozenSettings(_env_file=None, **{name: "python"})
-    assert name not in FrozenSettings.model_fields
-    assert not hasattr(settings, name)
+    @pytest.mark.parametrize(
+        "name", ["mesh_rasterizer", "mesh_loader", "mesh_geometry"]
+    )
+    def test_removed_engine_settings_cannot_select_python(self, name):
+        settings = FrozenSettings(_env_file=None, **{name: "python"})
+        assert name not in FrozenSettings.model_fields
+        assert not hasattr(settings, name)
