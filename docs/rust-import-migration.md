@@ -128,8 +128,9 @@ benchmark table/raw sanitized evidence, migration/rollback and limitations.
 In progress. The benchmark now selects `--database sqlite|postgres`. PostgreSQL
 uses the repository test-container owner and a fresh per-run database, never an
 existing vault URL. Both paths use the supported `app.db.migrate` bootstrap.
-Protocol `job-and-library-poll-250ms-v3` records DB backend/version and rejects
-incompatible comparisons. Existing v2 numbers are historical, not M00 evidence.
+Protocol `job-and-library-poll-250ms-v4` records DB backend/version and parsed
+metadata, and rejects incompatible comparisons. Older numbers are historical,
+not M00 evidence.
 
 Native coverage uses `scripts/native-coverage.sh`, cargo-llvm-cov 0.9.1 and the
 existing production compiler 1.91.0 plus llvm-tools-preview. It instruments a
@@ -165,7 +166,7 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 15 | rejects the former public test password | Error | Real PostgreSQL benchmark; known former password | Authentication fails; session-specific credentials still support the benchmark | Integration | ✅ `tests/repo/test_bench_database.py::TestDisposableDatabase::test_rejects_public_test_password` |
 | 16 | removes registered native indexes during test reset | Edge | Float, int8 and binary index roots with generation ownership | Root and shadow tables disappear before ownership rows are cleared | Integration | ✅ `tests/repo/test_db_parity.py::TestTestDatabase::test_reset_removes_registered_native_index_tables` |
 | 17 | serves independent thumbnail fallback | Error | Native multiview unavailable; distinct thumbnail rendering recipe | Thumbnail generation serves the expected Model without copying incompatible vectors | Integration | ✅ `tests/integration/modules/search/test_visual_index.py::TestVisualIndex::test_prepares_an_independent_thumbnail_fallback` |
-| 18 | serves search without related packages | Edge | Similarity/families packages absent; live projection worker | All four subject types remain searchable after public writes | E2E | ❌ rerun pending: `tests/e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages` |
+| 18 | serves search without related packages | Edge | Similarity/families packages absent; live projection worker | All four subject types remain searchable after public writes | E2E | ✅ `tests/e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages` |
 | 19 | preserves MinIO migration contents | Happy | Official mirror, identical pinned image digest; ordinary/Unicode/multipart objects | Two migrations preserve all three objects and source volume | Contract | ✅ `scripts/test_minio_migration.sh` |
 | 20 | focuses localized library search | Happy | Spanish locale and slash shortcut | Current accessible searchbox receives focus | Playwright | ✅ `frontend/tests/e2e/i18n.spec.ts` |
 | 21 | preserves import browser workflows | Happy | Current search-status/caption response contracts | Existing upload/capture/detail flows complete without unexpected HTTP errors | Playwright | ✅ `frontend/tests/e2e/{uploads,pending-imports,inbox,model-detail}.spec.ts` |
@@ -183,6 +184,8 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 31 | refuses an existing application database URL | Error | Explicit non-maintenance DB, wrong dialect, URL overrides or SQLite with server configuration | Refused before connection/filesystem writes; credentials absent from error | Integration | ✅ `tests/repo/test_bench_database.py::TestExternalPostgresServer` |
 | 32 | isolates databases on a host-managed service | Happy | Real PostgreSQL maintenance connection | Fresh database supports writes; cleanup leaves original database inventory intact | Integration | ✅ `tests/repo/test_bench_database.py::TestExternalPostgresServer::test_uses_only_a_fresh_database_on_the_supplied_server` |
 | 33 | imports through a private PostgreSQL service | Happy/Error | Real host-managed PostgreSQL; absent CLI environment or wrong dialect | Complete metadata-preserving import on valid service; invalid CLI rejected | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestBenchmarkArguments` |
+
+| 34 | preserves published search content on rollback | Edge | Committed PostgreSQL projection followed by rolled-back source edit | Original passage remains; no request from the rolled-back transaction survives | Integration | ✅ `tests/integration/postgres/test_search_passages.py::TestSearchPassages::test_batch_rollback_preserves_the_previous_publication` |
 
 The browser paths above are relative to the repository root. Verification so far:
 corrected both-database benchmark suite **31 passed**; additional comparison/CLI
@@ -234,3 +237,12 @@ no query overrides, and still creates a generated database per run. Isolation
 checks pass (19 tests); comparison/CLI and the managed-service import E2E pass
 (27 tests), with Ruff and Pyright clean. The initial socket-mounted command was
 rejected before execution; it supplies no benchmark evidence.
+
+Completed CI at `927d81a5` passed 13,020 non-service tests (including both search
+independence cases) and 291 service-backed tests. One PostgreSQL passage test
+incorrectly expected synchronous publication after the branch adopted durable
+projection requests. It now processes the committed request before testing
+rollback, and asserts that rollback leaves neither changed passage content nor
+a surviving request. The focused real-PostgreSQL test passes. The complete
+coverage gate still requires a new successful CI run; partial suite counts do not
+satisfy it.

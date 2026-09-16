@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from alembic import command
-from app.db.models.search import SearchPassage
+from app.db.models.search import SearchPassage, SearchProjectionRequest
 from app.db.projections import (
     batch_content_changes,
     bind_content_projection,
@@ -73,12 +73,18 @@ class TestSearchPassages:
                     session.add(model)
                     content_changed(session, "model", [model.id])
                 session.commit()
+                drain_search(session)
+                assert (
+                    session.exec(select(SearchPassage.text)).one() == "Title: Committed"
+                )
                 with batch_content_changes(session):
                     model.name = "Rolled back"
                     session.add(model)
                     content_changed(session, "model", [model.id])
                 session.rollback()
             with Session(engine) as session:
+                assert session.exec(select(SearchProjectionRequest)).all() == []
+                drain_search(session)
                 assert (
                     session.exec(select(SearchPassage.text)).one() == "Title: Committed"
                 )
