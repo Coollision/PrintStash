@@ -322,7 +322,9 @@ jobs:
     name: Backend compatibility (Python 3.13, advisory)
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 30
+    # The complete suite reached 80% when the former 30-minute job budget ended.
+    # Keep individual test timeouts unchanged; allow the full matrix to finish.
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: backend

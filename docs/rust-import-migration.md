@@ -217,3 +217,8 @@ real-database import tests pass). No performance comparison is accepted yet.
 The external-root browser contract now passes locally with the explicit fixture;
 it distinguishes missing proof from legacy unbound state. Updated benchmark
 code passes Ruff and Pyright.
+
+The Python 3.13 compatibility job at `927d81a5` was cancelled by its 30-minute
+job budget after reaching 80% of the non-service suite without a reported failure.
+Its job budget is now 60 minutes; individual test timeouts remain unchanged.
+The cancelled run is incomplete evidence and the full lane must pass.
