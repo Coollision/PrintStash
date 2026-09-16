@@ -374,7 +374,7 @@ class TestVisualIndex:
                 get_session_factory(), file, recipe, InferenceContext.bounded(20)
             )
 
-    def test_prepares_a_reusable_thumbnail_fallback(
+    def test_prepares_an_independent_thumbnail_fallback(
         self, db_session, visual_setup, advance_generation, monkeypatch
     ):
         from app.db.models import EmbeddingSpace
@@ -390,7 +390,9 @@ class TestVisualIndex:
         advance_generation(fallback.id)
         db_session.expire_all()
         assert db_session.get(IndexGeneration, fallback.id).state == "active"
-        assert db_session.get(IndexGeneration, fallback.id).copied == 1
+        # Native multiview v2 and media-thumbnail v1 are distinct recipes.
+        # The fallback must serve its own verified vectors, not copy v2 output.
+        assert db_session.get(IndexGeneration, fallback.id).copied == 0
 
         from printstash_core.inference import EmbeddingError
 

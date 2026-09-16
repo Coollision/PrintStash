@@ -40,7 +40,8 @@ python_bin="${PRINTSTASH_TEST_PYTHON:-$backend/.venv/bin/python}"
 "$python_bin" -m pytest -q --no-cov tests/integration/modules/media/test_mesh_render.py \
   tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh
 cargo test --manifest-path rust/render-core/Cargo.toml --locked
-cargo llvm-cov report --manifest-path rust/Cargo.toml --json --output-path "$output/coverage.json"
+report_args=(--manifest-path rust/Cargo.toml --package printstash-mesh-native --package printstash-render-core)
+cargo llvm-cov report "${report_args[@]}" --json --output-path "$output/coverage.json"
 "$python_bin" - "$output/coverage.json" <<'PY'
 import json
 import sys
@@ -52,8 +53,8 @@ for source in ("/rust/src/", "/rust/render-core/src/"):
     if not measured or not sum(file["summary"]["lines"]["covered"] for file in measured):
         raise SystemExit(f"Missing executed native coverage for {source}")
 PY
-cargo llvm-cov report --manifest-path rust/Cargo.toml --lcov --output-path "$output/lcov.info"
-cargo llvm-cov report --manifest-path rust/Cargo.toml > "$output/summary.txt"
+cargo llvm-cov report "${report_args[@]}" --lcov --output-path "$output/lcov.info"
+cargo llvm-cov report "${report_args[@]}" > "$output/summary.txt"
 cat "$output/summary.txt"
 rustc --version --verbose > "$output/toolchain.txt"
 cargo llvm-cov --version >> "$output/toolchain.txt"

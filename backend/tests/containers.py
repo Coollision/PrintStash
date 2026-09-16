@@ -32,6 +32,7 @@ check only fires for markers a *selected* test carries.
 
 from __future__ import annotations
 
+import secrets
 import subprocess
 import time
 from typing import Any, Callable, NoReturn
@@ -76,7 +77,9 @@ OPENSSH_IMAGE = (
 
 POSTGRES_IMAGE = "postgres:16-alpine"
 POSTGRES_USER = "printstash"
-POSTGRES_PASSWORD = "printstash"
+# The import benchmark can contain private metadata, unlike synthetic fixtures.
+# Docker publishes this test service, so use an ephemeral session credential.
+POSTGRES_PASSWORD = secrets.token_urlsafe(32)
 POSTGRES_DB = "printstash"
 
 # Obviously-fake credentials. SeaweedFS accepts whatever it is given; nothing here

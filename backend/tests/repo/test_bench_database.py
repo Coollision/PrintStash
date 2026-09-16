@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 
 from app.db.url import normalize_database_url
 from scripts.bench_database import (
@@ -62,6 +63,19 @@ class TestEnrichmentInspection:
 
 
 class TestDisposableDatabase:
+    @pytest.mark.postgres
+    def test_rejects_public_test_password(self, tmp_path):
+        with disposable_database(tmp_path, "postgres") as engine:
+            untrusted = create_engine(engine.url.set(password="printstash"))
+            try:
+                with pytest.raises(
+                    OperationalError, match="password authentication failed"
+                ):
+                    with untrusted.connect() as db:
+                        db.exec_driver_sql("SELECT 1")
+            finally:
+                untrusted.dispose()
+
     @pytest.mark.parametrize(
         "dialect", ["sqlite", pytest.param("postgres", marks=pytest.mark.postgres)]
     )

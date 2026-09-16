@@ -160,10 +160,40 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 10 | accepts matching database versions | Happy | Identical database evidence | Comparison accepted | Unit | ✅ `tests/repo/test_bench_import.py::TestCompareDatabases::test_accepts_matching_database_versions` |
 | 11 | refuses incompatible database evidence | Error | Changed dialect/version or missing result evidence | Comparison refused | Unit | ✅ `tests/repo/test_bench_import.py::TestCompareDatabases::test_refuses_incompatible_database_evidence` |
 | 12 | requires reference database evidence | Error | Missing reference metadata | Comparison refused | Unit | ✅ `tests/repo/test_bench_import.py::TestCompareDatabases::test_requires_reference_database_evidence` |
-| 13 | benchmarks a complete import | Happy | ZIP with known tetrahedron, fresh real app on each DB | Completed job, exact source digest/size, four triangles, ready preview, serialized DB evidence | E2E | ✅ `tests/e2e/test_import_benchmark.py::test_benchmarks_a_complete_import` |
-| 14 | measures actual native execution | Happy | Isolated instrumented extension and existing Rust/binding/preview suites | Loaded module is instrumented; executed source coverage exists for bindings and render core | Integration | ❌ native coverage run pending |
+| 13 | benchmarks a complete import | Happy | ZIP with known tetrahedron, fresh real app on each DB | Completed job, exact source digest/size, four triangles, ready preview, serialized DB evidence | E2E | ✅ `tests/e2e/test_import_benchmark.py::TestImportBenchmark::test_benchmarks_a_complete_import` |
+| 14 | measures actual native execution | Happy | Isolated instrumented extension and existing Rust/binding/preview suites | Loaded module is instrumented; executed source coverage exists for bindings and render core | Integration | ✅ `scripts/native-coverage.sh`; instrumented tests and combined workspace report verified locally |
 
-Verification so far: corrected both-database benchmark suite **31 passed**;
-additional database comparison/CLI repository suite **21 passed**. These runs
-establish functional harness behavior, not controlled performance measurements.
-Broader gates, native coverage, and benchmark comparisons remain pending.
+| 15 | rejects the former public test password | Error | Real PostgreSQL benchmark; known former password | Authentication fails; session-specific credentials still support the benchmark | Integration | ✅ `tests/repo/test_bench_database.py::TestDisposableDatabase::test_rejects_public_test_password` |
+| 16 | removes registered native indexes during test reset | Edge | Float, int8 and binary index roots with generation ownership | Root and shadow tables disappear before ownership rows are cleared | Integration | ❌ verification pending: `tests/repo/test_db_parity.py::TestTestDatabase::test_reset_removes_registered_native_index_tables` |
+| 17 | serves independent thumbnail fallback | Error | Native multiview unavailable; distinct thumbnail rendering recipe | Thumbnail generation serves the expected Model without copying incompatible vectors | Integration | ✅ `tests/integration/modules/search/test_visual_index.py::TestVisualIndex::test_prepares_an_independent_thumbnail_fallback` |
+| 18 | serves search without related packages | Edge | Similarity/families packages absent; live projection worker | All four subject types remain searchable after public writes | E2E | ❌ rerun pending: `tests/e2e/test_search_independence.py::TestSearchIndependence::test_runs_without_related_feature_packages` |
+| 19 | preserves MinIO migration contents | Happy | Official mirror, identical pinned image digest; ordinary/Unicode/multipart objects | Two migrations preserve all three objects and source volume | Contract | ✅ `scripts/test_minio_migration.sh` |
+| 20 | focuses localized library search | Happy | Spanish locale and slash shortcut | Current accessible searchbox receives focus | Playwright | ❌ rerun pending: `frontend/tests/e2e/i18n.spec.ts` |
+| 21 | preserves import browser workflows | Happy | Current search-status/caption response contracts | Existing upload/capture/detail flows complete without unexpected HTTP errors | Playwright | ❌ rerun pending: `frontend/tests/e2e/{uploads,pending-imports,inbox,model-detail}.spec.ts` |
+| 22 | preserves storage through restart | Edge | WebDAV setup followed by real backend restart | Active provider, stored credentials and safe GC workflow remain usable | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/storage/storage-provider.spec.ts` |
+| 23 | persists print-tracking toggle | Happy | Toggle mutation response before React repaint | New value appears and survives reload | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/settings.spec.ts` |
+| 24 | requires confirmation before staging cleanup | Edge | Real expired ownership receipt in disposable browser vault | File survives preview; confirmation removes it | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/settings.spec.ts` |
+| 25 | filters library with current search control | Happy | Uploaded Model; search query then list/grid selection | Matching Model remains visible in both views | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/vault.spec.ts` |
+| 26 | shows an empty library search | Edge | Query with no matching Model | Model links disappear after query is applied | Playwright | ❌ rerun pending: `frontend/tests/e2e-real/vault.spec.ts` |
+
+The browser paths above are relative to the repository root. Verification so far:
+corrected both-database benchmark suite **31 passed**; additional comparison/CLI
+suite **21 passed**; database authentication/isolation and container startup suite
+**18 passed**. Native instrumentation executed **289 binding, 401 core mesh,
+12 application tests and 11 Rust tests**. The combined owned-source report measures
+**96.19% lines, 95.44% regions and 92.98% functions**; branch coverage is unmeasured.
+The corrected fallback, test grouping and both-database import E2Es also pass (**4 tests**).
+Rust formatting and Clippy pass. These establish functional behavior, not speedups.
+
+Initial draft PR #177 CI exposed an omitted renderer coverage package, an obsolete
+MinIO registry, outdated browser contracts/selectors, a distinct-recipe fallback
+expectation, and native test-index cleanup leakage. The first exact-diff security
+review also found that benchmark PostgreSQL inherited a known test password; a
+real authentication regression test now verifies session-specific credentials.
+Corrections require fresh CI and a new exact-diff review before merge. The local
+fast run stopped after its known fallback failure (**1 failed, 4,831 passed**).
+Broader gates and controlled benchmark comparisons remain incomplete.
+
+The MinIO registry correction intentionally retains the historical migration
+source release and digest; it is not a dependency upgrade. Application execution
+ownership, schema and installed release versions remain unchanged in M00.
