@@ -20,6 +20,34 @@ def _ci_workflow() -> dict:
     return _workflow("ci.yml")
 
 
+class TestControlledImportBenchmark:
+    def test_preserves_evidence_on_a_dedicated_opt_in_runner(self):
+        job = _ci_workflow()["jobs"]["import-benchmark"]
+        assert (
+            job["if"]
+            == "github.event_name == 'workflow_dispatch' && inputs.benchmark_imports"
+        )
+        assert job["permissions"] == {"contents": "read"}
+        commands = [step.get("run", "") for step in job["steps"]]
+        assert sum("scripts/bench_matrix.py" in command for command in commands) == 1
+        artifacts = [
+            step
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        ]
+        assert {step["with"]["name"] for step in artifacts} == {
+            "import-benchmark-evidence",
+            "import-benchmark-release-images",
+        }
+        assert all(step["with"]["if-no-files-found"] == "error" for step in artifacts)
+        evidence = next(
+            step
+            for step in artifacts
+            if step["with"]["name"] == "import-benchmark-evidence"
+        )
+        assert evidence["if"] == "always()"
+
+
 class TestNativeCoverageJob:
     def test_requires_executed_native_coverage(self):
         job = _ci_workflow()["jobs"]["native-coverage"]

@@ -17,6 +17,14 @@ on:
     - cron: "27 4 * * *"
   workflow_dispatch:
     inputs:
+      benchmark_imports:
+        description: "Run the controlled import matrix and archive immutable release images"
+        type: boolean
+        default: false
+      benchmark_parent:
+        description: "Full immediate-parent commit for import comparisons"
+        type: string
+        default: "4b9afeb92d4e7e24298454af38c6c76aeddec437"
       native_clip:
         description: "Validate the pinned, preplaced real CLIP export on both native architectures"
         type: boolean
@@ -58,7 +66,7 @@ jobs:
           RUSTUP_TOOLCHAIN=1.91.0 uv sync --extra dev --frozen
           RUSTUP_TOOLCHAIN=1.91.0 uv pip install ./rust
           uv run python -c 'import printstash_mesh_native'
-          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_database.py
+          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_database.py scripts/bench_corpus.py scripts/bench_matrix.py
           cargo +1.91.0 fmt --manifest-path rust/Cargo.toml --check
           cargo +1.91.0 clippy --manifest-path rust/Cargo.toml --locked -- -D warnings
           cargo +1.91.0 fmt --manifest-path rust/render-core/Cargo.toml --check
@@ -907,3 +915,40 @@ jobs:
         if: matrix.storage-smoke
         working-directory: backend
         run: ./scripts/test.sh image --image ${{ matrix.image }}:${{ matrix.arch }}-ci --variant ${{ matrix.variant }}
+
+
+  import-benchmark:
+    name: Controlled import comparison
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark_imports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the committed benchmark revision
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Compare original and immediate-parent release images
+        env:
+          BENCHMARK_PARENT: ${{ inputs.benchmark_parent }}
+        run: >-
+          python3 backend/scripts/bench_matrix.py
+          --head "$GITHUB_SHA" --base "$BENCHMARK_PARENT"
+          --output "$RUNNER_TEMP/import-benchmark"
+      - name: Upload sanitized measurements and corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: import-benchmark-evidence
+          path: ${{ runner.temp }}/import-benchmark/evidence/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Preserve the measured release images
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: import-benchmark-release-images
+          path: ${{ runner.temp }}/import-benchmark/images/
+          retention-days: 90
+          if-no-files-found: error

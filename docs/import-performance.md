@@ -350,3 +350,51 @@ changing the resize implementation can change edge pixels, and changing the
 encoder changes file bytes. Comparisons therefore check decoded pixels as well
 as source hashes, geometry and processing outcomes. Exact compressed-byte parity
 is not a promise across these image engines.
+
+
+## Controlled migration comparison
+
+M00 adds `scripts/bench_corpus.py` and `scripts/bench_matrix.py`. The opt-in
+`benchmark_imports` input on the CI workflow runs a dedicated Ubuntu runner:
+
+```bash
+gh workflow run ci.yml --ref codex/rust-m00-baseline \
+  -f benchmark_imports=true \
+  -f benchmark_parent=4b9afeb92d4e7e24298454af38c6c76aeddec437
+```
+
+The runner builds the original, immediate-parent, and current committed full
+release images before measurement. It records immutable image IDs and retains
+release image archives alongside sanitized evidence for 90 days. The same
+hash-pinned psutil instrumentation and v4 harness are layered over each release;
+application dependencies are not upgraded. Subsequent milestones must retain the
+M00 image archive and corpus: rebuilding a moving Docker base or regenerating
+fixtures with changed numerical dependencies is not an equivalent baseline.
+
+The deterministic corpus covers small STL/3MF, 128 small meshes, a 327,680-face
+mesh, a mixed large archive, existing Prusa/Orca/BGCODE fixtures, a STEP fixture,
+and similarity candidates. Every source and archive digest is recorded. This is
+a synthetic scaling corpus, not a representative user library. Optional real
+inference assets, labeled similarity-quality evaluation, remote storage, and queue
+recovery are separate required workloads; this runner does not establish them.
+
+Each database runs sequentially under total budgets of 2 CPU/2 GiB and 4 CPU/4 GiB.
+PostgreSQL receives one quarter of that budget on a private internal Docker
+network, with no published ports. Application containers receive the remainder;
+SQLite containers receive the full budget. No container receives a Docker socket
+or host networking. Each import uses a fresh database and storage directory.
+
+For every case the runner checks output parity, performs a warm-up for each
+revision, then seven alternating before/after pairs. It extends to fourteen pairs
+when elapsed/API-p95 variation exceeds 5%, or CPU/memory variation exceeds 10%.
+Raw reports retain API p50/p95/max, upload/extraction/processing times, CPU,
+sampled RSS and cgroup memory peaks. PostgreSQL CPU includes the entire benchmark
+CLI lifecycle; its memory peak is cumulative for the service profile, not a
+per-import measurement. Neither is silently combined with application-only
+measurements. Sampled RSS can miss short peaks and double-count shared pages.
+
+`comparison.md` and `comparisons.json` expose paired changes, spread and threshold
+exceedances. A green measurement job establishes successful execution and output
+parity, not accepted performance. Repeatable regressions above the plan's 5%
+elapsed/API-p95 or 10% CPU/memory limits still block merging. Shared-runner timing
+noise must be resolved in review, not converted into flaky CI assertions.

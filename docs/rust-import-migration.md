@@ -184,6 +184,21 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 33 | imports through a private PostgreSQL service | Happy/Error | Real host-managed PostgreSQL; absent CLI environment or wrong dialect | Complete metadata-preserving import on valid service; invalid CLI rejected | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestBenchmarkArguments` |
 | 34 | preserves published search content on rollback | Edge | Committed PostgreSQL projection followed by rolled-back source edit | Original passage remains; no request from the rolled-back transaction survives | Integration | ✅ `tests/integration/postgres/test_search_passages.py::TestSearchPassages::test_batch_rollback_preserves_the_previous_publication` |
 
+| 35 | reproduces identical corpus archives | Happy | Two fresh corpus destinations | Identical archives and source hashes | Repo | ✅ `tests/repo/test_bench_corpus.py::TestBenchmarkCorpus::test_reproduces_identical_archives` |
+| 36 | retains real slicer fixtures | Happy | Existing format fixtures | Bytes unchanged; known tetrahedron geometry retained | Repo | ✅ `tests/repo/test_bench_corpus.py::TestBenchmarkCorpus::test_retains_real_slicer_fixtures` |
+| 37 | preserves an existing corpus destination | Error | Destination with baseline data | Refuses overwrite; sentinel survives | Repo | ✅ `tests/repo/test_bench_corpus.py::TestBenchmarkCorpus::test_preserves_an_existing_destination` |
+| 38 | refuses unbounded corpus work | Error | Counts/subdivision outside documented bounds | Refuses before writing | Repo | ✅ `tests/repo/test_bench_corpus.py::TestBenchmarkCorpus::test_refuses_unbounded_corpus_work` |
+| 39 | reports repeatable performance regression | Error | Seven complete pairs with 20% regression | Correct paired change and threshold counts | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_flags_a_repeatable_regression` |
+| 40 | identifies noisy baseline measurements | Edge | Alternating high/low measurements | Marks additional samples necessary | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_requires_more_samples_when_baseline_is_noisy` |
+| 41 | refuses incomplete comparison pairs | Error | Empty or unpaired reports | Fails without reporting comparative evidence | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_incomplete_pairs` |
+| 42 | refuses ambiguous benchmark revisions | Error | Branch, short hash or option-like input | Fails before running Git/build commands | Repo | ✅ `tests/repo/test_bench_matrix.py::TestBenchmarkRevision::test_refuses_ambiguous_or_option_like_revisions` |
+| 43 | requires retained performance evidence | Edge | Opt-in CI benchmark workflow | Dedicated job uses read-only token and required evidence/image artifacts | Repo | ✅ `tests/repo/test_ci_workflows.py::TestControlledImportBenchmark` |
+| 44 | completes the intended Model lifecycle | Happy | Unique uploaded bytes; other models may exist in Trash | Correct Model restored and purged | Playwright | ❌ corrected test awaiting run: `frontend/tests/e2e-real/models.spec.ts` |
+| 45 | applies the selected tag before upload | Edge | Asynchronous tag creation | Selected chip visible before transfer; tag filter retains Model | Playwright | ❌ corrected test awaiting run: `frontend/tests/e2e-real/vault.spec.ts` |
+| 46 | cancels warmup after consent revocation | Edge | Concurrent real file-backed WAL reader/writer | Loader terminates; provider remains cold | Integration | ✅ `tests/integration/modules/search/test_model_warmup.py` |
+| 47 | refuses invalid performance measurements | Error | Null, boolean, string, nonpositive or nonfinite value | Comparison fails without accepting timing evidence | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_invalid_measurements` |
+| 48 | refuses missing performance measurements | Error | Absent API latency field | Comparison fails with named missing metric | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_missing_measurements` |
+
 The browser paths above are relative to the repository root. Verification so far:
 corrected both-database benchmark suite **31 passed**; additional comparison/CLI
 suite **21 passed**; database authentication/isolation and container startup suite
@@ -243,3 +258,15 @@ rollback, and asserts that rollback leaves neither changed passage content nor
 a surviving request. The focused real-PostgreSQL test passes. The complete
 coverage gate still requires a new successful CI run; partial suite counts do not
 satisfy it.
+
+
+CI at `ff6b34b0` passes Python 3.13, critical capabilities, frontend, native
+coverage/builds, core, extension, SQLite async, remote migration and image scans.
+Its required backend and real-browser jobs fail: warmup's shared-memory fixture
+cannot reproduce production WAL concurrency; the Model lifecycle has an ambiguous
+Trash selector and unsafe upload navigation; the tag fixture submits before its
+asynchronous selection completes. Corrections are under verification. The
+controlled comparison runner, corpus, and corrected WAL warmup have 32 passing
+focused tests; actual
+controlled measurements remain pending. Exact-diff security review through
+`ff6b34b0` reports no findings and does not cover subsequent uncommitted changes.

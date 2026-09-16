@@ -139,6 +139,9 @@ export async function uploadModel(page: Page, name: string, opts: UploadOpts = {
     const tagInput = page.getByPlaceholder("Search or create — press Enter");
     await tagInput.fill(tag);
     await tagInput.press("Enter");
+    // Creating a tag is asynchronous. Upload only after the selected chip is
+    // visible, otherwise the transfer can capture an empty tag selection.
+    await expect(dialog.getByRole("button", { name: `Remove ${tag}`, exact: true })).toBeVisible();
   }
 
   await page.getByRole("button", { name: /upload to vault/i }).click();
