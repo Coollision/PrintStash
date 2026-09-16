@@ -14,6 +14,11 @@ frontend, backend, provider, capture, release, and workflow references.
 
 ## Execution
 
+Before edits, after recovery, and before publishing, follow
+`.agents/skills/printstash/references/task-start.md`: establish the destination
+branch/worktree, fetched commit and dirty baseline. For Rust or queue work, also
+state the compute language, coordinator and durable-state owner for each stage.
+
 Carry implementation requests through edits and applicable verification.
 Resolve routine choices from repository conventions; ask only when missing
 information changes the outcome or an action needs authorization not already

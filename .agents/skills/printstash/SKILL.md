@@ -25,10 +25,10 @@ and changelog instead of reconstructing their contents.
 
 ## Before changing anything
 
-1. Inspect the current branch and `git status`. Preserve user and concurrent
-   edits. If the requested change is already in progress, continue in its
-   existing branch and ownership boundary; create a branch only for a genuinely
-   new standalone change.
+1. Follow [task baseline](references/task-start.md) before edits: select the
+   destination from the user's request and the feature's actual branch/worktree,
+   refresh its remote, run the branch check, and record the starting commit and
+   dirty baseline. The current checkout alone does not identify the task branch.
 2. Read the canonical doc for the domain you're touching (binding language):
    - Library / trash / storage code → `CONTEXT.md`
    - Any UI work → `DESIGN.md` (tokens, motion scale, `components/ui/` primitives)
@@ -44,6 +44,7 @@ and changelog instead of reconstructing their contents.
 
 | Task | Read |
 | --- | --- |
+| Start, resume, change destination, publish, or redesign Rust/queue execution | [references/task-start.md](references/task-start.md) |
 | Branch, commit, PR, changelog | [references/conventions.md](references/conventions.md) |
 | Cut / publish a release, version bump | [references/release.md](references/release.md) |
 | Backend, config | [references/backend.md](references/backend.md) |
@@ -64,7 +65,8 @@ the objective, accepted corrections, branch/worktree, owned files, decisions
 with evidence, failed approaches, check commands/results, and next action.
 Keep private material local and credentials out of notes.
 
-On resuming, read the checkpoint and inspect the current diff. Retrieve earlier
+On resuming, read the checkpoint and repeat the [task baseline](references/task-start.md)
+check against the actual destination. Retrieve earlier
 tool results or conversation history when that capability is available; otherwise
 use saved evidence and targeted checks to recover missing facts. Revalidate
 anything affected by intervening edits. A checkpoint records progress; it does
@@ -72,10 +74,8 @@ not authorize new work or turn an unfinished check into a pass.
 
 ## Workflow for any change
 
-1. For a new standalone change, branch from an up-to-date `main` and name the
-   branch for its purpose (`feat/<issue>-<slug>`, `fix/<issue>-<slug>`,
-   `docs/<slug>`, etc.). In an existing task branch or shared worktree, stay on
-   that branch and keep to the assigned files.
+1. Establish the [task baseline](references/task-start.md), then implement in
+   that destination checkout within the assigned ownership boundary.
 2. Implement at the owning seam. Data-integrity/security fixes get a red test
    first. Every new feature gets focused unit/integration coverage and one e2e
    test for its headline capability.
