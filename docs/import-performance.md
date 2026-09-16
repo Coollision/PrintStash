@@ -8,8 +8,13 @@ uv run python scripts/bench_import.py /path/library.zip --output before.json
 uv run python scripts/bench_import.py /path/library.zip --output after.json --compare before.json
 ```
 
-Each run starts a fresh local server with migrated SQLite and temporary file
-storage. It uploads the ZIP through the API, selects every supported file and
+Each run starts a fresh local server with a migrated database and temporary file
+storage. SQLite is the default. Add `--database postgres` to use a disposable
+PostgreSQL database in the repository's test container (Docker required). The
+benchmark never accepts an existing vault database URL. Both databases use the
+same supported application bootstrap as packaged deployments. Protocol v3 records
+the database backend/server version and requires them to match for comparisons;
+v2 reports cannot be used as v3 references. It uploads the ZIP through the API, selects every supported file and
 records source completion, then waits for metadata, background previews, lexical
 projection and optionally similarity runs. The script checks the final file count and
 failure count. A comparison also requires matching archive hashes and imported
@@ -20,6 +25,12 @@ record dimensions, volume and triangle counts and compare those values too.
 background work. `background_after_save_seconds` is the difference. Both phases
 probe the library API every 250 ms and record median, p95 and maximum response
 latency. This distinguishes earlier availability from actual responsiveness.
+
+Server CPU/RSS fields cover the application process tree; the separate PostgreSQL
+container is outside that scope. They must not be described as total system or
+database resource costs. Queue qualification additionally requires database cost
+measurements and controlled resource limits; ordinary harness runs alone do not
+satisfy the [staged migration performance gate](rust-import-migration.md).
 
 The timers include upload, acquisition and processing. The legacy
 `extraction_seconds` field measures selection acceptance; extraction now happens

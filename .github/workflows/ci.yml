@@ -58,7 +58,7 @@ jobs:
           RUSTUP_TOOLCHAIN=1.91.0 uv sync --extra dev --frozen
           RUSTUP_TOOLCHAIN=1.91.0 uv pip install ./rust
           uv run python -c 'import printstash_mesh_native'
-          uv run ruff check rust/tests scripts/bench_import.py
+          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_database.py
           cargo +1.91.0 fmt --manifest-path rust/Cargo.toml --check
           cargo +1.91.0 clippy --manifest-path rust/Cargo.toml --locked -- -D warnings
           cargo +1.91.0 fmt --manifest-path rust/render-core/Cargo.toml --check
@@ -70,6 +70,35 @@ jobs:
       - name: Check application previews and complete ZIP ingestion
         working-directory: backend
         run: uv run pytest -q tests/integration/modules/media/test_mesh_render.py tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh tests/e2e/test_ingest.py::TestArchiveImport
+
+  native-coverage:
+    name: Rust source coverage including Python bindings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install production compiler and coverage instrumentation
+        run: |
+          rustup toolchain install 1.91.0 --profile minimal --component llvm-tools-preview
+          cargo install cargo-llvm-cov --version 0.9.1 --locked
+      - name: Install backend test dependencies
+        working-directory: backend
+        run: RUSTUP_TOOLCHAIN=1.91.0 uv sync --extra dev --frozen
+      - name: Exercise instrumented native code
+        working-directory: backend
+        run: ./scripts/native-coverage.sh
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: native-coverage
+          path: backend/rust/target/native-coverage-report/
+          if-no-files-found: error
 
   similarity-native:
     name: Similarity native (${{ matrix.arch }})

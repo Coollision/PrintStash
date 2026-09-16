@@ -3,10 +3,35 @@
 import pytest
 
 from scripts.bench_import import (
+    compare_databases,
     compare_fingerprints,
     compare_previews,
     environment_record,
 )
+
+
+class TestCompareDatabases:
+    def test_accepts_matching_database_versions(self):
+        database = {"backend": "postgresql", "server_version": [16, 10]}
+        compare_databases({"database": database}, {"database": database})
+
+    @pytest.mark.parametrize(
+        "changed",
+        [
+            {"backend": "sqlite", "server_version": [3, 46, 1]},
+            {"backend": "postgresql", "server_version": [17, 0]},
+            None,
+        ],
+        ids=["backend", "version", "missing"],
+    )
+    def test_refuses_incompatible_database_evidence(self, changed):
+        reference = {"backend": "postgresql", "server_version": [16, 10]}
+        with pytest.raises(SystemExit, match="database backend or version differs"):
+            compare_databases({"database": reference}, {"database": changed})
+
+    def test_requires_reference_database_evidence(self):
+        with pytest.raises(SystemExit, match="database backend or version differs"):
+            compare_databases({}, {})
 
 
 class TestEnvironmentRecord:
@@ -84,6 +109,28 @@ class TestComparePreviews:
 
 
 class TestBenchmarkArguments:
+    def test_supports_the_documented_script_entry_point(self, tmp_path):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        script = Path(__file__).resolve().parents[2] / "scripts" / "bench_import.py"
+        environment = {
+            key: value for key, value in os.environ.items() if key != "PYTHONPATH"
+        }
+        result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "--database {sqlite,postgres}" in result.stdout
+
     @pytest.mark.parametrize("flag", ["--renderer", "--loader", "--geometry"])
     def test_rejects_removed_engine_flags(self, monkeypatch, flag, tmp_path):
         import sys
