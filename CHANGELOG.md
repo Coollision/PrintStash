@@ -129,8 +129,8 @@
 
 - Rejected stale import completions no longer leave a terminal status in the
   process cache that prevents the current worker from finishing the job.
-- Sparse search rankings use scoped SQL names so Python 3.13 object reuse cannot
-  cause independent search queries to collide during SQL compilation.
+- Search rankings preserve anonymous SQL identities on Python 3.13 without
+  deeply nesting queries, keeping grouped Family searches usable on older SQLite.
 
 - Restore verified file uploads over local-network HTTP; browsers without native SHA-256 support no longer show a misleading server connection error.
 

@@ -47,6 +47,7 @@ class TestControlledImportBenchmark:
             == "import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu"
         )
         assert evidence["if"] == "always()"
+        assert all(step["if"] == "always()" for step in artifacts)
         assert job["strategy"]["max-parallel"] == 1
         assert job["strategy"]["fail-fast"] is False
         assert job["strategy"]["matrix"] == {

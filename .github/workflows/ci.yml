@@ -964,7 +964,7 @@ jobs:
           retention-days: 90
           if-no-files-found: error
       - name: Preserve the measured release images
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: import-benchmark-release-images-${{ matrix.database }}-${{ matrix.cpus }}cpu

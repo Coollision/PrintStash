@@ -25,3 +25,22 @@ class TestQueueBenchmark:
         assert report["recovery_seconds"] > 0
         assert report["claim"]["count"] == 3
         assert json.loads(output.read_text()) == report
+
+    @pytest.mark.parametrize(
+        "database", ["sqlite", pytest.param("postgres", marks=pytest.mark.postgres)]
+    )
+    def test_records_only_verified_steady_state_operations(self, tmp_path, database):
+        report = run(
+            tmp_path / "steady.json",
+            database=database,
+            count=3,
+            idle_seconds=1,
+            include_recovery=False,
+        )
+        assert report["measurement_protocol"] == "durable-queue-steady-v1"
+        assert report["accepted_count"] == report["completed_count"] == 3
+        assert report["rollback_orphans"] == report["duplicate_claims"] == 0
+        assert report["fault_injection"] == "not_run"
+        assert "recovery_seconds" not in report
+        assert "stale_completion_rejected" not in report
+        assert report["claim"]["count"] == 3

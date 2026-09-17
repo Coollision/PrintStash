@@ -79,21 +79,19 @@ class TestQueueComparison:
         result = comparison([before] * 7, [after] * 7, queue=True)
         assert result["metrics"]["claim_p95_ms"]["pairs_above_threshold"] == 7
         assert result["metrics"]["idle_cpu_s"]["pairs_above_threshold"] == 0
-        assert result["metrics"]["recovery_s"]["paired_delta_percent"] == 0
+        assert result["metrics"]["complete_s"]["paired_delta_percent"] == 0
 
     @pytest.mark.parametrize("difference", ["missing", "changed"])
     def test_rejects_non_equivalent_queue_outcomes(self, difference):
         before = {
-            "measurement_protocol": "durable-queue-baseline-v1",
+            "measurement_protocol": "durable-queue-steady-v1",
             "scope": "queue repositories",
             "database": {"dialect": "sqlite", "version": "3.50.4"},
             "accepted_count": 4,
             "completed_count": 4,
             "rollback_orphans": 0,
             "duplicate_claims": 0,
-            "stale_completion_rejected": True,
-            "production_lease_seconds": 120,
-            "terminated_worker_exit_code": -9,
+            "fault_injection": "not_run",
         }
         after = dict(before)
         if difference == "missing":
@@ -102,3 +100,9 @@ class TestQueueComparison:
             after["completed_count"] = 3
         with pytest.raises(ValueError, match="completed_count"):
             compare_queue_contracts(before, after)
+
+    @pytest.mark.parametrize("protocol", ["durable-queue-baseline-v1", "unknown"])
+    def test_refuses_fault_injection_timings(self, protocol):
+        report = {"measurement_protocol": protocol}
+        with pytest.raises(ValueError, match="steady-state protocol"):
+            compare_queue_contracts(report, report)

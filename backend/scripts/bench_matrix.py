@@ -40,7 +40,6 @@ METRICS = {
 
 QUEUE_METRICS = {
     "complete_s": ("total_seconds",),
-    "recovery_s": ("recovery_seconds",),
     "acceptance_p95_ms": ("acceptance", "p95_ms"),
     "claim_p95_ms": ("claim", "p95_ms"),
     "completion_p95_ms": ("completion", "p95_ms"),
@@ -51,6 +50,11 @@ QUEUE_METRICS = {
 
 
 def compare_queue_contracts(before: dict, after: dict) -> None:
+    if any(
+        report.get("measurement_protocol") != "durable-queue-steady-v1"
+        for report in (before, after)
+    ):
+        raise ValueError("Queue comparison requires the steady-state protocol")
     for key in (
         "measurement_protocol",
         "scope",
@@ -59,9 +63,7 @@ def compare_queue_contracts(before: dict, after: dict) -> None:
         "completed_count",
         "rollback_orphans",
         "duplicate_claims",
-        "stale_completion_rejected",
-        "production_lease_seconds",
-        "terminated_worker_exit_code",
+        "fault_injection",
     ):
         if key not in before or key not in after or before[key] != after[key]:
             raise ValueError(f"Queue comparison contract differs or is missing: {key}")
@@ -251,7 +253,7 @@ class Profile:
             cli += [f"/evidence/corpus/{archive['name']}"]
         cli += ["--database", dialect, "--output", f"/evidence/runs/{name}.json"]
         cli += (
-            ["--jobs", "128", "--idle-seconds", "10"]
+            ["--jobs", "128", "--idle-seconds", "10", "--steady-state"]
             if queue
             else ["--timeout", "1800"]
         )
@@ -524,6 +526,9 @@ def main() -> None:
             images = prepare_images(
                 [original, base, head], head, prefix, work, evidence
             )
+            # Retain immutable image bytes even if a later correctness check
+            # rejects a workload; successful cases still need reproducible inputs.
+            preserve_images(images, output / "images")
             corpus = prepare_corpus(images[head]["release_id"], evidence, work / head)
             pg_env, bench_env = server_environment(work, password)
             with private_network(prefix) as network:
@@ -543,7 +548,7 @@ def main() -> None:
                             for ancestor in dict.fromkeys((original, base)):
                                 cases = corpus["archives"] + [
                                     {
-                                        "name": "queue-recovery",
+                                        "name": "queue-steady",
                                         "queue": True,
                                         "similarity": False,
                                     }
@@ -555,7 +560,6 @@ def main() -> None:
                                         )
                                     )
                                     write_comparisons(summaries, evidence)
-            preserve_images(images, output / "images")
         finally:
             # Never publish the private test service's password, even after a
             # dependency error or resource cleanup failure.

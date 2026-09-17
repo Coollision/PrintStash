@@ -420,8 +420,8 @@ The probe uses the application's current Python coordinator and durable database
 repositories. It records bounded acceptance, claim and completion latencies, idle
 polling CPU, and recovery after killing a real claimant. Recovery waits for the
 production 120-second lease; deadlines are not shortened for a faster result.
-It requires rollback isolation, preserved identity, rejection of stale callbacks,
-and completion by the successor before accepting measurements. Each run owns a
+Its default fault diagnostic requires rollback isolation, preserved identity,
+rejection of stale callbacks, and completion by the successor before succeeding. Each run owns a
 fresh migrated database; internal subprocess modes require the supervisor's
 matching private database receipt. PostgreSQL supports the same isolated
 maintenance-service option as the import benchmark.
@@ -433,9 +433,20 @@ original M00 baseline: it poisons the status cache and suppresses the successor'
 completion. The diagnostic rejects that sequence instead of accepting its timing.
 The M00 cache invalidation fix has a failing-before/passing-after regression.
 
+Use `--steady-state` for a separate, comparable measurement of ordinary acceptance,
+claims, completion and idle polling. This mode still verifies durable completion
+counts, unique claims and rollback, but explicitly reports `fault_injection` as
+`not_run` and emits no recovery or stale-callback verdict. Its distinct
+`durable-queue-steady-v1` protocol cannot be compared with fault-diagnostic output.
+The controlled matrix uses this mode; the independent default diagnostic and
+real process-kill E2Es retain all recovery assertions. A valid normal-operation
+timing does not turn the original baseline's failed crash case into a pass.
+
 The controlled matrix has four sequential CI profiles (SQLite/PostgreSQL, 2/4 CPU)
 with matching 2/4 GiB budgets. Every profile builds before measuring, performs one
 warm-up and seven alternating pairs, and expands noisy cases to fourteen pairs.
-Queue comparisons require the same protocol, database version and completion
-outcomes. Failed correctness checks block timing acceptance; rerunning a known
-baseline failure does not establish performance evidence.
+Queue comparisons require the same steady-state protocol, database version and
+completion outcomes. Release images are archived before measurements, and their
+artifact is retained even when a later workload fails. Failed correctness checks
+block that workload's timing acceptance; rerunning a known baseline failure does
+not establish performance evidence.

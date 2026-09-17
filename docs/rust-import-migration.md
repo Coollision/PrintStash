@@ -202,7 +202,7 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 51 | accepts equal unavailable previews | Edge | Identical source and preview outcome | Comparison accepts equivalent output | Repo | ✅ `tests/repo/test_bench_import.py::TestComparePreviewOutcomes::test_accepts_equal_unavailable_previews` |
 | 52 | rejects changed failure reason | Error | Preview failure reason differs | Comparison refuses timing evidence | Repo | ✅ `tests/repo/test_bench_import.py::TestComparePreviewOutcomes::test_rejects_changed_failure_reason` |
 | 53 | requires outcome evidence | Error | Absent preview outcome catalog | Comparison refuses timing evidence | Repo | ✅ `tests/repo/test_bench_import.py::TestComparePreviewOutcomes::test_requires_outcome_evidence` |
-| 54 | composes independent rankings | Edge | Two sparse lexical rankings in one SQL statement | Both return the authorized passage without CTE name collision | Integration | ✅ `tests/integration/modules/search/test_expansion.py::TestExpansion::test_composes_independent_rankings` |
+| 54 | composes independent rankings | Edge | Two/eight sparse lexical rankings in one SQL statement | All return the authorized passage without CTE name collision | Integration | ✅ `tests/integration/modules/search/test_expansion.py::TestExpansion::test_composes_independent_rankings` |
 | 55 | retains coverage after a failed floor | Error | Backend coverage gate fails | JSON/HTML evidence still uploaded; absence fails | Repo | ✅ `tests/repo/test_ci_workflows.py::TestBackendCoverageJob::test_retains_coverage_after_a_failed_floor` |
 | 56 | has no preview for empty geometry | Edge | Missing mesh/faces or empty faces | No image is returned | Unit | ✅ `tests/unit/modules/media/test_mesh_render.py::TestRenderMeshThumbnail::test_has_no_preview_for_empty_geometry` |
 | 57 | reports native render failure | Error | Native renderer rejects geometry | No image; named failure logged | Unit | ✅ `tests/unit/modules/media/test_mesh_render.py::TestRenderMeshThumbnail::test_reports_native_render_failure` |
@@ -218,7 +218,6 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 67 | rejects missing cached object | Error | Cache object removed | Cached result rejected | Integration | ✅ `tests/integration/modules/search/test_visual_index.py::TestCachedThumbnail::test_rejects_missing_cached_object` |
 | 68 | refuses a budget the parent should never send | Error | Source/candidate/line/address-space budgets exceed caps | Isolated worker exits with invalid-budget status | Unit | ✅ `tests/unit/modules/media/test_stl_preview_worker.py::TestMain::test_refuses_a_budget_the_parent_should_never_send` |
 | 69 | renders a binary STL with a manifest beside it | Happy | Actual isolated native worker | Complete image/manifest; subprocess execution instrumented | Unit | ✅ `tests/unit/modules/media/test_stl_preview_worker.py::TestMain::test_renders_a_binary_stl_with_a_manifest_beside_it` |
-
 | 70 | successor completes after a rejected stale callback | Error | Expired worker attempts completion before its successor; no intervening status refresh | Durable job reaches the successor's completed state | Integration | ✅ `tests/integration/modules/ingestion/test_commands.py::TestCommandsContract::test_successor_completes_after_a_rejected_stale_callback` |
 | 71 | recovers a terminated worker without losing jobs | Error | Real process killed after claim; production lease; SQLite/PostgreSQL | Same job recovers once, stale callback rejected, successor completes | E2E | ✅ `tests/e2e/test_queue_benchmark.py::TestQueueBenchmark::test_recovers_a_terminated_worker_without_losing_jobs` |
 | 72 | refuses unbounded work before creating output | Error | Invalid count or idle duration | No benchmark output/database created | Repo | ✅ `tests/repo/test_bench_queue.py::TestQueueBenchmarkBounds::test_refuses_unbounded_work_before_creating_output` |
@@ -226,6 +225,9 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 74 | refuses a changed database | Error | Supervisor receipt belongs to another database | Refuses application database access | Repo | ✅ `tests/repo/test_bench_queue.py::TestQueueBenchmarkOwnership::test_refuses_a_changed_database` |
 | 75 | distinguishes latency from resource regressions | Edge | Repeatable 6% latency/CPU changes | Flags latency at 5%; CPU remains below 10% threshold | Repo | ✅ `tests/repo/test_bench_matrix.py::TestQueueComparison::test_distinguishes_latency_from_resource_regressions` |
 | 76 | rejects non-equivalent queue outcomes | Error | Missing/different completion count | No timing comparison accepted | Repo | ✅ `tests/repo/test_bench_matrix.py::TestQueueComparison::test_rejects_non_equivalent_queue_outcomes` |
+| 77 | records only verified steady-state operations | Happy | Three ordinary jobs on real SQLite/PostgreSQL, no fault injection | Exactly three durable completions; explicit not-run fault status; no recovery timing | E2E | ✅ `tests/e2e/test_queue_benchmark.py::TestQueueBenchmark::test_records_only_verified_steady_state_operations` |
+| 78 | refuses fault-injection timings | Error | Recovery or unknown protocol passed to ordinary queue comparator | Refuses comparison before metrics are read | Repo | ✅ `tests/repo/test_bench_matrix.py::TestQueueComparison::test_refuses_fault_injection_timings` |
+| 79 | searches grouped Families through the ranked read port | Happy | Real lexical index, matching Family member and ungrouped Model | Both visible cards returned without a SQL/server error | Integration | ✅ `tests/integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_searches_grouped_families_through_ranked_port` |
 
 ### Verification and remaining gates
 
@@ -259,9 +261,10 @@ database download was interrupted by a network reset; that scan was incomplete.
 Both Python 3.13 CI runs expose an anonymous CTE identity collision in sparse
 retrieval. A bounded minimal SQLAlchemy reproduction fails on its sixth construction:
 `prefix_with()` clones an anonymous CTE, discards its original object, and a later
-CTE reuses that object's identity-based name. Scoped named CTEs preserve query
-composition. **41 focused Python 3.13 tests pass** with the locked full dependency
-set. The first isolated environment lacked the optional tokenizer and was stopped;
+CTE reuses that object's identity-based name. SQLAlchemy clone traversal retains anonymous CTE ancestry before materialization.
+The initial scoped-name workaround was replaced after its extra SQL nesting hit
+SQLite 3.45.1 parser limits in grouped Family browsing. The initial workaround passed 41 focused Python 3.13 tests; the corrected
+query passes the 25 affected search tests with the locked full dependency set. The first isolated environment lacked the optional tokenizer and was stopped;
 it supplies no acceptance evidence. Configured Pyright and benchmark-script
 Pyright pass. Direct Pyright on the two search SQL modules reports 31 SQLModel
 column-typing errors outside the configured include list; no suppression or scope
@@ -292,7 +295,7 @@ makes those source directories readable. The existing MinIO migration-source
 release remains pinned to its historical digest; its official registry mirror
 changed, not its version. Disposable PostgreSQL supports an isolated maintenance
 service without Docker socket access or host networking, and uses private generated
-credentials. Exact-diff security review through `ed0a8a4d` completed with no findings;
+credentials. Exact-diff security review through `fb90f6ab` completed with no findings;
 it does not cover subsequent edits. A current review, controlled comparisons,
 queue-recovery baseline evidence, and all current CI gates remain open.
 
@@ -311,3 +314,34 @@ The first successful recovery run exposed a benchmark transport error: applicati
 logs shared stdout with the JSON result. Measurement startup now redirects those
 logs to the supervisor log, preserving one structured result on stdout. Both real
 database E2Es assert the persisted JSON as well as recovered job outcomes.
+
+Normal queue measurements now use a separate steady-state protocol. They verify
+ordinary durable outcomes and explicitly report fault injection as not run. The
+matrix cannot consume default crash-diagnostic output, so the original baseline's
+known failure remains visible without blocking independent valid measurements or
+being retried for timing. The full fault diagnostic remains the default CLI mode
+and still has both-database SIGKILL/stale-callback E2Es. Measured release images are
+preserved before measurement and retained if a later workload fails.
+
+The canonical pretrained CLIP fixture passes **4 local integration tests** using
+hash-verified weights and the exact repository manifest. A pre-existing local
+manifest differed and its preliminary results are excluded. The existing visual
+benchmark also completed all **32 real-model corpus items**, recording vectors and
+input hashes. These are functional/quality observations on an uncontrolled host,
+not accepted paired inference performance. Both native architecture canary gates
+and controlled inference comparisons still require current evidence.
+
+The separated queue/CI harness checks pass **51 tests**, including both normal and
+full crash modes on real SQLite/PostgreSQL. The normal mode also passes functional
+checks against the preserved original release image on both databases; its fault
+status remains explicitly not run. Current CI at fb90f6ab has a grouped-Family
+search HTTP 500 in real-browser coverage. The basic ranked-port integration case
+passes locally on SQLite 3.53.1. Replaying its captured query on the real system
+SQLite 3.45.1 reproduces `parser stack overflow` before the correction and returns
+the expected count afterward. Hoisted anonymous CTEs with SQLAlchemy's documented
+clone traversal retain identity without extra parser nesting. The corrected search
+subset passes **25 tests on Python 3.13**, and both real-backend Family browser
+tests pass with retries disabled (48.3 seconds). Lint, CI-scoped formatting and
+configured Pyright pass. No browser expectation has been relaxed.
+
+SQL traversal reference: [SQLAlchemy visitor utilities](https://docs.sqlalchemy.org/en/20/core/visitors.html).

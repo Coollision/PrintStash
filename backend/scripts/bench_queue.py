@@ -64,7 +64,7 @@ def _latencies(values: list[float]) -> dict:
     }
 
 
-def _measure(count: int, idle_seconds: float) -> dict:
+def _measure(count: int, idle_seconds: float, *, include_recovery: bool) -> dict:
     _require_owned_database()
     from sqlalchemy import func
     from sqlmodel import select
@@ -128,6 +128,33 @@ def _measure(count: int, idle_seconds: float) -> dict:
         "polls": polls,
         "poll_interval_seconds": 0.25,
     }
+
+    with sessions.scoped_session() as session:
+        completed = session.exec(
+            select(func.count())
+            .select_from(BackgroundJob)
+            .where(BackgroundJob.state == "completed")
+        ).one()
+        if completed != count:
+            raise RuntimeError("steady-state queue completion count changed")
+    report = {
+        "measurement_protocol": "durable-queue-steady-v1",
+        "scope": "queue repositories; no import payload execution or HTTP server",
+        "database": database,
+        "accepted_count": count,
+        "completed_count": completed,
+        "rollback_orphans": 0,
+        "duplicate_claims": len(accepted) - len(claimed),
+        "acceptance": _latencies(acceptance),
+        "claim": _latencies(claims),
+        "completion": _latencies(completion),
+        "idle": idle,
+        "fault_injection": "not_run",
+        "total_seconds": time.monotonic() - started,
+        "coordinator_cpu_seconds": time.process_time() - initial_cpu,
+    }
+    if not include_recovery:
+        return report
 
     recovery_id = enqueue()
     worker = subprocess.Popen(
@@ -202,18 +229,12 @@ def _measure(count: int, idle_seconds: float) -> dict:
         if terminal != count + 1 or recovered is None or recovered.attempts != 2:
             raise RuntimeError("queue completion identities or attempts changed")
     return {
+        **report,
         "measurement_protocol": "durable-queue-baseline-v1",
-        "scope": "queue repositories; no import payload execution or HTTP server",
-        "database": database,
         "accepted_count": count + 1,
         "completed_count": terminal,
-        "rollback_orphans": 0,
-        "duplicate_claims": len(accepted) - len(claimed),
+        "fault_injection": "passed",
         "stale_completion_rejected": True,
-        "acceptance": _latencies(acceptance),
-        "claim": _latencies(claims),
-        "completion": _latencies(completion),
-        "idle": idle,
         "production_lease_seconds": commands.LEASE_SECONDS,
         "terminated_worker_exit_code": worker.returncode,
         "recovery_seconds": recovered_at - killed_at,
@@ -229,6 +250,7 @@ def run(
     count: int = 128,
     idle_seconds: float = 10,
     postgres_admin_url: str | None = None,
+    include_recovery: bool = True,
 ) -> dict:
     if not 1 <= count <= 1024 or not 1 <= idle_seconds <= 60:
         raise ValueError("queue benchmark workload exceeds its bounds")
@@ -279,6 +301,7 @@ def run(
                         str(count),
                         "--idle-seconds",
                         str(idle_seconds),
+                        *([] if include_recovery else ["--steady-state"]),
                     ],
                     cwd=backend,
                     env=env,
@@ -300,6 +323,11 @@ def main() -> None:
     parser.add_argument("--jobs", type=int, default=128)
     parser.add_argument("--idle-seconds", type=float, default=10)
     parser.add_argument("--postgres-admin-url-env")
+    parser.add_argument(
+        "--steady-state",
+        action="store_true",
+        help="Measure ordinary queue operations only; report fault injection as not run",
+    )
     parser.add_argument("--claim-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--measure", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -312,7 +340,9 @@ def main() -> None:
         # App startup configures logging on stdout. Keep that operational output
         # in the supervisor's log, leaving this pipe for one structured result.
         with redirect_stdout(sys.stderr):
-            report = _measure(args.jobs, args.idle_seconds)
+            report = _measure(
+                args.jobs, args.idle_seconds, include_recovery=not args.steady_state
+            )
         print(json.dumps(report), flush=True)
         return
     if args.output is None:
@@ -330,6 +360,7 @@ def main() -> None:
         count=args.jobs,
         idle_seconds=args.idle_seconds,
         postgres_admin_url=admin,
+        include_recovery=not args.steady_state,
     )
 
 
