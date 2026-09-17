@@ -240,6 +240,7 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 89 | builds the optional local point profile for geometry search | Happy | Point-cloud generation plus any previously active visual legs | Public search evidence contains `point_cloud`; opened result disclosure shows visible shape evidence | Playwright | ✅ `frontend/tests/e2e-real/ai-search/search.spec.ts::AI Search::builds the optional local point profile for geometry search` |
 | 90 | preserves crash-recovery coverage evidence | Edge | Search index worker is deliberately killed during a committed batch while coverage is active | Hard-kill recovery completes; the doomed worker cannot corrupt the suite's coverage data | E2E | ✅ `tests/e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_resumes_committed_work_after_process_loss` |
 | 91 | keeps disposable worker coverage valid | Edge | Inference pool tests deliberately kill a child that imports no application code | Real worker lifecycle assertions run without creating unusable subprocess coverage shards | Integration | ✅ `tests/integration/modules/inference/test_worker_pool.py` |
+| 92 | bounds transient benchmark setup retries | Error | An isolated benchmark setup receives an unexpected 429 before measurement starts | One complete rate-limit window is observed; setup succeeds once or the second rejection fails the run | Repo | ✅ `tests/repo/test_bench_import.py::TestCompleteSetup` |
 
 ### Verification and remaining gates
 
@@ -379,3 +380,11 @@ workers now opt out of subprocess instrumentation only for those doomed
 executions; their focused coverage runs pass without invalid child files. Exact
 current-revision CI, the controlled comparison rerun, and exact-diff security
 review remain open.
+
+The superseded controlled PostgreSQL 2-CPU cell retained 14 complete workload
+comparisons, then failed before a timed run when its isolated setup endpoint
+returned a transient `429`. Setup is outside the measurement interval. The
+harness now waits one complete 60-second rate-limit window and retries exactly
+once; a second rejection remains terminal. The focused benchmark suite passes
+**52 tests**. The superseded cell is diagnostic evidence and does not qualify
+the current revision.

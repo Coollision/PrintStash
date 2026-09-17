@@ -47,6 +47,8 @@ from scripts.bench_database import (
     read_rows,
 )
 
+_SETUP_RATE_LIMIT_BACKOFF_SECONDS = 61
+
 
 def environment_record(backend: Path) -> dict:
     """Record reproducibility facts without changing host caches or resources."""
@@ -157,6 +159,25 @@ class ServerResources:
 def body(response: httpx.Response) -> dict:
     response.raise_for_status()
     return response.json()
+
+
+def complete_setup(client: httpx.Client, csrf: str, payload: dict) -> dict:
+    """Complete isolated setup, tolerating one expired in-process rate window.
+
+    Setup precedes the measured interval. A bounded retry keeps a multi-hour
+    matrix from losing all prior evidence to a transient 429 while preserving
+    the production endpoint's limit and making repeated rejection terminal.
+    """
+    for attempt in range(2):
+        response = client.post(
+            "/api/v1/setup",
+            headers={"X-PrintStash-Setup-CSRF": csrf},
+            json=payload,
+        )
+        if response.status_code != 429 or attempt:
+            return body(response)
+        time.sleep(_SETUP_RATE_LIMIT_BACKOFF_SECONDS)
+    raise AssertionError("bounded setup attempts exhausted")
 
 
 def latency_summary(samples):
@@ -291,17 +312,15 @@ def run(
                             raise TimeoutError("Server startup timed out")
                         time.sleep(0.2)
                     csrf = body(client.post("/api/v1/setup/session"))["csrf"]
-                    setup = body(
-                        client.post(
-                            "/api/v1/setup",
-                            headers={"X-PrintStash-Setup-CSRF": csrf},
-                            json={
-                                "username": "benchmark",
-                                "password": secrets.token_urlsafe(24),
-                                "data_dir": str(root / "files"),
-                                "thumb_dir": str(root / "thumbs"),
-                            },
-                        )
+                    setup = complete_setup(
+                        client,
+                        csrf,
+                        {
+                            "username": "benchmark",
+                            "password": secrets.token_urlsafe(24),
+                            "data_dir": str(root / "files"),
+                            "thumb_dir": str(root / "thumbs"),
+                        },
                     )
                     client.headers["Authorization"] = "Bearer " + setup["access_token"]
                     if similarity:

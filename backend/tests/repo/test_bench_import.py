@@ -1,5 +1,6 @@
 """A compression experiment must still reject any changed preview pixels."""
 
+import httpx
 import pytest
 
 from scripts.bench_import import (
@@ -49,6 +50,66 @@ class TestEnvironmentRecord:
         record = environment_record(tmp_path)
         assert record["git_revision"] is None
         assert record["dependency_versions"]["numpy"] is not None
+
+
+class TestCompleteSetup:
+    @staticmethod
+    def response(status_code: int) -> httpx.Response:
+        return httpx.Response(
+            status_code,
+            json={"access_token": "benchmark-token"},
+        )
+
+    def test_retries_one_rate_limited_setup_before_timing(self, monkeypatch):
+        from scripts import bench_import
+
+        responses = [self.response(429), self.response(201)]
+        requests = []
+        sleeps = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return responses.pop(0)
+
+        monkeypatch.setattr(bench_import.time, "sleep", sleeps.append)
+
+        with httpx.Client(
+            base_url="http://127.0.0.1", transport=httpx.MockTransport(handler)
+        ) as client:
+            result = bench_import.complete_setup(client, "csrf", {"username": "bench"})
+
+        assert result == {"access_token": "benchmark-token"}
+        assert sleeps == [61]
+        assert responses == []
+        assert [request.url.path for request in requests] == [
+            "/api/v1/setup",
+            "/api/v1/setup",
+        ]
+        assert all(
+            request.headers["X-PrintStash-Setup-CSRF"] == "csrf" for request in requests
+        )
+
+    def test_stops_after_the_bounded_setup_retry(self, monkeypatch):
+        from scripts import bench_import
+
+        responses = [self.response(429), self.response(429)]
+        sleeps = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return responses.pop(0)
+
+        monkeypatch.setattr(bench_import.time, "sleep", sleeps.append)
+
+        with (
+            httpx.Client(
+                base_url="http://127.0.0.1", transport=httpx.MockTransport(handler)
+            ) as client,
+            pytest.raises(httpx.HTTPStatusError),
+        ):
+            bench_import.complete_setup(client, "csrf", {"username": "bench"})
+
+        assert sleeps == [61]
+        assert responses == []
 
 
 class TestCompareFingerprints:
