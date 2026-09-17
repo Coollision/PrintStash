@@ -377,6 +377,8 @@ read/traversal permissions in the instrumentation layer so an unprivileged runne
 can hash their unchanged bytes. Subsequent milestones must retain the
 M00 image archive and corpus: rebuilding a moving Docker base or regenerating
 fixtures with changed numerical dependencies is not an equivalent baseline.
+When `benchmark_imports` is true, ordinary CI, browser, image-build and scan jobs
+remain skipped so they cannot contend with the controlled measurement cells.
 
 The deterministic corpus covers small STL/3MF, 128 small meshes, a 327,680-face
 mesh, a mixed large archive, existing Prusa/Orca/BGCODE fixtures, a STEP fixture,

@@ -21,6 +21,23 @@ def _ci_workflow() -> dict:
 
 
 class TestControlledImportBenchmark:
+    def test_runs_without_concurrent_ci_jobs(self) -> None:
+        jobs = _ci_workflow()["jobs"]
+        ordinary_guard = (
+            "github.event_name != 'workflow_dispatch' || "
+            "inputs.benchmark_imports != true"
+        )
+        flaky_guard = (
+            "(github.event_name == 'schedule' || "
+            "github.event_name == 'workflow_dispatch') && "
+            "inputs.benchmark_imports != true"
+        )
+
+        ordinary_jobs = set(jobs) - {"import-benchmark", "flaky-detection"}
+        assert ordinary_jobs
+        assert all(jobs[name]["if"] == ordinary_guard for name in ordinary_jobs)
+        assert jobs["flaky-detection"]["if"] == flaky_guard
+
     def test_preserves_evidence_on_a_dedicated_opt_in_runner(self):
         job = _ci_workflow()["jobs"]["import-benchmark"]
         assert (

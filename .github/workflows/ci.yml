@@ -40,6 +40,7 @@ env:
 jobs:
   mesh-native:
     name: Rust mesh loading and rendering (${{ matrix.arch }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -81,6 +82,7 @@ jobs:
 
   native-coverage:
     name: Rust source coverage including Python bindings
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -110,6 +112,7 @@ jobs:
 
   similarity-native:
     name: Similarity native (${{ matrix.arch }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -156,6 +159,7 @@ jobs:
 
   critical-capabilities:
     name: Critical capabilities
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -201,6 +205,7 @@ jobs:
 
   printer-core:
     name: Printer core (${{ matrix.python }}, ${{ matrix.resolution }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -265,6 +270,7 @@ jobs:
 
   backend:
     name: Backend
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -340,6 +346,7 @@ jobs:
 
   backend-python313:
     name: Backend compatibility (Python 3.13, advisory)
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     continue-on-error: true
     # The complete suite reached 80% when the former 30-minute job budget ended.
@@ -374,7 +381,9 @@ jobs:
     # as "CI is flaky" and gets a re-run rather than a fix. Five shuffled,
     # parallel runs on a schedule turn that into a specific named failure with a
     # seed that reproduces it.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -435,6 +444,7 @@ jobs:
 
   sqlite-async:
     name: SQLite async extra
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -461,6 +471,7 @@ jobs:
 
   minio-migration:
     name: MinIO to SeaweedFS migration
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -495,6 +506,7 @@ jobs:
 
   frontend:
     name: Frontend
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -548,6 +560,7 @@ jobs:
 
   browser-extension:
     name: Browser extension
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -705,6 +718,7 @@ jobs:
 
   e2e-real:
     name: Real-backend E2E
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -771,6 +785,7 @@ jobs:
 
   docker-build:
     name: Docker build and Grype scan (${{ matrix.image }}, ${{ matrix.arch }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.image == 'printstash' && 45 || 40 }}
     permissions:
