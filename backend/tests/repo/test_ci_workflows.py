@@ -56,6 +56,18 @@ class TestControlledImportBenchmark:
         }
 
 
+class TestFlakyDetectionJob:
+    def test_excludes_the_coverage_report_audit(self) -> None:
+        job = _ci_workflow()["jobs"]["flaky-detection"]
+        command = next(
+            step["run"]
+            for step in job["steps"]
+            if step.get("name") == "Run the suite five times with different orderings"
+        )
+
+        assert "--deselect tests/repo/test_coverage_floors.py" in command
+
+
 class TestNativeCoverageJob:
     def test_requires_executed_native_coverage(self):
         job = _ci_workflow()["jobs"]["native-coverage"]

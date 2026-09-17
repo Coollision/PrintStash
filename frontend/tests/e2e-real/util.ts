@@ -57,7 +57,7 @@ export function stlFor(name: string): string {
 }
 
 export function modelCard(page: Page, name: string) {
-  return page.locator('a[href^="/models/"]').filter({ hasText: name });
+  return page.getByRole("main").locator('a[href^="/models/"]').filter({ hasText: name });
 }
 
 // Share/Edit details/Delete model live behind the "Model actions" dropdown on

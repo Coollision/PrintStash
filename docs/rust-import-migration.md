@@ -173,7 +173,7 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 22 | preserves storage through restart | Edge | WebDAV setup followed by real backend restart | Active provider, stored credentials and safe GC workflow remain usable | Playwright | ✅ `frontend/tests/e2e-real/storage/storage-provider.spec.ts` |
 | 23 | persists print-tracking toggle | Happy | Toggle mutation response before React repaint | New value appears and survives reload | Playwright | ✅ `frontend/tests/e2e-real/settings.spec.ts` |
 | 24 | requires confirmation before staging cleanup | Edge | Real expired ownership receipt in disposable browser vault | File survives preview; confirmation removes it | Playwright | ✅ `frontend/tests/e2e-real/settings.spec.ts` |
-| 25 | filters library with current search control | Happy | Uploaded Model; search query then list/grid selection | Matching Model remains visible in both views | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
+| 25 | filters library with current search control | Happy | Uploaded Model; search suggestion and library result visible; list/grid selection | Exactly one library Model card is selected while the suggestion is open; Model remains visible in both views | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
 | 26 | shows an empty library search | Edge | Query with no matching Model | Model links disappear after query is applied | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
 | 27 | preserves parsed metadata in performance comparisons | Happy/Error | Real Prusa G-code plus mesh on both DBs; changed or missing comparison facts | Exact slicer time/layer/material/tool color recorded without transient IDs; lossy comparisons refused | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestCompareMetadata` |
 | 28 | edits a linked Nextcloud connection | Edge | Current verified-migration provider form; existing linked target | Credentials remain private; compatible edits succeed and root change is rejected | Playwright | ✅ `frontend/tests/e2e-real/critical/remote-backup.spec.ts` |
@@ -230,6 +230,16 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 79 | searches grouped Families through the ranked read port | Happy | Real lexical index, matching Family member and ungrouped Model | Both visible cards returned without a SQL/server error | Integration | ✅ `tests/integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_searches_grouped_families_through_ranked_port` |
 | 80 | stale failure preserves the successor claim | Error | Expired preview worker reports failure after a new worker claims the generation | Successor token, attempts and running state remain intact; no failure published | Integration | ✅ `tests/integration/modules/media/test_thumbnail_generations.py::TestDeferredPublication::test_stale_failure_preserves_successor_claim` |
 | 81 | deferred work preserves its attempt budget | Edge | Resource deferral remains inside its retry delay | No render or additional attempt; pending generation remains recoverable | Integration | ✅ `tests/integration/modules/media/test_thumbnail_generations.py::TestDeferredPublication::test_deferred_work_preserves_its_attempt_budget` |
+| 82 | selects the pinned amd64 OpenSSH manifest | Happy | Linux or Docker amd64 architecture name | Exact amd64 child digest from the pinned OCI index | Repo | ✅ `tests/repo/test_containers.py::TestOpenSshImage::test_selects_the_pinned_amd64_manifest` |
+| 83 | selects the pinned arm64 OpenSSH manifest | Happy | Linux or Docker arm64 architecture name | Exact arm64 child digest from the pinned OCI index | Repo | ✅ `tests/repo/test_containers.py::TestOpenSshImage::test_selects_the_pinned_arm64_manifest` |
+| 84 | rejects an unsupported OpenSSH architecture | Error | Unknown Docker host architecture | Named error before an unverified image can start | Repo | ✅ `tests/repo/test_containers.py::TestOpenSshImage::test_rejects_an_unsupported_architecture` |
+| 85 | excludes the coverage report audit from shuffled runs | Edge | Flaky detector runs pytest without generating coverage evidence | Coverage-only audit is deselected; shuffled suite failures remain meaningful | Repo | ✅ `tests/repo/test_ci_workflows.py::TestFlakyDetectionJob::test_excludes_the_coverage_report_audit` |
+| 86 | returns lexical results by the query deadline | Error | Semantic provider remains blocked beyond the configured deadline | Request completes with lexical result and semantic-unavailable evidence before provider release | Integration | ✅ `tests/integration/modules/search/test_retrieval.py::TestSearch::test_returns_lexical_results_by_query_deadline` |
+| 87 | renews a running command lease | Edge | Held command and real concurrent SQLite heartbeat transactions | Every observed durable deadline advances; command completes | Integration | ✅ `tests/integration/runtime/test_ingestion.py::TestProcessOne::test_renews_a_running_command_lease` |
+| 88 | persists editable filters without repeated parsing | Happy | Natural-language controls and Saved Views begin inside collapsed Search options | Controls open explicitly; normalized view restores with one parser request | Playwright | ✅ `frontend/tests/e2e-real/ai-search/nl-filters.spec.ts::AI Search::persists editable filters without repeated parsing` |
+| 89 | builds the optional local point profile for geometry search | Happy | Point-cloud generation plus any previously active visual legs | Public search evidence contains `point_cloud`; opened result disclosure shows visible shape evidence | Playwright | ✅ `frontend/tests/e2e-real/ai-search/search.spec.ts::AI Search::builds the optional local point profile for geometry search` |
+| 90 | preserves crash-recovery coverage evidence | Edge | Search index worker is deliberately killed during a committed batch while coverage is active | Hard-kill recovery completes; the doomed worker cannot corrupt the suite's coverage data | E2E | ✅ `tests/e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_resumes_committed_work_after_process_loss` |
+| 91 | keeps disposable worker coverage valid | Edge | Inference pool tests deliberately kill a child that imports no application code | Real worker lifecycle assertions run without creating unusable subprocess coverage shards | Integration | ✅ `tests/integration/modules/inference/test_worker_pool.py` |
 
 ### Verification and remaining gates
 
@@ -357,3 +367,15 @@ thumbnail-generation module suite passes **28 tests**; its focused coverage is
 87.98%. The union with the completed CI evidence for this unchanged production
 module is 90.79%, which identifies the closed paths but does not substitute for
 rerunning the full current-revision coverage gate. No floor or debt list changed.
+
+Post-baseline CI hardening passes the local backend fast lane (**8,592 tests**),
+frontend app/domain/UI coverage (**2,705 tests**, every floor held), and the real
+SFTP, vault-search and AI-search regressions without retries. The backend coverage
+lane passes **13,130 non-service and 302 service tests**, reports **94.14%**
+aggregate combined coverage, and passes all 10 floor audits. That run exposed
+unusable coverage files from disposable children that are intentionally killed
+and import no application code. The search crash worker and inference-pool dummy
+workers now opt out of subprocess instrumentation only for those doomed
+executions; their focused coverage runs pass without invalid child files. Exact
+current-revision CI, the controlled comparison rerun, and exact-diff security
+review remain open.

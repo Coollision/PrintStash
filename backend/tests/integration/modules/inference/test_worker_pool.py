@@ -1,5 +1,6 @@
 """Real child lifetimes exercise bounded resident models and admission races."""
 
+import os
 import subprocess
 import sys
 import threading
@@ -22,11 +23,21 @@ def workers():
 
 @pytest.fixture
 def spawn():
-    return lambda: subprocess.Popen(
-        [sys.executable, "-c", "import sys; sys.stdin.buffer.read()"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-    )
+    env = dict(os.environ)
+    # The disposable child imports no application code and several tests kill it
+    # deliberately. Instrumenting it cannot add app coverage and leaves an invalid
+    # SQLite coverage shard after SIGKILL.
+    env.pop("COVERAGE_PROCESS_CONFIG", None)
+
+    def start():
+        return subprocess.Popen(
+            [sys.executable, "-c", "import sys; sys.stdin.buffer.read()"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            env=env,
+        )
+
+    return start
 
 
 class TestSharedNativeBudget:

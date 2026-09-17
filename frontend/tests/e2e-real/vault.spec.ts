@@ -17,6 +17,8 @@ test.describe("vault", () => {
     // Search narrows the grid to the matching model and reflects in the URL.
     await page.getByRole("searchbox", { name: "Search library" }).fill(name);
     await expect(page).toHaveURL(/[?&]q=/);
+    await expect(page.locator("[data-search-suggestion]").filter({ hasText: name })).toBeVisible();
+    await expect(modelCard(page, name)).toHaveCount(1);
     await expect(modelCard(page, name)).toBeVisible();
 
     // List / grid toggle (title-labelled buttons) both keep the result.

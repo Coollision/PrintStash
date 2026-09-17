@@ -32,6 +32,7 @@ check only fires for markers a *selected* test carries.
 
 from __future__ import annotations
 
+import platform
 import secrets
 import subprocess
 import time
@@ -69,11 +70,21 @@ NEXTCLOUD_IMAGE = (
     "nextcloud:29.0.4-apache"
     "@sha256:37d77a1857563d26f7c9a6dc8cdc306ef1118b66f0485bbf457d2f9c1d86e6ed"
 )
-# Pin the multi-architecture index: the former index contained amd64 only.
-OPENSSH_IMAGE = (
-    "lscr.io/linuxserver/openssh-server"
-    "@sha256:2a48f9ce01f61c1d7b376b7be99bd12801a3ecd9f339a4c7e7698d529e8d0b47"
-)
+# These are the platform children of OCI index
+# sha256:2a48f9ce01f61c1d7b376b7be99bd12801a3ecd9f339a4c7e7698d529e8d0b47.
+# Docker Engine stores the selected child after a pull; older daemons cannot
+# subsequently inspect the parent index by digest, which makes Docker SDK report
+# ImageNotFound even though the pull succeeded.
+OPENSSH_IMAGES = {
+    "amd64": (
+        "lscr.io/linuxserver/openssh-server"
+        "@sha256:85fa42da0475a71e1f51426439ebad63bf7ba3daaa7961430482759ea9ba562b"
+    ),
+    "arm64": (
+        "lscr.io/linuxserver/openssh-server"
+        "@sha256:bdf6c42b8d9a7e2250685ef7e6f9cfb07dd7b956cfb431590c49c7b312cbaf8a"
+    ),
+}
 
 POSTGRES_IMAGE = "postgres:16-alpine"
 POSTGRES_USER = "printstash"
@@ -106,6 +117,16 @@ _TRANSIENT_START_MARKERS = (
 
 _started: list[Any] = []
 _resolved: dict[str, str | None] = {}
+
+
+def _openssh_image() -> str:
+    """Return the pinned OpenSSH child manifest for this Docker host."""
+    machine = platform.machine().lower()
+    architecture = {"x86_64": "amd64", "aarch64": "arm64"}.get(machine, machine)
+    try:
+        return OPENSSH_IMAGES[architecture]
+    except KeyError as exc:
+        raise RuntimeError(f"unsupported OpenSSH test architecture: {machine}") from exc
 
 
 def _start_container(factory: Callable[[], Any]) -> Any:
@@ -303,7 +324,7 @@ def _start_openssh() -> tuple[str, int, str]:
 
     container = _start_container(
         lambda: (
-            DockerContainer(OPENSSH_IMAGE)
+            DockerContainer(_openssh_image())
             .with_env("USER_NAME", "contract")
             .with_env("USER_PASSWORD", "contract-only")
             .with_env("PASSWORD_ACCESS", "true")

@@ -404,6 +404,7 @@ jobs:
             echo "::group::seed ${seed}"
             uv run pytest tests -q -p randomly --randomly-seed="${seed}" -n 4 \
               --deselect tests/integration/postgres \
+              --deselect tests/repo/test_coverage_floors.py \
               > "run-${seed}.log" 2>&1 || status=1
             tail -1 "run-${seed}.log"
             echo "::endgroup::"
