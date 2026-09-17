@@ -1,6 +1,8 @@
 """The queue qualification matrix bounds identities and database evidence."""
 
 import sqlite3
+import subprocess
+import sys
 
 import pytest
 
@@ -9,6 +11,24 @@ from scripts.bench_queue_qualification_matrix import (
     postgres_database_bytes,
     sqlite_database_bytes,
 )
+from tests.paths import REPO_ROOT
+
+
+def test_direct_cli_resolves_the_backend_scripts_package():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "backend/scripts/bench_queue_qualification_matrix.py"),
+            "--help",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert "Compare PrintStash's durable queue" in result.stdout
 
 
 def test_reads_real_sqlite_page_allocation(tmp_path):

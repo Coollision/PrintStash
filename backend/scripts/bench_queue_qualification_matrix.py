@@ -14,11 +14,15 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import tempfile
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.bench_matrix import (
     Profile,
