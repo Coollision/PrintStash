@@ -228,6 +228,8 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 77 | records only verified steady-state operations | Happy | Three ordinary jobs on real SQLite/PostgreSQL, no fault injection | Exactly three durable completions; explicit not-run fault status; no recovery timing | E2E | ✅ `tests/e2e/test_queue_benchmark.py::TestQueueBenchmark::test_records_only_verified_steady_state_operations` |
 | 78 | refuses fault-injection timings | Error | Recovery or unknown protocol passed to ordinary queue comparator | Refuses comparison before metrics are read | Repo | ✅ `tests/repo/test_bench_matrix.py::TestQueueComparison::test_refuses_fault_injection_timings` |
 | 79 | searches grouped Families through the ranked read port | Happy | Real lexical index, matching Family member and ungrouped Model | Both visible cards returned without a SQL/server error | Integration | ✅ `tests/integration/modules/search/test_lexical_query.py::TestLexicalQuery::test_searches_grouped_families_through_ranked_port` |
+| 80 | stale failure preserves the successor claim | Error | Expired preview worker reports failure after a new worker claims the generation | Successor token, attempts and running state remain intact; no failure published | Integration | ✅ `tests/integration/modules/media/test_thumbnail_generations.py::TestDeferredPublication::test_stale_failure_preserves_successor_claim` |
+| 81 | deferred work preserves its attempt budget | Edge | Resource deferral remains inside its retry delay | No render or additional attempt; pending generation remains recoverable | Integration | ✅ `tests/integration/modules/media/test_thumbnail_generations.py::TestDeferredPublication::test_deferred_work_preserves_its_attempt_budget` |
 
 ### Verification and remaining gates
 
@@ -345,3 +347,13 @@ tests pass with retries disabled (48.3 seconds). Lint, CI-scoped formatting and
 configured Pyright pass. No browser expectation has been relaxed.
 
 SQL traversal reference: [SQLAlchemy visitor utilities](https://docs.sqlalchemy.org/en/20/core/visitors.html).
+
+The completed CI run at `fb90f6ab` passes **13,117 non-service and 301 service
+backend tests** on both Python lanes. Aggregate combined coverage is **94.12%**.
+Only `thumbnail_generations.py` remains below its 90% module floor (89.51%); all
+other prior module failures are closed. Two additional real SQLite regressions
+assert stale-failure fencing and resource-deferral attempt preservation. The
+thumbnail-generation module suite passes **28 tests**; its focused coverage is
+87.98%. The union with the completed CI evidence for this unchanged production
+module is 90.79%, which identifies the closed paths but does not substitute for
+rerunning the full current-revision coverage gate. No floor or debt list changed.
