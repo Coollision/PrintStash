@@ -1,8 +1,9 @@
 """Queue baseline inputs are bounded before creating databases or processes."""
 
 import pytest
+from sqlalchemy import create_engine
 
-from scripts.bench_queue import _require_owned_database, run
+from scripts.bench_queue import _require_owned_database, database_bytes, run
 
 
 class TestQueueBenchmarkBounds:
@@ -26,6 +27,20 @@ class TestQueueBenchmarkBounds:
             run(output, database="sqlite", count=count, idle_seconds=idle_seconds)
 
         assert not output.parent.exists()
+
+
+def test_measures_real_sqlite_database_bytes(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'queue.sqlite'}")
+    before = database_bytes(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE queue_probe (value TEXT NOT NULL)")
+        connection.exec_driver_sql(
+            "INSERT INTO queue_probe (value) VALUES (?)", ("measured",)
+        )
+
+    assert before >= 0
+    assert database_bytes(engine) > before
+    engine.dispose()
 
 
 class TestQueueBenchmarkOwnership:

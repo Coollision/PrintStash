@@ -27,6 +27,26 @@ if __package__ in (None, ""):
 from scripts.bench_database import database_record, disposable_database
 
 
+def database_bytes(engine) -> int:
+    """Return committed database bytes without depending on provider tooling."""
+    with engine.connect() as connection:
+        if connection.dialect.name == "sqlite":
+            pages = connection.exec_driver_sql("PRAGMA page_count").scalar_one()
+            page_size = connection.exec_driver_sql("PRAGMA page_size").scalar_one()
+            value = pages * page_size
+        elif connection.dialect.name == "postgresql":
+            value = connection.exec_driver_sql(
+                "SELECT pg_database_size(current_database())"
+            ).scalar_one()
+        else:
+            raise ValueError(
+                f"Unsupported queue benchmark database: {connection.dialect.name}"
+            )
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RuntimeError("database size inspection returned an invalid value")
+    return value
+
+
 def _require_owned_database() -> None:
     owner = os.environ.get("PRINTSTASH_QUEUE_BENCHMARK_OWNER")
     database_url = os.environ.get("VAULT_DB_URL")
@@ -77,7 +97,8 @@ def _measure(count: int, idle_seconds: float, *, include_recovery: bool) -> dict
     sessions = get_session_factory()
     registry = JobRegistry()
     accepted, claimed = set(), set()
-    acceptance, claims, completion = [], [], []
+    accepted_at = {}
+    acceptance, claims, enqueue_to_start, completion = [], [], [], []
     started = time.monotonic()
     initial_cpu = time.process_time()
 
@@ -100,7 +121,9 @@ def _measure(count: int, idle_seconds: float, *, include_recovery: bool) -> dict
 
     for _ in range(count):
         begin = time.monotonic()
-        accepted.add(enqueue())
+        job_id = enqueue()
+        accepted.add(job_id)
+        accepted_at[job_id] = begin
         acceptance.append(time.monotonic() - begin)
     for _ in range(count):
         begin = time.monotonic()
@@ -110,6 +133,7 @@ def _measure(count: int, idle_seconds: float, *, include_recovery: bool) -> dict
         if claim is None or claim.job_id not in accepted or claim.job_id in claimed:
             raise RuntimeError("accepted jobs were lost or claimed twice")
         claimed.add(claim.job_id)
+        enqueue_to_start.append(time.monotonic() - accepted_at[claim.job_id])
         begin = time.monotonic()
         with commands.execution_scope(claim):
             registry.finish(claim.job_id, state="completed")
@@ -147,6 +171,7 @@ def _measure(count: int, idle_seconds: float, *, include_recovery: bool) -> dict
         "duplicate_claims": len(accepted) - len(claimed),
         "acceptance": _latencies(acceptance),
         "claim": _latencies(claims),
+        "enqueue_to_start": _latencies(enqueue_to_start),
         "completion": _latencies(completion),
         "idle": idle,
         "fault_injection": "not_run",
@@ -261,6 +286,7 @@ def run(
         with disposable_database(
             root, database, postgres_admin_url=postgres_admin_url
         ) as engine:
+            database_bytes_before = database_bytes(engine)
             env = {
                 key: value
                 for key, value in os.environ.items()
@@ -312,6 +338,10 @@ def run(
                     timeout=600,
                 )
             report = json.loads(result.stdout)
+            database_growth = database_bytes(engine) - database_bytes_before
+            if database_growth < 0:
+                raise RuntimeError("queue benchmark database shrank during measurement")
+            report["database_growth_bytes"] = database_growth
             output.write_text(json.dumps(report, indent=2) + "\n")
             return report
 

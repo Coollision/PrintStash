@@ -73,6 +73,51 @@ class TestControlledImportBenchmark:
         }
 
 
+class TestQueueQualification:
+    def test_runs_locked_contracts_and_publishes_native_coverage(self):
+        job = _ci_workflow()["jobs"]["queue-qualification"]
+        commands = "\n".join(step.get("run", "") for step in job["steps"])
+
+        assert "cargo +1.91.0 clippy --locked --all-targets --all-features" in commands
+        assert "cargo +1.91.0 audit --ignore RUSTSEC-2023-0071" in commands
+        assert "cargo +1.91.0 deny --locked" in commands
+        assert "cargo +1.91.0 llvm-cov --locked" in commands
+        assert job["services"]["postgres"]["image"].endswith(
+            "57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
+        )
+        artifact = next(
+            step
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        )
+        assert artifact["if"] == "always()"
+        assert artifact["with"]["if-no-files-found"] == "error"
+
+    def test_benchmark_is_opt_in_serial_and_preserves_each_profile(self):
+        workflow = _workflow("queue-qualification-benchmark.yml")
+        job = workflow["jobs"]["compare"]
+
+        assert job["strategy"]["max-parallel"] == 1
+        assert job["strategy"]["fail-fast"] is False
+        assert job["strategy"]["matrix"] == {
+            "database": ["sqlite", "postgres"],
+            "cpus": [2, 4],
+        }
+        command = next(
+            step["run"]
+            for step in job["steps"]
+            if step.get("name") == "Compare current queue with pinned Rust candidates"
+        )
+        assert "bench_queue_qualification_matrix.py" in command
+        artifact = next(
+            step
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        )
+        assert artifact["if"] == "always()"
+        assert artifact["with"]["if-no-files-found"] == "error"
+
+
 class TestFlakyDetectionJob:
     def test_excludes_the_coverage_report_audit(self) -> None:
         job = _ci_workflow()["jobs"]["flaky-detection"]
