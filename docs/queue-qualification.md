@@ -103,10 +103,25 @@ The opt-in `Queue qualification benchmark` workflow builds the current queue and
 - [x] Candidate crates are isolated behind qualification adapters and a test-only lockfile; no candidate type or dependency enters production modules, wheels, or images.
 - [x] Real file-backed SQLite and real PostgreSQL reproduce every decisive observation.
 - [x] Atomicity, recovery, contention, shutdown, backup/restore, migration ownership, and broker-absence rows have explicit outcomes.
-- [ ] Current queue, Apalis and Azums have controlled 2 CPU/2 GiB and 4 CPU/4 GiB results on both databases.
-- [ ] Raw evidence contains versions, image digest, settings, counts and hashes without URLs or credentials.
-- [ ] Rust format, Clippy, tests and native coverage pass on production Rust 1.91.0.
-- [ ] Backend fast and coverage lanes, exact-diff security review, and current-revision CI pass.
+- [x] Current queue, Apalis and Azums have controlled 2 CPU/2 GiB and 4 CPU/4 GiB results on both databases.
+- [x] Raw evidence contains versions, image digest, settings, counts and hashes without URLs or credentials.
+- [x] Rust format, Clippy, tests and native coverage pass on production Rust 1.91.0.
+- [x] Backend fast and coverage lanes, exact-diff security review, and current-revision CI pass.
+
+## Controlled performance results
+
+Run [`35276786587`](https://github.com/xiao-villamor/PrintStash/actions/runs/35276786587) measured merge ref `1a74b2e5fc20a4d6e16ef24c538a6f38d477a7ef`. Its tree matches M01 implementation commit `93840af9a4a1a83736950e760174fbd6ec317d18`. All four profiles preserved accepted/completed counts, produced no duplicate executions, retained SHA-256 release image identities, and passed the sanitized-artifact scan. All four profiles crossed the declared variability threshold and used the single allowed extension from seven to fourteen measured pairs.
+
+| Profile | Pairs | Noisy | Current jobs/s | Apalis jobs/s | Azums jobs/s | Current start p95 ms | Apalis start p95 ms | Azums start p95 ms |
+| --- | ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| sqlite-2cpu | 14 | yes | 150.52 | 106.31 | 1218.04 | 588.41 | 1142.29 | 81.97 |
+| sqlite-4cpu | 14 | yes | 247.17 | 142.78 | 2011.08 | 368.06 | 851.48 | 52.28 |
+| postgres-2cpu | 14 | yes | 95.83 | 315.09 | 174.85 | 891.44 | 328.23 | 442.12 |
+| postgres-4cpu | 14 | yes | 104.09 | 343.47 | 377.84 | 832.23 | 325.38 | 170.13 |
+
+These timing results do not change the decision. Apalis and Azums each fail required durability contracts, while M01 leaves the production queue unchanged. Full enqueue, acknowledgement, idle CPU, total CPU, peak memory, database growth, recovery, version, image and corpus evidence is retained in the four workflow artifacts.
+
+Artifact digests: `sqlite-2cpu` `sha256:8498aa29de6bcabd46038537bd033c283548febab63b1260c5c88431a7a98fc5`, `sqlite-4cpu` `sha256:6cabb751d4695796ec1ba6f69900ede60026391b9c966938bffa61f8268444d0`, `postgres-2cpu` `sha256:84e9b053d100b57fcfe52aa776564079714a4670ea6bdaa7d288ee9e060ef7f0`, `postgres-4cpu` `sha256:4c67283639b1038e1b052d292864cf3e9a48fe4423e7806b2c17cb25d1ec78bb`.
 
 ## Test coverage matrix
 
@@ -124,9 +139,9 @@ The opt-in `Queue qualification benchmark` workflow builds the current queue and
 | 10 | Azums SQLite deferred-transaction contention | Error | Public attempt start returns bounded `SQLITE_BUSY`; no retry loop hides it | Integration | ✅ |
 | 11 | Candidate single-worker SQLite measurement | Performance | Counts, duplicates, latencies, throughput, idle interval, and recovery are recorded | Integration | ✅ |
 | 12 | Candidate PostgreSQL measurement | Performance | Both public adapters complete verified work on isolated real databases | Integration | ✅ |
-| 13 | Controlled 2/2 and 4/4 comparison | Performance | One warm-up and seven or fourteen paired runs with resource and DB-growth counters | CI benchmark | ❌ pending |
-| 14 | Locked dependency advisory and license scan | Security | Active graph passes pinned cargo-audit and cargo-deny tools; the one inactive lockfile advisory is named and reviewed | CI | ✅ local; PR CI required |
-| 15 | Production queue remains unchanged | Regression | Existing backend, frontend, packaging, and import gates pass | CI/E2E | ❌ pending |
+| 13 | Controlled 2/2 and 4/4 comparison | Performance | One warm-up and seven or fourteen paired runs with resource and DB-growth counters | CI benchmark | ✅ run `35276786587` |
+| 14 | Locked dependency advisory and license scan | Security | Active graph passes pinned cargo-audit and cargo-deny tools; the one inactive lockfile advisory is named and reviewed | CI | ✅ required current-revision checks |
+| 15 | Production queue remains unchanged | Regression | Existing backend, frontend, packaging, and import gates pass | CI/E2E | ✅ required current-revision checks |
 
 ## Rollback
 
