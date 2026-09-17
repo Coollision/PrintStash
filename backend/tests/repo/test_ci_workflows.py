@@ -97,6 +97,17 @@ class TestQueueQualification:
         workflow = _workflow("queue-qualification-benchmark.yml")
         job = workflow["jobs"]["compare"]
 
+        triggers = workflow[True]
+        assert set(triggers) == {"pull_request", "workflow_dispatch"}
+        assert triggers["pull_request"]["paths"] == [
+            "backend/qualification/queue/**",
+            "backend/scripts/bench_matrix.py",
+            "backend/scripts/bench_queue.py",
+            "backend/scripts/bench_queue_qualification.py",
+            "backend/scripts/bench_queue_qualification_matrix.py",
+        ]
+        assert workflow["permissions"] == {"contents": "read"}
+
         assert job["strategy"]["max-parallel"] == 1
         assert job["strategy"]["fail-fast"] is False
         assert job["strategy"]["matrix"] == {
