@@ -241,6 +241,7 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 90 | preserves crash-recovery coverage evidence | Edge | Search index worker is deliberately killed during a committed batch while coverage is active | Hard-kill recovery completes; the doomed worker cannot corrupt the suite's coverage data | E2E | ✅ `tests/e2e/test_search_generations.py::TestSearchGenerationLifecycle::test_resumes_committed_work_after_process_loss` |
 | 91 | keeps disposable worker coverage valid | Edge | Inference pool tests deliberately kill a child that imports no application code | Real worker lifecycle assertions run without creating unusable subprocess coverage shards | Integration | ✅ `tests/integration/modules/inference/test_worker_pool.py` |
 | 92 | bounds transient benchmark setup retries | Error | An isolated benchmark setup receives an unexpected 429 before measurement starts | One complete rate-limit window is observed; setup succeeds once or the second rejection fails the run | Repo | ✅ `tests/repo/test_bench_import.py::TestCompleteSetup` |
+| 93 | favorites target the uploaded Model card | Edge | Two real uploads with model links scoped below the library main region | The selected card's sibling favorite control is found with a relative locator; the favorites filter narrows and restores the grid | Playwright | ✅ `frontend/tests/e2e-real/saved-views.spec.ts::saved views::starring a model and filtering by favorites narrows the grid` |
 
 ### Verification and remaining gates
 
