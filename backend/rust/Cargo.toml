@@ -1,3 +1,7 @@
+[workspace]
+members = ["render-core"]
+resolver = "2"
+
 [package]
 name = "printstash-mesh-native"
 version = "0.1.0"

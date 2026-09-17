@@ -30,7 +30,17 @@ def restartable_indexer(e2e_db):
     processes = []
     database_url = e2e_db.get_bind().url.render_as_string(hide_password=False)
 
-    def start(generation_id):
+    def start(generation_id, *, collect_coverage=True):
+        env = {
+            **os.environ,
+            "VAULT_DB_URL": database_url,
+            "VAULT_SECRETS_KEY": "printstash-e2e-secrets-key",
+        }
+        if not collect_coverage:
+            # This process is deliberately killed below to prove crash recovery.
+            # An instrumented process cannot flush its SQLite coverage shard after
+            # SIGKILL, leaving corrupt input for the suite-wide coverage combine.
+            env.pop("COVERAGE_PROCESS_CONFIG", None)
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -40,11 +50,7 @@ def restartable_indexer(e2e_db):
                 str(generation_id),
             ],
             cwd=BACKEND_DIR,
-            env={
-                **os.environ,
-                "VAULT_DB_URL": database_url,
-                "VAULT_SECRETS_KEY": "printstash-e2e-secrets-key",
-            },
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -371,7 +377,7 @@ class TestSearchGenerationLifecycle:
             )
             assert proposal.status_code == 202, proposal.text
             generation_id = proposal.json()["id"]
-            process = restartable_indexer(generation_id)
+            process = restartable_indexer(generation_id, collect_coverage=False)
             await wait_for_embedding_call(fake, 3, process)
             process.kill()
             await asyncio.to_thread(process.wait, 10)

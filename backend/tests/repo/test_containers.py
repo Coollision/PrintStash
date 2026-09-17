@@ -87,3 +87,37 @@ class TestStartContainer:
             containers._start_container(factory)
 
         assert len(created) == containers.CONTAINER_START_ATTEMPTS
+
+
+class TestOpenSshImage:
+    @pytest.mark.parametrize("machine", ["x86_64", "amd64"], ids=["linux", "docker"])
+    def test_selects_the_pinned_amd64_manifest(
+        self, monkeypatch: pytest.MonkeyPatch, machine: str
+    ) -> None:
+        monkeypatch.setattr(containers.platform, "machine", lambda: machine)
+
+        assert containers._openssh_image() == (
+            "lscr.io/linuxserver/openssh-server"
+            "@sha256:85fa42da0475a71e1f51426439ebad63bf7ba3daaa7961430482759ea9ba562b"
+        )
+
+    @pytest.mark.parametrize("machine", ["aarch64", "arm64"], ids=["linux", "docker"])
+    def test_selects_the_pinned_arm64_manifest(
+        self, monkeypatch: pytest.MonkeyPatch, machine: str
+    ) -> None:
+        monkeypatch.setattr(containers.platform, "machine", lambda: machine)
+
+        assert containers._openssh_image() == (
+            "lscr.io/linuxserver/openssh-server"
+            "@sha256:bdf6c42b8d9a7e2250685ef7e6f9cfb07dd7b956cfb431590c49c7b312cbaf8a"
+        )
+
+    def test_rejects_an_unsupported_architecture(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(containers.platform, "machine", lambda: "riscv64")
+
+        with pytest.raises(
+            RuntimeError, match="unsupported OpenSSH test architecture: riscv64"
+        ):
+            containers._openssh_image()

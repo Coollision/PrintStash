@@ -26,6 +26,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from app.core.config import _overlay
 from app.modules.media import mesh_render
@@ -211,3 +212,33 @@ _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 def _set_chunk_size(monkeypatch, n: int) -> None:
 
     monkeypatch.setitem(_overlay, "mesh_render_face_chunk_size", n)
+
+
+class TestRenderMeshThumbnail:
+    @pytest.mark.parametrize(
+        "mesh",
+        [None, SimpleNamespace(faces=None), SimpleNamespace(faces=[])],
+        ids=["absent-mesh", "absent-faces", "empty-faces"],
+    )
+    def test_has_no_preview_for_empty_geometry(self, mesh):
+        assert mesh_render.render_mesh_thumbnail(mesh, "empty.stl") is None
+
+    def test_reports_native_render_failure(self, monkeypatch, caplog):
+        from tests.factories.geometry import tetrahedron
+
+        def fail(*args, **kwargs):
+            raise ValueError("invalid_geometry")
+
+        monkeypatch.setattr(mesh_render.native_rasterizer, "render_preview", fail)
+
+        assert mesh_render.render_mesh_thumbnail(tetrahedron(), "broken.stl") is None
+        assert "Rust preview failed for broken.stl" in caplog.text
+
+    def test_requires_native_engine_even_for_empty_geometry(self, monkeypatch):
+        def unavailable():
+            raise RuntimeError("native_preview_unavailable")
+
+        monkeypatch.setattr(mesh_render.native_rasterizer, "kernel", unavailable)
+
+        with pytest.raises(RuntimeError, match="native_preview_unavailable"):
+            mesh_render.render_mesh_thumbnail(None, "empty.stl")

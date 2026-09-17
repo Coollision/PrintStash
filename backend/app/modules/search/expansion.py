@@ -2,6 +2,7 @@
 
 from printstash_core.search.lexical import query_terms
 from sqlalchemy import func, union_all
+from sqlalchemy.sql.visitors import cloned_traverse
 from sqlmodel import Session, select
 
 from app.db.models import SearchExpansion, SearchExpansionTerm, SearchPassage
@@ -43,7 +44,10 @@ def with_expansion(session: Session, query: str, allowed_ids, original):
         return original
     lexical = original.cte()
     if session.get_bind().dialect.name == "sqlite":
-        lexical = lexical.prefix_with("MATERIALIZED")
+        # Preserve SQLAlchemy's clone ancestry before prefix_with() copies the
+        # node: its anonymous name must not outlive the identity that owns it.
+        # Keep CTEs hoisted; nesting this query overflows older SQLite parsers.
+        lexical = cloned_traverse(lexical, {}, {}).prefix_with("MATERIALIZED")
     original_rank = select(
         lexical.c.passage_id,
         (

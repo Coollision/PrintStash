@@ -84,6 +84,28 @@ class TestCommandsContract:
 
         assert registry.get(queued_job).state == "pending"
 
+    def test_successor_completes_after_a_rejected_stale_callback(
+        self, db_session, queued_job
+    ):
+        from app.modules.ingestion.commands import execution_scope
+
+        previous = claim_next(db_session)
+        release(db_session, previous)
+        current = claim_next(db_session)
+
+        with (
+            execution_scope(previous),
+            pytest.raises(RuntimeError, match="ingestion_claim_lost"),
+        ):
+            registry.finish(queued_job, state="failed", error="stale callback")
+        # Do not call registry.get() here: its refresh used to mask the poisoned
+        # cache before the valid successor tried to publish its terminal state.
+        with execution_scope(current):
+            registry.finish(queued_job, state="completed")
+
+        db_session.expire_all()
+        assert db_session.get(BackgroundJob, queued_job).state == "completed"
+
     def test_accepted_cookie_is_encrypted_at_rest(self, db_session):
         from app.core.secrets import decrypt_secret
         from app.modules.ingestion.commands import decode

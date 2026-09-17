@@ -740,6 +740,81 @@ class TestThumbnailGenerations:
 
 
 class TestDeferredPublication:
+    def test_stale_failure_preserves_successor_claim(
+        self, db_session, make_model, make_file
+    ):
+        from dataclasses import replace
+
+        from app.core.time import utcnow
+        from app.modules.media.thumbnail_engine import ThumbnailFailureReason
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            finish_thumbnail,
+            request_thumbnail,
+        )
+
+        model = make_model()
+        file = make_file(model, file_type=FileType.STL)
+        generation = request_thumbnail(db_session, file, promote=True)
+        db_session.commit()
+        previous = claim_thumbnail(db_session, file)
+        assert previous is not None
+        generation.lease_expires_at = utcnow() - timedelta(seconds=1)
+        db_session.add(generation)
+        db_session.commit()
+        successor = claim_thumbnail(db_session, file)
+        assert successor is not None
+        assert successor.token != previous.token
+
+        result = finish_thumbnail(
+            db_session,
+            file,
+            previous,
+            replace(
+                _SuccessfulEngine().generate(None),
+                image=None,
+                failure_reason=ThumbnailFailureReason.INVALID_SOURCE,
+            ),
+        )
+
+        assert result.failure_reason == "lease_lost"
+        assert result.available is False
+        db_session.refresh(generation)
+        db_session.refresh(model)
+        assert generation.state == ThumbnailGenerationState.RUNNING
+        assert generation.lease_token == successor.token
+        assert generation.attempts == 2
+        assert generation.failure_reason is None
+        assert model.thumbnail_path is None
+
+    def test_deferred_work_preserves_its_attempt_budget(
+        self, db_session, make_model, make_file
+    ):
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            defer_thumbnail,
+            request_thumbnail,
+        )
+
+        file = make_file(make_model(), file_type=FileType.STL)
+        generation = request_thumbnail(db_session, file, promote=False)
+        db_session.commit()
+        claim = claim_thumbnail(db_session, file)
+        assert claim is not None
+        defer_thumbnail(db_session, claim, reason="resource_busy", delay=30)
+        db_session.commit()
+        renderer = _SuccessfulEngine()
+
+        result = ensure_thumbnail(db_session, file, engine=renderer)
+
+        assert result.outcome == ThumbnailEnsureOutcome.COALESCED
+        assert renderer.calls == 0
+        db_session.refresh(generation)
+        assert generation.state == ThumbnailGenerationState.PENDING
+        assert generation.attempts == 1
+        assert generation.lease_token is None
+        assert generation.failure_reason == "resource_busy"
+
     def test_expired_worker_cannot_publish_a_preview(
         self, db_session, make_model, make_file
     ):
@@ -800,3 +875,39 @@ class TestDeferredPublication:
 
         db_session.refresh(model)
         assert model.thumbnail_file_id == second.id
+
+    def test_records_deferred_storage_failure(
+        self, db_session, make_model, make_file, monkeypatch
+    ):
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            finish_thumbnail,
+            request_thumbnail,
+        )
+
+        model = make_model()
+        file = make_file(model, file_type=FileType.STL)
+        backend = get_backend()
+        backend.write_bytes(b"source", file.path)
+        generation = request_thumbnail(db_session, file, promote=True)
+        db_session.commit()
+        claim = claim_thumbnail(db_session, file)
+        assert claim is not None
+
+        def offline(*args, **kwargs):
+            raise OSError("storage offline")
+
+        monkeypatch.setattr(backend, "create_bytes", offline)
+        result = finish_thumbnail(
+            db_session, file, claim, _SuccessfulEngine().generate(None), backend=backend
+        )
+
+        assert result.available is False
+        assert result.failure_reason == "storage"
+        db_session.refresh(generation)
+        db_session.refresh(model)
+        assert generation.state == ThumbnailGenerationState.PENDING
+        assert generation.storage_key is None
+        assert generation.lease_token is None
+        assert model.thumbnail_path is None
+        assert backend.read_bytes(file.path) == b"source"

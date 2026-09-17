@@ -57,9 +57,16 @@ def exercise_search(client):
 
     with get_session_factory().scoped_session() as session:
         drain_search(session)
-    response = client.get("/api/v1/search", params={"q": "red", "mode": "lexical"})
-    assert response.status_code == 200, response.text
-    assert {row["subject_type"] for row in response.json()["items"]} == expected
+    # The live app can already own a projection when drain_search sees no
+    # claimable requests. Wait for its public result, not just an idle claim.
+    deadline = time.monotonic() + 30
+    while True:
+        response = client.get("/api/v1/search", params={"q": "red", "mode": "lexical"})
+        assert response.status_code == 200, response.text
+        if {row["subject_type"] for row in response.json()["items"]} == expected:
+            break
+        assert time.monotonic() < deadline, response.text
+        time.sleep(0.05)
     assert all(
         row.get("model", {}).get("family") is None
         for row in response.json()["items"]

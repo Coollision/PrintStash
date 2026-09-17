@@ -128,23 +128,34 @@ class TestProcessOne:
             await sleep(0.01 if delay == commands.LEASE_SECONDS / 3 else delay)
 
         monkeypatch.setattr(ingestion.asyncio, "sleep", heartbeat_sleep)
+        original_renew = commands.renew
         renewed = []
 
+        def record_renewal(session, claim):
+            before = session.get(BackgroundJob, job).lease_expires_at
+            changed = original_renew(session, claim)
+            session.expire_all()
+            after = session.get(BackgroundJob, job).lease_expires_at
+            if changed:
+                renewed.append((before, after))
+            return changed
+
+        monkeypatch.setattr(commands, "renew", record_renewal)
+
         async def held(claim, sessions):
-            with sessions.scoped_session() as session:
-                initial = session.get(BackgroundJob, job).lease_expires_at
             for _ in range(60):
                 await asyncio.sleep(0.05)
-                with sessions.scoped_session() as session:
-                    deadline = session.get(BackgroundJob, job).lease_expires_at
-                if deadline > initial:
-                    renewed.append(deadline)
+                if renewed:
                     break
             registry.finish(claim.job_id, state="completed")
 
         monkeypatch.setattr(ingestion.command_executor, "execute", held)
         assert await ingestion.process_one()
         assert renewed
+        assert all(
+            before is not None and after is not None and after > before
+            for before, after in renewed
+        )
         assert registry.get(job).state == "completed"
 
     @pytest.mark.asyncio

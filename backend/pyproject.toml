@@ -176,6 +176,9 @@ source = ["app"]
 # coverage loses the lines executed off the main thread — which reads as a gap in
 # exactly the code that is hardest to test.
 concurrency = ["thread", "multiprocessing"]
+# pytest-cov 7 delegates subprocess coverage to coverage.py. The isolated
+# STEP/STL workers must contribute their actual executed branches to the gate.
+patch = ["subprocess"]
 parallel = true
 sigterm = true
 omit = ["app/__main__.py"]

@@ -127,6 +127,11 @@
 
 ### Fixed
 
+- Rejected stale import completions no longer leave a terminal status in the
+  process cache that prevents the current worker from finishing the job.
+- Search rankings preserve anonymous SQL identities on Python 3.13 without
+  deeply nesting queries, keeping grouped Family searches usable on older SQLite.
+
 - Restore verified file uploads over local-network HTTP; browsers without native SHA-256 support no longer show a misleading server connection error.
 
 - Resumable uploads retain their executable ingestion command if finalization

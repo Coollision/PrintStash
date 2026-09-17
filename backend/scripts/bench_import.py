@@ -5,7 +5,7 @@ Run from backend:
     uv run python scripts/bench_import.py /path/library.zip --output before.json
     uv run python scripts/bench_import.py /path/library.zip --output after.json --compare before.json
 
-Each run uses migrated SQLite and local storage in a temporary directory. Setup,
+Each run uses a fresh migrated SQLite or PostgreSQL database and temporary local storage. Setup,
 archive hashing, and server startup are excluded from the timed upload-to-completion
 interval. All importable entries are selected. No existing server or vault is used.
 """
@@ -23,7 +23,6 @@ import platform
 import re
 import secrets
 import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -35,6 +34,20 @@ from pathlib import Path
 
 import httpx
 import psutil
+
+if __package__ in (None, ""):
+    # Preserve the documented `python scripts/bench_import.py` entry point.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.bench_database import (
+    database_record,
+    disposable_database,
+    metadata_catalog,
+    pending_enrichment,
+    read_rows,
+)
+
+_SETUP_RATE_LIMIT_BACKOFF_SECONDS = 61
 
 
 def environment_record(backend: Path) -> dict:
@@ -148,28 +161,35 @@ def body(response: httpx.Response) -> dict:
     return response.json()
 
 
-def pending_enrichment(db, *, similarity=False):
-    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    pending = 0
-    failed = {}
-    for table in ("artifact_analysis_generations", "thumbnail_generations", "search_projection_requests", "similarity_runs"):
-        if table not in tables or table == "similarity_runs" and not similarity:
-            continue
-        columns = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
-        policy = "processing_policy = 'background' AND " if "processing_policy" in columns else ""
-        condition = policy + "state IN ('pending','queued','running','cancelling')" if "state" in columns else "1=1"
-        pending += db.execute(f"SELECT COUNT(*) FROM {table} WHERE {condition}").fetchone()[0]
-        if "state" in columns:
-            failed[table] = db.execute(f"SELECT COUNT(*) FROM {table} WHERE {policy}state = 'failed'").fetchone()[0]
-    return pending, failed
+def complete_setup(client: httpx.Client, csrf: str, payload: dict) -> dict:
+    """Complete isolated setup, tolerating one expired in-process rate window.
+
+    Setup precedes the measured interval. A bounded retry keeps a multi-hour
+    matrix from losing all prior evidence to a transient 429 while preserving
+    the production endpoint's limit and making repeated rejection terminal.
+    """
+    for attempt in range(2):
+        response = client.post(
+            "/api/v1/setup",
+            headers={"X-PrintStash-Setup-CSRF": csrf},
+            json=payload,
+        )
+        if response.status_code != 429 or attempt:
+            return body(response)
+        time.sleep(_SETUP_RATE_LIMIT_BACKOFF_SECONDS)
+    raise AssertionError("bounded setup attempts exhausted")
 
 
 def latency_summary(samples):
     values = sorted(sample["library_ms"] for sample in samples)
     if not values:
         return {}
-    return {"samples": len(values), "median_ms": values[len(values)//2],
-            "p95_ms": values[min(len(values)-1, int(len(values)*0.95))], "max_ms": values[-1]}
+    return {
+        "samples": len(values),
+        "median_ms": values[len(values) // 2],
+        "p95_ms": values[min(len(values) - 1, int(len(values) * 0.95))],
+        "max_ms": values[-1],
+    }
 
 
 def run(
@@ -179,6 +199,8 @@ def run(
     similarity: bool = False,
     export_previews: Path | None = None,
     workers: int = 1,
+    database: str = "sqlite",
+    postgres_admin_url: str | None = None,
 ) -> dict:
     backend = Path(__file__).resolve().parent.parent
     environment = environment_record(backend)
@@ -204,7 +226,12 @@ def run(
         archive_digest = hashlib.file_digest(source, "sha256").hexdigest()
     output.parent.mkdir(parents=True, exist_ok=True)
     log_path = output.with_suffix(".server.log")
-    with tempfile.TemporaryDirectory(prefix="printstash-import-bench-") as temporary:
+    with (
+        tempfile.TemporaryDirectory(prefix="printstash-import-bench-") as temporary,
+        disposable_database(
+            Path(temporary), database, postgres_admin_url=postgres_admin_url
+        ) as database_engine,
+    ):
         root = Path(temporary)
         env = {
             key: value
@@ -216,13 +243,16 @@ def run(
         )
         env.update(
             {
-                "VAULT_DB_URL": f"sqlite:///{root / 'vault.sqlite'}",
+                "VAULT_DB_URL": database_engine.url.render_as_string(
+                    hide_password=False
+                ),
                 "VAULT_JWT_SECRET": secrets.token_urlsafe(48),
                 "VAULT_SECRETS_KEY": secrets.token_urlsafe(48),
                 "VAULT_SECRETS_KEY_FILE": str(root / "secrets.key"),
                 "VAULT_SETUP_MODE": "trusted_network",
                 "VAULT_SETUP_ALLOWED_HOSTS": "127.0.0.1",
                 "VAULT_IMPORT_WORKERS": str(workers),
+                "VAULT_ARTIFACT_CACHE_ROOT": str(root / "artifact-cache"),
             }
         )
         for key, folder in (
@@ -240,7 +270,7 @@ def run(
         origin = f"http://127.0.0.1:{port}"
         with log_path.open("w") as log:
             subprocess.run(
-                [sys.executable, "-m", "alembic", "upgrade", "head"],
+                [sys.executable, "-m", "app.db.migrate"],
                 cwd=backend,
                 env=env,
                 stdout=log,
@@ -282,17 +312,15 @@ def run(
                             raise TimeoutError("Server startup timed out")
                         time.sleep(0.2)
                     csrf = body(client.post("/api/v1/setup/session"))["csrf"]
-                    setup = body(
-                        client.post(
-                            "/api/v1/setup",
-                            headers={"X-PrintStash-Setup-CSRF": csrf},
-                            json={
-                                "username": "benchmark",
-                                "password": secrets.token_urlsafe(24),
-                                "data_dir": str(root / "files"),
-                                "thumb_dir": str(root / "thumbs"),
-                            },
-                        )
+                    setup = complete_setup(
+                        client,
+                        csrf,
+                        {
+                            "username": "benchmark",
+                            "password": secrets.token_urlsafe(24),
+                            "data_dir": str(root / "files"),
+                            "thumb_dir": str(root / "thumbs"),
+                        },
                     )
                     client.headers["Authorization"] = "Bearer " + setup["access_token"]
                     if similarity:
@@ -357,7 +385,13 @@ def run(
                         }
                         probe = time.monotonic()
                         body(client.get("/api/v1/models", params={"limit": 20}))
-                        navigation_samples.append({"seconds": time.monotonic() - start, "phase": "ingestion", "library_ms": (time.monotonic() - probe) * 1000})
+                        navigation_samples.append(
+                            {
+                                "seconds": time.monotonic() - start,
+                                "phase": "ingestion",
+                                "library_ms": (time.monotonic() - probe) * 1000,
+                            }
+                        )
                         samples.append(sample)
                         if now - last_print >= 10 or status["state"] in (
                             "completed",
@@ -374,56 +408,84 @@ def run(
                     while True:
                         if time.monotonic() - start > timeout:
                             raise TimeoutError("Background enrichment timed out")
-                        with sqlite3.connect(f"file:{root / 'vault.sqlite'}?mode=ro", uri=True) as db:
-                            outstanding, failed_enrichment = pending_enrichment(db, similarity=similarity)
+                        with database_engine.connect() as db:
+                            outstanding, failed_enrichment = pending_enrichment(
+                                db, similarity=similarity
+                            )
                         probe = time.monotonic()
                         body(client.get("/api/v1/models", params={"limit": 20}))
-                        enrichment_samples.append({"seconds": time.monotonic() - start, "pending": outstanding, "library_ms": (time.monotonic() - probe) * 1000})
-                        navigation_samples.append({**enrichment_samples[-1], "phase": "enrichment"})
+                        enrichment_samples.append(
+                            {
+                                "seconds": time.monotonic() - start,
+                                "pending": outstanding,
+                                "library_ms": (time.monotonic() - probe) * 1000,
+                            }
+                        )
+                        navigation_samples.append(
+                            {**enrichment_samples[-1], "phase": "enrichment"}
+                        )
                         if not outstanding:
                             break
                         time.sleep(0.25)
                     finished = time.monotonic()
                     resource_report = resources.report(finished - start)
-                    with sqlite3.connect(
-                        f"file:{root / 'vault.sqlite'}?mode=ro", uri=True
-                    ) as db:
-                        catalog = db.execute(
-                            "SELECT sha256, size_bytes FROM files ORDER BY sha256, size_bytes"
-                        ).fetchall()
+                    with database_engine.connect() as db:
+                        database_details = database_record(db)
+                        parsed_metadata = metadata_catalog(db)
+                        catalog = read_rows(
+                            db,
+                            "SELECT sha256, size_bytes FROM files ORDER BY sha256, size_bytes",
+                        )
                         artifact_jobs = [
                             json.loads(row[0])
-                            for row in db.execute(
-                                "SELECT status_json FROM background_jobs WHERE kind = 'artifact'"
+                            for row in read_rows(
+                                db,
+                                "SELECT status_json FROM background_jobs WHERE kind = 'artifact'",
                             )
                         ]
-                        previews = db.execute(
+                        preview_outcomes = read_rows(
+                            db,
+                            "SELECT t.source_sha256, f.file_type, t.state, t.failure_reason "
+                            "FROM thumbnail_generations t JOIN files f ON f.id = t.file_id "
+                            "ORDER BY t.source_sha256, f.file_type, t.state, t.failure_reason",
+                        )
+                        previews = read_rows(
+                            db,
                             "SELECT source_sha256, output_sha256, state FROM thumbnail_generations "
-                            "ORDER BY source_sha256, output_sha256, state"
-                        ).fetchall()
-                        geometry_catalog = db.execute(
+                            "ORDER BY source_sha256, output_sha256, state",
+                        )
+                        geometry_catalog = read_rows(
+                            db,
                             "SELECT f.sha256, m.bbox_x_mm, m.bbox_y_mm, m.bbox_z_mm, "
                             "m.volume_mm3, m.triangle_count FROM files f "
-                            "LEFT JOIN metadata m ON m.file_id = f.id ORDER BY f.sha256"
-                        ).fetchall()
+                            "LEFT JOIN metadata m ON m.file_id = f.id ORDER BY f.sha256",
+                        )
                         fingerprints = []
                         missing_fingerprints = []
                         if similarity:
-                            fingerprints = db.execute(
+                            fingerprints = read_rows(
+                                db,
                                 "SELECT source_sha256, component_index, algorithm_version, state, "
                                 "component_count, instance_count, face_count, vertex_count, "
                                 "physical_hash_0, physical_hash_1, physical_hash_2, physical_hash_3, "
                                 "normalized_hash_0, normalized_hash_1, normalized_hash_2, normalized_hash_3 "
-                                "FROM geometry_fingerprints ORDER BY source_sha256, component_index, algorithm_version"
-                            ).fetchall()
-                            expected_sources = {row[0] for row in db.execute(
-                                "SELECT sha256 FROM files WHERE file_type != 'GCODE'"
-                            )}
-                            missing_fingerprints = sorted(expected_sources - {row[0] for row in fingerprints})
-                        preview_files = db.execute(
+                                "FROM geometry_fingerprints ORDER BY source_sha256, component_index, algorithm_version",
+                            )
+                            expected_sources = {
+                                row[0]
+                                for row in read_rows(
+                                    db,
+                                    "SELECT sha256 FROM files WHERE file_type != 'GCODE'",
+                                )
+                            }
+                            missing_fingerprints = sorted(
+                                expected_sources - {row[0] for row in fingerprints}
+                            )
+                        preview_files = read_rows(
+                            db,
                             "SELECT source_sha256, storage_key, state FROM thumbnail_generations "
-                            "ORDER BY source_sha256, state"
-                        ).fetchall()
+                            "ORDER BY source_sha256, state",
+                        )
                     # Decode only after the timed interval and resource snapshot.
                     # Pixel comparison permits a lossless encoder change without
                     # treating different compressed bytes as different images.
@@ -498,13 +560,14 @@ def run(
                         "platform": platform.platform(),
                         "python": platform.python_version(),
                         "cpu_count": os.cpu_count(),
-                        "storage": "fresh SQLite and local filesystem",
+                        "storage": "local filesystem",
+                        "database": database_details,
                         "upload_seconds": uploaded - start,
                         "extraction_seconds": accepted - uploaded,
                         "processing_seconds": finished - accepted,
                         "total_seconds": finished - start,
                         "saved_seconds": saved - start,
-                        "measurement_protocol": "job-and-library-poll-250ms-v2",
+                        "measurement_protocol": "job-and-library-poll-250ms-v5",
                         "failed_enrichment": failed_enrichment,
                         "navigation_samples": navigation_samples,
                         "navigation_latency": latency_summary(navigation_samples),
@@ -514,12 +577,14 @@ def run(
                         **resource_report,
                         "catalog": catalog,
                         "geometry_catalog": geometry_catalog,
+                        "metadata_catalog": parsed_metadata,
                         "fingerprint_catalog": fingerprints,
                         "missing_fingerprint_sources": missing_fingerprints,
                         "status": status,
                         "samples": samples,
                         "artifact_jobs": artifact_jobs,
                         "preview_catalog": previews,
+                        "preview_outcome_catalog": preview_outcomes,
                         "preview_pixel_catalog": sorted(pixel_catalog),
                         "preview_bytes": preview_bytes,
                         "thumbnail_states_at_import_completion": dict(
@@ -559,6 +624,14 @@ def run(
                     server.wait()
 
 
+def compare_preview_outcomes(before: dict, after: dict) -> None:
+    key = "preview_outcome_catalog"
+    if key not in before or key not in after:
+        raise SystemExit("Comparison refused: preview outcome evidence is missing")
+    if before[key] != json.loads(json.dumps(after[key])):
+        raise SystemExit("Comparison refused: preview outcomes differ")
+
+
 def compare_previews(before: dict, after: dict, *, mode: str = "bytes") -> None:
     """Require identical stored images, allowing decoded comparison explicitly."""
     key = "preview_pixel_catalog" if mode == "pixels" else "preview_catalog"
@@ -570,12 +643,26 @@ def compare_previews(before: dict, after: dict, *, mode: str = "bytes") -> None:
         )
 
 
+def compare_metadata(before: dict, after: dict) -> None:
+    if "metadata_catalog" not in before or "metadata_catalog" not in after:
+        raise SystemExit("Comparison refused: parsed metadata evidence is missing")
+    if before["metadata_catalog"] != after["metadata_catalog"]:
+        raise SystemExit("Comparison refused: parsed metadata differs")
+
+
 def compare_fingerprints(before: dict, after: dict) -> None:
     """Compare final component identity and readiness, never initial job hints."""
     if "fingerprint_catalog" not in before or "fingerprint_catalog" not in after:
         raise SystemExit("Comparison refused: final fingerprint catalog is missing")
-    if before["fingerprint_catalog"] != json.loads(json.dumps(after["fingerprint_catalog"])):
+    if before["fingerprint_catalog"] != json.loads(
+        json.dumps(after["fingerprint_catalog"])
+    ):
         raise SystemExit("Comparison refused: final similarity fingerprints differ")
+
+
+def compare_databases(before: dict, after: dict) -> None:
+    if not before.get("database") or before["database"] != after.get("database"):
+        raise SystemExit("Comparison refused: database backend or version differs")
 
 
 def main() -> None:
@@ -583,6 +670,11 @@ def main() -> None:
     parser.add_argument("archive", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--compare", type=Path)
+    parser.add_argument("--database", choices=("sqlite", "postgres"), default="sqlite")
+    parser.add_argument(
+        "--postgres-admin-url-env",
+        help="Environment variable holding an isolated PostgreSQL test server's maintenance URL",
+    )
     parser.add_argument(
         "--preview-comparison", choices=("bytes", "pixels"), default="bytes"
     )
@@ -595,6 +687,15 @@ def main() -> None:
         help="Enable analysis on upload",
     )
     args = parser.parse_args()
+    postgres_admin_url = None
+    if args.postgres_admin_url_env:
+        if args.database != "postgres":
+            parser.error("--postgres-admin-url-env requires --database postgres")
+        postgres_admin_url = os.environ.get(args.postgres_admin_url_env)
+        if not postgres_admin_url:
+            parser.error(
+                "PostgreSQL test server environment variable is empty or missing"
+            )
     before = None
     if args.compare:
         before = json.loads(args.compare.read_text())
@@ -608,7 +709,7 @@ def main() -> None:
             raise SystemExit(
                 "Comparison refused: reference import did not complete successfully"
             )
-        if before.get("measurement_protocol") != "job-and-library-poll-250ms-v2":
+        if before.get("measurement_protocol") != "job-and-library-poll-250ms-v5":
             raise SystemExit("Comparison refused: measurement protocols differ")
         if before.get("similarity_on_ingest", False) != args.similarity:
             raise SystemExit("Comparison refused: similarity settings differ")
@@ -626,6 +727,8 @@ def main() -> None:
         args.similarity,
         args.export_previews,
         args.workers,
+        args.database,
+        postgres_admin_url,
     )
     print(
         f"Complete archive: {report['selected_files']} files in {report['total_seconds']:.2f}s"
@@ -635,6 +738,8 @@ def main() -> None:
         f"sampled peak RSS: {report['sampled_peak_server_tree_rss_bytes'] / 1024**2:.1f} MiB"
     )
     if before is not None:
+        compare_databases(before, report)
+        compare_metadata(before, report)
         if (before["archive_sha256"], before["catalog"]) != (
             report["archive_sha256"],
             json.loads(json.dumps(report["catalog"])),
@@ -648,6 +753,7 @@ def main() -> None:
             raise SystemExit(
                 "Comparison refused: imported geometry measurements differ; inspect both reports"
             )
+        compare_preview_outcomes(before, report)
         compare_previews(before, report, mode=args.preview_comparison)
         if args.similarity:
             compare_fingerprints(before, report)

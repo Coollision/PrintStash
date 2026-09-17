@@ -8,18 +8,43 @@ uv run python scripts/bench_import.py /path/library.zip --output before.json
 uv run python scripts/bench_import.py /path/library.zip --output after.json --compare before.json
 ```
 
-Each run starts a fresh local server with migrated SQLite and temporary file
-storage. It uploads the ZIP through the API, selects every supported file and
+Each run starts a fresh local server with a migrated database and temporary file
+storage. SQLite is the default. Add `--database postgres` to use a disposable
+PostgreSQL database in the repository's test container (Docker required). The
+benchmark never accepts an existing vault database URL. For release-image runs,
+the host can provision an isolated PostgreSQL service on a private container
+network, then pass its maintenance URL through an environment variable named by
+`--postgres-admin-url-env`. This mode requires the `postgres` maintenance database,
+rejects URL query overrides, and still creates/drops only a generated per-run
+database. Never supply a production service. The benchmark container needs no
+Docker socket or host networking in this mode. Keep its credential environment
+file private and out of evidence; reports record only server kind/version. Both databases use the
+same supported application bootstrap as packaged deployments. Protocol v5 records
+the database backend/server version and requires them to match for comparisons;
+Older reports cannot be used as v5 references. Parsed slicer metadata and per-tool
+material requirements must also match; run-specific IDs and timestamps are
+excluded. It uploads the ZIP through the API, selects every supported file and
 records source completion, then waits for metadata, background previews, lexical
 projection and optionally similarity runs. The script checks the final file count and
 failure count. A comparison also requires matching archive hashes and imported
-file hashes and sizes. Preview outcome counts must also match. New reports
+file hashes and sizes. Preview states and failure reasons must also match. A G-code source without an
+embedded thumbnail has the application's `not_applicable` outcome: its exact
+`no_embedded_thumbnail` reason is recorded and is not an enrichment failure.
+That exception requires a matching G-code source identity; missing assets,
+unknown errors, and mesh preview failures still reject the run. The cache root
+is private to each temporary benchmark vault. New reports
 record dimensions, volume and triangle counts and compare those values too.
 
 `saved_seconds` ends when the source import completes; `total_seconds` includes
 background work. `background_after_save_seconds` is the difference. Both phases
 probe the library API every 250 ms and record median, p95 and maximum response
 latency. This distinguishes earlier availability from actual responsiveness.
+
+Server CPU/RSS fields cover the application process tree; the separate PostgreSQL
+container is outside that scope. They must not be described as total system or
+database resource costs. Queue qualification additionally requires database cost
+measurements and controlled resource limits; ordinary harness runs alone do not
+satisfy the [staged migration performance gate](rust-import-migration.md).
 
 The timers include upload, acquisition and processing. The legacy
 `extraction_seconds` field measures selection acceptance; extraction now happens
@@ -330,3 +355,100 @@ changing the resize implementation can change edge pixels, and changing the
 encoder changes file bytes. Comparisons therefore check decoded pixels as well
 as source hashes, geometry and processing outcomes. Exact compressed-byte parity
 is not a promise across these image engines.
+
+
+## Controlled migration comparison
+
+M00 adds `scripts/bench_corpus.py` and `scripts/bench_matrix.py`. The opt-in
+`benchmark_imports` input on the CI workflow runs a dedicated Ubuntu runner:
+
+```bash
+gh workflow run ci.yml --ref codex/rust-m00-baseline \
+  -f benchmark_imports=true \
+  -f benchmark_parent=4b9afeb92d4e7e24298454af38c6c76aeddec437
+```
+
+The runner builds the original, immediate-parent, and current committed full
+release images before measurement. It records immutable image IDs and retains
+release image archives alongside sanitized evidence for 90 days. The same
+hash-pinned psutil instrumentation and v5 harness are layered over each release;
+application dependencies are not upgraded. Packaged source directories receive
+read/traversal permissions in the instrumentation layer so an unprivileged runner
+can hash their unchanged bytes. Subsequent milestones must retain the
+M00 image archive and corpus: rebuilding a moving Docker base or regenerating
+fixtures with changed numerical dependencies is not an equivalent baseline.
+When `benchmark_imports` is true, ordinary CI, browser, image-build and scan jobs
+remain skipped so they cannot contend with the controlled measurement cells.
+
+The deterministic corpus covers small STL/3MF, 128 small meshes, a 327,680-face
+mesh, a mixed large archive, existing Prusa/Orca/BGCODE fixtures, a STEP fixture,
+and similarity candidates. Every source and archive digest is recorded. This is
+a synthetic scaling corpus, not a representative user library. Optional real
+inference assets, labeled similarity-quality evaluation, remote storage, and queue
+recovery are separate required workloads; this runner does not establish them.
+
+Each database runs sequentially under total budgets of 2 CPU/2 GiB and 4 CPU/4 GiB.
+PostgreSQL receives one quarter of that budget on a private internal Docker
+network, with no published ports. Application containers receive the remainder;
+SQLite containers receive the full budget. No container receives a Docker socket
+or host networking. Each import uses a fresh database and storage directory.
+
+For every case the runner checks output parity, performs a warm-up for each
+revision, then seven alternating before/after pairs. It extends to fourteen pairs
+when elapsed/API-p95 variation exceeds 5%, or CPU/memory variation exceeds 10%.
+Raw reports retain API p50/p95/max, upload/extraction/processing times, CPU,
+sampled RSS and cgroup memory peaks. PostgreSQL CPU includes the entire benchmark
+CLI lifecycle; its memory peak is cumulative for the service profile, not a
+per-import measurement. Neither is silently combined with application-only
+measurements. Sampled RSS can miss short peaks and double-count shared pages.
+
+`comparison.md` and `comparisons.json` expose paired changes, spread and threshold
+exceedances. A green measurement job establishes successful execution and output
+parity, not accepted performance. Repeatable regressions above the plan's 5%
+elapsed/API-p95 or 10% CPU/memory limits still block merging. Shared-runner timing
+noise must be resolved in review, not converted into flaky CI assertions.
+
+
+## Durable queue baseline diagnostic
+
+From `backend/`, run:
+
+```bash
+uv run python scripts/bench_queue.py --database sqlite --output queue.json
+uv run python scripts/bench_queue.py --database postgres --output queue-postgres.json
+```
+
+The probe uses the application's current Python coordinator and durable database
+repositories. It records bounded acceptance, claim and completion latencies, idle
+polling CPU, and recovery after killing a real claimant. Recovery waits for the
+production 120-second lease; deadlines are not shortened for a faster result.
+Its default fault diagnostic requires rollback isolation, preserved identity,
+rejection of stale callbacks, and completion by the successor before succeeding. Each run owns a
+fresh migrated database; internal subprocess modes require the supervisor's
+matching private database receipt. PostgreSQL supports the same isolated
+maintenance-service option as the import benchmark.
+
+This does not execute import payloads, measure API latency, exercise contending
+claimers, or qualify a replacement queue. Those have separate import and M01
+requirements. A stale callback currently exposes a correctness failure at the
+original M00 baseline: it poisons the status cache and suppresses the successor's
+completion. The diagnostic rejects that sequence instead of accepting its timing.
+The M00 cache invalidation fix has a failing-before/passing-after regression.
+
+Use `--steady-state` for a separate, comparable measurement of ordinary acceptance,
+claims, completion and idle polling. This mode still verifies durable completion
+counts, unique claims and rollback, but explicitly reports `fault_injection` as
+`not_run` and emits no recovery or stale-callback verdict. Its distinct
+`durable-queue-steady-v1` protocol cannot be compared with fault-diagnostic output.
+The controlled matrix uses this mode; the independent default diagnostic and
+real process-kill E2Es retain all recovery assertions. A valid normal-operation
+timing does not turn the original baseline's failed crash case into a pass.
+
+The controlled matrix has four sequential CI profiles (SQLite/PostgreSQL, 2/4 CPU)
+with matching 2/4 GiB budgets. Every profile builds before measuring, performs one
+warm-up and seven alternating pairs, and expands noisy cases to fourteen pairs.
+Queue comparisons require the same steady-state protocol, database version and
+completion outcomes. Release images are archived before measurements, and their
+artifact is retained even when a later workload fails. Failed correctness checks
+block that workload's timing acceptance; rerunning a known baseline failure does
+not establish performance evidence.

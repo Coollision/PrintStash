@@ -464,7 +464,13 @@ class JobRegistry:
                 < 1.0
             ):
                 return
-            self._persist(job)
+            try:
+                self._persist(job)
+            except Exception:
+                # A rejected claim or failed commit must not leave tentative
+                # state in the cache. Reload durable state on the next update.
+                self._jobs.pop(job_id, None)
+                raise
 
     def finish(
         self,

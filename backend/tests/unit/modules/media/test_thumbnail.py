@@ -157,3 +157,13 @@ class TestWebpNormalization:
             ThumbnailValidationError, match="thumbnail_format_unsupported"
         ):
             to_webp(source.getvalue())
+
+    @pytest.mark.parametrize("width", [319, 1281, True, 640.5])
+    def test_rejects_invalid_output_width(self, width):
+        with pytest.raises(ValueError, match="thumbnail_too_large") as error:
+            to_webp(b"unused", width=width)
+        assert str(error.value.__cause__) == "thumbnail_width_invalid"
+
+    def test_reports_corrupt_supported_image(self):
+        with pytest.raises(ValueError, match="thumbnail_too_large"):
+            to_webp(b"\x89PNG\r\n\x1a\ntruncated", width=320)

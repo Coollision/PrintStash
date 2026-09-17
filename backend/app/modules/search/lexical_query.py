@@ -15,6 +15,7 @@ from sqlalchemy import (
     table,
     text,
 )
+from sqlalchemy.sql.visitors import cloned_traverse
 from sqlmodel import Session, select
 
 from app.db.models import (
@@ -147,7 +148,9 @@ class LibrarySearch:
         # SQLite cannot evaluate the FTS5 auxiliary bm25() inside an aggregate
         # after subquery flattening. Materialize its per-passage scores first.
         if session.get_bind().dialect.name == "sqlite":
-            ranks = ranks.prefix_with("MATERIALIZED")
+            # Clone ancestry retains the anonymous name's original owner when
+            # prefix_with() makes its generative copy (including Python 3.13).
+            ranks = cloned_traverse(ranks, {}, {}).prefix_with("MATERIALIZED")
         return (
             select(
                 SearchPassage.subject_id.label("model_id"),

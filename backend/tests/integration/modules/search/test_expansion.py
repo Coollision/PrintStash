@@ -42,6 +42,36 @@ class TestExpansion:
         assert ranks[0][0] == passage.id
         assert 0 < ranks[0][1] <= expansion.CONTRIBUTION_CAP / 61
 
+    @pytest.mark.parametrize("count", [2, 8])
+    def test_composes_independent_rankings(
+        self,
+        db_session,
+        sparse_setup,
+        make_model,
+        make_search_passage,
+        make_search_expansion,
+        make_search_expansion_term,
+        count,
+    ):
+        _, model = sparse_setup
+        subject = make_model("bicycle")
+        passage = make_search_passage(SearchSubject(SubjectType.MODEL, subject.id))
+        row = make_search_expansion(passage, recipe=model.id)
+        make_search_expansion_term(row)
+        rankings = [
+            ordered_passages(db_session, "bike", select(SearchPassage.id)).subquery()
+            for _ in range(count)
+        ]
+        statement = select(*(rank.c.passage_id for rank in rankings)).select_from(
+            rankings[0]
+        )
+        for rank in rankings[1:]:
+            statement = statement.join(
+                rank, rankings[0].c.passage_id == rank.c.passage_id
+            )
+
+        assert db_session.exec(statement).all() == [(passage.id,) * count]
+
     def test_removes_contribution_immediately_on_disable(
         self,
         db_session,

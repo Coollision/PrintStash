@@ -682,3 +682,40 @@ class TestRenderStlThumbnail:
         )
 
         assert stl_fallback.render_stl_thumbnail(path, width=64, height=48) is None
+
+
+class TestSampleStlGeometry:
+    def test_reads_bounded_native_binary_geometry(self, tmp_path):
+        path = tmp_path / "sample.stl"
+        _write_renderable_binary_stl(path, 10)
+
+        sample = stl_fallback.sample_stl_geometry(path, max_triangles=2)
+
+        assert sample is not None
+        assert sample.triangle_count == 10
+        assert sample.sampled_triangles == 2
+        assert len(sample.coordinates) == 18
+        assert sample.complete is False
+
+    @pytest.mark.parametrize("budget", [0, 100_001, True, 1.5])
+    def test_rejects_invalid_geometry_work_budget(self, tmp_path, budget):
+        with pytest.raises(ValueError, match="invalid_stl_sample_budget"):
+            stl_fallback.sample_stl_geometry(
+                tmp_path / "absent.stl", max_triangles=budget
+            )
+
+    def test_keeps_geometry_partial_after_oversized_ascii_line(self, tmp_path):
+        path = tmp_path / "partial.stl"
+        path.write_text(
+            "solid x\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\n"
+            + "#" * (stl_fallback._MAX_ASCII_LINE_BYTES * 3)
+            + "\nendsolid x\n"
+        )
+
+        sample = stl_fallback.sample_stl_geometry(path, max_triangles=10)
+
+        assert sample is not None
+        assert sample.parsed_triangles == 1
+        assert sample.bounds_min == (0.0, 0.0, 0.0)
+        assert sample.bounds_max == (1.0, 1.0, 0.0)
+        assert sample.complete is False

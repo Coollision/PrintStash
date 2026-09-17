@@ -17,6 +17,14 @@ on:
     - cron: "27 4 * * *"
   workflow_dispatch:
     inputs:
+      benchmark_imports:
+        description: "Run the controlled import matrix and archive immutable release images"
+        type: boolean
+        default: false
+      benchmark_parent:
+        description: "Full immediate-parent commit for import comparisons"
+        type: string
+        default: "4b9afeb92d4e7e24298454af38c6c76aeddec437"
       native_clip:
         description: "Validate the pinned, preplaced real CLIP export on both native architectures"
         type: boolean
@@ -32,6 +40,7 @@ env:
 jobs:
   mesh-native:
     name: Rust mesh loading and rendering (${{ matrix.arch }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -58,7 +67,7 @@ jobs:
           RUSTUP_TOOLCHAIN=1.91.0 uv sync --extra dev --frozen
           RUSTUP_TOOLCHAIN=1.91.0 uv pip install ./rust
           uv run python -c 'import printstash_mesh_native'
-          uv run ruff check rust/tests scripts/bench_import.py
+          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_database.py scripts/bench_corpus.py scripts/bench_matrix.py scripts/bench_queue.py
           cargo +1.91.0 fmt --manifest-path rust/Cargo.toml --check
           cargo +1.91.0 clippy --manifest-path rust/Cargo.toml --locked -- -D warnings
           cargo +1.91.0 fmt --manifest-path rust/render-core/Cargo.toml --check
@@ -71,8 +80,39 @@ jobs:
         working-directory: backend
         run: uv run pytest -q tests/integration/modules/media/test_mesh_render.py tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh tests/e2e/test_ingest.py::TestArchiveImport
 
+  native-coverage:
+    name: Rust source coverage including Python bindings
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install production compiler and coverage instrumentation
+        run: |
+          rustup toolchain install 1.91.0 --profile minimal --component llvm-tools-preview
+          cargo install cargo-llvm-cov --version 0.9.1 --locked
+      - name: Install backend test dependencies
+        working-directory: backend
+        run: RUSTUP_TOOLCHAIN=1.91.0 uv sync --extra dev --frozen
+      - name: Exercise instrumented native code
+        working-directory: backend
+        run: ./scripts/native-coverage.sh
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: native-coverage
+          path: backend/rust/target/native-coverage-report/
+          if-no-files-found: error
+
   similarity-native:
     name: Similarity native (${{ matrix.arch }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -119,6 +159,7 @@ jobs:
 
   critical-capabilities:
     name: Critical capabilities
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -164,6 +205,7 @@ jobs:
 
   printer-core:
     name: Printer core (${{ matrix.python }}, ${{ matrix.resolution }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -228,6 +270,7 @@ jobs:
 
   backend:
     name: Backend
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -289,11 +332,26 @@ jobs:
         # branches, and the second number is the one that says something.
         run: ./scripts/test.sh coverage -v
 
+      - name: Retain backend coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.json
+            backend/.coverage-html/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
   backend-python313:
     name: Backend compatibility (Python 3.13, advisory)
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 30
+    # The complete suite reached 80% when the former 30-minute job budget ended.
+    # Keep individual test timeouts unchanged; allow the full matrix to finish.
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: backend
@@ -323,7 +381,9 @@ jobs:
     # as "CI is flaky" and gets a re-run rather than a fix. Five shuffled,
     # parallel runs on a schedule turn that into a specific named failure with a
     # seed that reproduces it.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -353,6 +413,7 @@ jobs:
             echo "::group::seed ${seed}"
             uv run pytest tests -q -p randomly --randomly-seed="${seed}" -n 4 \
               --deselect tests/integration/postgres \
+              --deselect tests/repo/test_coverage_floors.py \
               > "run-${seed}.log" 2>&1 || status=1
             tail -1 "run-${seed}.log"
             echo "::endgroup::"
@@ -383,6 +444,7 @@ jobs:
 
   sqlite-async:
     name: SQLite async extra
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -409,6 +471,7 @@ jobs:
 
   minio-migration:
     name: MinIO to SeaweedFS migration
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -443,6 +506,7 @@ jobs:
 
   frontend:
     name: Frontend
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -496,6 +560,7 @@ jobs:
 
   browser-extension:
     name: Browser extension
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -653,6 +718,7 @@ jobs:
 
   e2e-real:
     name: Real-backend E2E
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -699,7 +765,11 @@ jobs:
 
       - name: Real-backend E2E
         working-directory: frontend
-        run: pnpm test:e2e:real
+        env:
+          PLAYWRIGHT_EXTERNAL_LIBRARY_ROOT: ${{ runner.temp }}/printstash-browser-external-root
+        run: |
+          mkdir -p "$PLAYWRIGHT_EXTERNAL_LIBRARY_ROOT"
+          pnpm test:e2e:real
 
       - name: Storage-provider E2E
         working-directory: frontend
@@ -715,6 +785,7 @@ jobs:
 
   docker-build:
     name: Docker build and Grype scan (${{ matrix.image }}, ${{ matrix.arch }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.image == 'printstash' && 45 || 40 }}
     permissions:
@@ -872,3 +943,47 @@ jobs:
         if: matrix.storage-smoke
         working-directory: backend
         run: ./scripts/test.sh image --image ${{ matrix.image }}:${{ matrix.arch }}-ci --variant ${{ matrix.variant }}
+
+
+  import-benchmark:
+    name: Controlled import comparison (${{ matrix.database }}, ${{ matrix.cpus }} CPU)
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark_imports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        database: [sqlite, postgres]
+        cpus: [2, 4]
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the committed benchmark revision
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Compare original and immediate-parent release images
+        env:
+          BENCHMARK_PARENT: ${{ inputs.benchmark_parent }}
+        run: >-
+          python3 backend/scripts/bench_matrix.py
+          --head "$GITHUB_SHA" --base "$BENCHMARK_PARENT"
+          --database "${{ matrix.database }}" --cpus "${{ matrix.cpus }}"
+          --output "$RUNNER_TEMP/import-benchmark"
+      - name: Upload sanitized measurements and corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu
+          path: ${{ runner.temp }}/import-benchmark/evidence/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Preserve the measured release images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: import-benchmark-release-images-${{ matrix.database }}-${{ matrix.cpus }}cpu
+          path: ${{ runner.temp }}/import-benchmark/images/
+          retention-days: 90
+          if-no-files-found: error

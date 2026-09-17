@@ -7,6 +7,10 @@
  * a notification channel, and the trash purge. Each is asserted after a reload or against
  * the artefact it produced, because "the toast appeared" is not evidence anything saved.
  */
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { test, expect } from "./helpers";
 import { clickModelAction, modelCard, uploadGcodeModel } from "./util";
 
@@ -495,14 +499,14 @@ test.describe("settings", () => {
       ),
       sw.click(),
     ]);
-    const after = await sw.getAttribute("aria-checked");
-    expect(after).not.toBe(before);
+    const after = before === "true" ? "false" : "true";
+    await expect(sw).toHaveAttribute("aria-checked", after);
 
     await page.reload();
     await page.getByRole("button", { name: "Design" }).click();
     await expect(
       page.getByRole("switch", { name: "Auto-mark known good on successful print" }),
-    ).toHaveAttribute("aria-checked", after!);
+    ).toHaveAttribute("aria-checked", after);
 
     // Restore the original so the shared DB doesn't drift for later runs.
     await Promise.all([
@@ -644,9 +648,16 @@ test.describe("settings", () => {
   });
 
   test("requires explicit cleanup from storage insights", async ({ page }) => {
+    const dataRoot = resolve(process.env.PLAYWRIGHT_REAL_DATA_DIR ?? "tests/e2e-real/.data");
+    const { stdout } = await promisify(execFile)(
+      resolve("../backend/.venv/bin/python"),
+      ["-m", "tests.fakes.storage_cleanup", dataRoot],
+      { cwd: resolve("../backend") },
+    );
+    const staged: { path: string; inbox_item_id: number } = JSON.parse(stdout);
     await page.goto("/settings");
     await page.getByRole("button", { name: "Storage", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Storage insights" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Library storage" })).toBeVisible();
     const [measurement] = await Promise.all([
       page.waitForResponse(
         (response) =>
@@ -656,13 +667,18 @@ test.describe("settings", () => {
       page.getByRole("button", { name: "Refresh measurement" }).click(),
     ]);
     expect(measurement.status()).toBe(200);
+    await page.getByText("Storage breakdown and diagnostics", { exact: true }).click();
     await expect(page.getByText(/Provider measurement:.*Capacity evidence is known/)).toBeVisible();
-    await page.getByRole("button", { name: "Clean up expired staging" }).click();
+    await page.getByRole("button", { name: "Clean up temporary files" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Uncertain files are retained");
+    expect(existsSync(staged.path)).toBe(true);
     await dialog.getByRole("button", { name: "Clean up", exact: true }).click();
     await expect(
       page.getByRole("status").filter({ hasText: "expired leases cleared" }),
     ).toBeVisible();
+    expect(existsSync(staged.path)).toBe(false);
+    const deleted = await page.request.delete(`/api/v1/inbox/${staged.inbox_item_id}`);
+    expect(deleted.ok()).toBe(true);
   });
 });

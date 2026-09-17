@@ -2,7 +2,7 @@
 import { test, expect } from "../helpers";
 import { modelCard, uploadModel } from "../util";
 import { readFileSync } from "node:fs";
-import type { InferenceModel, SearchSettingsRead } from "../../../src/types/search";
+import type { InferenceModel, SearchResponse, SearchSettingsRead } from "../../../src/types/search";
 import type { ModelRead } from "../../../src/types/models";
 
 const API = `http://127.0.0.1:${process.env.PLAYWRIGHT_REAL_API_PORT ?? 8410}`;
@@ -313,12 +313,19 @@ test.describe("AI Search", () => {
           { timeout: 90000 },
         )
         .toContain("point_cloud");
+      const response = page.waitForResponse((candidate) => {
+        const url = new URL(candidate.url());
+        return url.pathname === "/api/v1/search" && url.searchParams.get("q") === "a cube";
+      });
       await page.goto("/search?q=a+cube");
+      const search: SearchResponse = await (await response).json();
+      const result = search.items.find((item) => item.subject_id === modelId);
+      expect(result?.evidence.map((entry) => entry.leg)).toContain("point_cloud");
       const link = page.getByRole("link", { name, exact: true });
       await expect(link).toBeVisible();
-      await expect(
-        link.locator("xpath=ancestor::li").getByText("Shape match", { exact: true }),
-      ).toBeVisible();
+      const listItem = link.locator("xpath=ancestor::li");
+      await listItem.getByText("Why this result", { exact: true }).click();
+      await expect(listItem.getByText("Shape match", { exact: true }).first()).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath("point-search.png"), fullPage: true });
     } finally {
       await page.request.put(`${API}/api/v1/config/ai-search`, { data: initial.settings });
