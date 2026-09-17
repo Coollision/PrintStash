@@ -39,7 +39,7 @@ from scripts.bench_matrix import (
 from scripts.bench_queue_qualification import (
     IMPLEMENTATIONS,
     execution_order,
-    summarize,
+    summarize_completed_boundary,
     validate_profile,
 )
 
@@ -334,7 +334,8 @@ def main() -> None:
                         implementation: [] for implementation in IMPLEMENTATIONS
                     }
                     for pair in range(14):
-                        if pair == 7 and not summarize(reports)["noisy"]:
+                        boundary = summarize_completed_boundary(reports)
+                        if pair == 7 and boundary is not None and not boundary["noisy"]:
                             break
                         for implementation in execution_order(pair):
                             name = f"pair{pair + 1:02d}-{implementation}"
@@ -351,8 +352,8 @@ def main() -> None:
                                 )
                             )
                             reports[implementation].append(report)
-                        if len(reports["current"]) >= 7:
-                            summary = summarize(reports)
+                        summary = summarize_completed_boundary(reports)
+                        if summary is not None:
                             write_report(summary, evidence / "comparison.json")
 
                     recovery_archive = {**archive, "queue_recovery": True}

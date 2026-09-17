@@ -181,6 +181,19 @@ def summarize(runs: Mapping[str, list[Mapping]]) -> dict:
     }
 
 
+def summarize_completed_boundary(runs: Mapping[str, list[Mapping]]) -> dict | None:
+    """Summarize only the protocol's seven- or fourteen-pair boundaries."""
+    if set(runs) != set(IMPLEMENTATIONS):
+        raise ValueError("queue comparison requires all three implementations")
+    pair_counts = {len(values) for values in runs.values()}
+    if len(pair_counts) != 1:
+        raise ValueError("queue comparison pair counts diverged")
+    pair_count = pair_counts.pop()
+    if not 0 <= pair_count <= 14:
+        raise ValueError("queue comparison exceeds fourteen pairs")
+    return summarize(runs) if pair_count in {7, 14} else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     for implementation in IMPLEMENTATIONS:

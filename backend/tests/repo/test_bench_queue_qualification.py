@@ -7,6 +7,7 @@ from scripts.bench_queue_qualification import (
     current_metrics,
     execution_order,
     summarize,
+    summarize_completed_boundary,
     validate_profile,
 )
 
@@ -15,7 +16,7 @@ def latency(value: float, count: int = 8) -> dict:
     return {"count": count, "p50_ms": value / 2, "p95_ms": value, "max_ms": value * 2}
 
 
-def test_normalizes_current_queue_metrics():
+def current_report(**overrides) -> dict:
     report = {
         "measurement_protocol": "durable-queue-steady-v1",
         "accepted_count": 8,
@@ -27,20 +28,15 @@ def test_normalizes_current_queue_metrics():
         "completion": latency(4),
         "idle": {"seconds": 2, "cpu_seconds": 0.05},
         "total_seconds": 6,
-        "container_cpu_seconds": 1.25,
+        "container_cpu_seconds": 1,
         "container_memory_peak_bytes": 1024,
         "database_growth_bytes": 512,
     }
-
-    metrics = current_metrics(report)
-
-    assert metrics["throughput_jobs_per_second"] == 2
-    assert metrics["enqueue_p95_ms"] == 2
-    assert metrics["start_p95_ms"] == 5
-    assert metrics["acknowledgment_p95_ms"] == 4
+    report.update(overrides)
+    return report
 
 
-def test_normalizes_candidate_metrics_only_after_correctness_counts_match():
+def candidate_report(**overrides) -> dict:
     report = {
         "measurement_protocol": "queue-candidate-v1",
         "jobs": 8,
@@ -53,10 +49,27 @@ def test_normalizes_candidate_metrics_only_after_correctness_counts_match():
         "processing_seconds": 2,
         "throughput_jobs_per_second": 4,
         "idle_cpu_seconds": 0.04,
-        "container_cpu_seconds": 1.25,
+        "container_cpu_seconds": 1,
         "container_memory_peak_bytes": 1024,
         "database_growth_bytes": 512,
     }
+    report.update(overrides)
+    return report
+
+
+def test_normalizes_current_queue_metrics():
+    report = current_report()
+
+    metrics = current_metrics(report)
+
+    assert metrics["throughput_jobs_per_second"] == 2
+    assert metrics["enqueue_p95_ms"] == 2
+    assert metrics["start_p95_ms"] == 5
+    assert metrics["acknowledgment_p95_ms"] == 4
+
+
+def test_normalizes_candidate_metrics_only_after_correctness_counts_match():
+    report = candidate_report()
 
     assert candidate_metrics(report)["throughput_jobs_per_second"] == 4
     report["completed_count"] = 7
@@ -81,37 +94,8 @@ def test_rotates_three_implementations_without_changing_pair_identity():
 
 
 def test_summary_applies_metric_direction_to_review_thresholds():
-    current = {
-        "measurement_protocol": "durable-queue-steady-v1",
-        "accepted_count": 8,
-        "completed_count": 8,
-        "duplicate_claims": 0,
-        "acceptance": latency(2),
-        "claim": latency(3),
-        "enqueue_to_start": latency(5),
-        "completion": latency(4),
-        "idle": {"seconds": 2, "cpu_seconds": 0.05},
-        "total_seconds": 6,
-        "container_cpu_seconds": 1,
-        "container_memory_peak_bytes": 1024,
-        "database_growth_bytes": 512,
-    }
-    candidate = {
-        "measurement_protocol": "queue-candidate-v1",
-        "jobs": 8,
-        "accepted_count": 8,
-        "completed_count": 8,
-        "duplicate_executions": 0,
-        "enqueue": latency(2),
-        "enqueue_to_start": latency(3),
-        "acknowledgment": latency(4),
-        "processing_seconds": 2,
-        "throughput_jobs_per_second": 4,
-        "idle_cpu_seconds": 0.04,
-        "container_cpu_seconds": 1,
-        "container_memory_peak_bytes": 1024,
-        "database_growth_bytes": 512,
-    }
+    current = current_report()
+    candidate = candidate_report()
 
     report = summarize(
         {
@@ -137,3 +121,37 @@ def test_summary_applies_metric_direction_to_review_thresholds():
         }
     )
     assert noisy["noisy"] is True
+
+
+def test_noisy_comparison_summarizes_only_at_seven_and_fourteen_pairs():
+    current = current_report()
+    candidate = candidate_report()
+
+    runs = {
+        "current": [current] * 7,
+        "apalis": [
+            {**candidate, "throughput_jobs_per_second": value}
+            for value in (1, 8, 1, 8, 1, 8, 1)
+        ],
+        "azums": [candidate] * 7,
+    }
+    boundary = summarize_completed_boundary(runs)
+    assert boundary is not None
+    assert boundary["pairs"] == 7
+    assert boundary["noisy"] is True
+
+    for values, report in (
+        (runs["current"], current),
+        (runs["apalis"], candidate),
+        (runs["azums"], candidate),
+    ):
+        values.append(report)
+    assert summarize_completed_boundary(runs) is None
+
+    for values, report in (
+        (runs["current"], current),
+        (runs["apalis"], candidate),
+        (runs["azums"], candidate),
+    ):
+        values.extend([report] * 6)
+    assert summarize_completed_boundary(runs)["pairs"] == 14
