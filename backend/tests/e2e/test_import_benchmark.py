@@ -77,8 +77,42 @@ class TestImportBenchmark:
                 "color_hex": "#FF8000",
             }
         ]
-        assert report["preview_pixel_catalog"][0][-1] == "ready"
+        assert {row[0]: row[-1] for row in report["preview_pixel_catalog"]} == {
+            hashlib.sha256(source).hexdigest(): "ready",
+            hashlib.sha256(gcode).hexdigest(): "ready",
+        }
         assert report["database"]["backend"] == (
             "postgresql" if dialect == "postgres" else "sqlite"
         )
         assert json.loads(output.read_text())["database"] == report["database"]
+
+    @pytest.mark.parametrize(
+        "dialect", ["sqlite", pytest.param("postgres", marks=pytest.mark.postgres)]
+    )
+    def test_records_gcode_without_embedded_previews(self, tmp_path, dialect):
+        fixtures = Path(__file__).parents[1] / "fixtures"
+        orca = (fixtures / "real_orca_ender3_benchy.gcode").read_bytes()
+        binary = (fixtures / "bgcode/prusaslicer.bgcode").read_bytes()
+        archive = tmp_path / "gcode.zip"
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("benchy.gcode", orca)
+            package.writestr("prusa.bgcode", binary)
+
+        report = run(archive, tmp_path / "report.json", 120, database=dialect)
+
+        assert report["status"]["state"] == "completed"
+        assert report["failed_enrichment"]["thumbnail_generations"] == 0
+        assert report["preview_outcome_catalog"] == sorted(
+            (
+                hashlib.sha256(data).hexdigest(),
+                "GCODE",
+                "failed",
+                "no_embedded_thumbnail",
+            )
+            for data in (orca, binary)
+        )
+        assert {
+            row["slicer_name"]: row["estimated_time_s"]
+            for row in report["metadata_catalog"]["metadata"]
+        } == {"OrcaSlicer": 4296, "PrusaSlicer": 221}
+        assert "PermissionError" not in (tmp_path / "report.server.log").read_text()

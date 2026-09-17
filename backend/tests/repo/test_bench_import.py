@@ -6,6 +6,7 @@ from scripts.bench_import import (
     compare_databases,
     compare_fingerprints,
     compare_metadata,
+    compare_preview_outcomes,
     compare_previews,
     environment_record,
 )
@@ -211,3 +212,34 @@ class TestCompareMetadata:
     def test_refuses_missing_evidence(self):
         with pytest.raises(SystemExit, match="parsed metadata evidence is missing"):
             compare_metadata({}, {})
+
+
+class TestComparePreviewOutcomes:
+    def test_accepts_equal_unavailable_previews(self):
+        outcome = ["source", "GCODE", "failed", "no_embedded_thumbnail"]
+        assert (
+            compare_preview_outcomes(
+                {"preview_outcome_catalog": [outcome]},
+                {"preview_outcome_catalog": [tuple(outcome)]},
+            )
+            is None
+        )
+
+    def test_rejects_changed_failure_reason(self):
+        with pytest.raises(SystemExit, match="preview outcomes differ"):
+            compare_preview_outcomes(
+                {
+                    "preview_outcome_catalog": [
+                        ["source", "GCODE", "failed", "no_embedded_thumbnail"]
+                    ]
+                },
+                {
+                    "preview_outcome_catalog": [
+                        ["source", "GCODE", "failed", "enrichment_failed"]
+                    ]
+                },
+            )
+
+    def test_requires_outcome_evidence(self):
+        with pytest.raises(SystemExit, match="preview outcome evidence is missing"):
+            compare_preview_outcomes({}, {})

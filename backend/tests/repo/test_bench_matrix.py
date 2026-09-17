@@ -2,7 +2,7 @@
 
 import pytest
 
-from scripts.bench_matrix import comparison, revision
+from scripts.bench_matrix import compare_queue_contracts, comparison, revision
 
 
 def _report(value):
@@ -57,3 +57,48 @@ class TestBenchmarkRevision:
     def test_refuses_ambiguous_or_option_like_revisions(self, value):
         with pytest.raises(ValueError, match="full lowercase commit hashes"):
             revision(value)
+
+
+class TestQueueComparison:
+    def test_distinguishes_latency_from_resource_regressions(self):
+        before = {
+            "total_seconds": 120,
+            "recovery_seconds": 120,
+            "acceptance": {"p95_ms": 10},
+            "claim": {"p95_ms": 10},
+            "completion": {"p95_ms": 10},
+            "idle": {"cpu_seconds": 1},
+            "coordinator_cpu_seconds": 1,
+            "container_memory_peak_bytes": 1000,
+        }
+        after = {
+            **before,
+            "claim": {"p95_ms": 10.6},
+            "idle": {"cpu_seconds": 1.06},
+        }
+        result = comparison([before] * 7, [after] * 7, queue=True)
+        assert result["metrics"]["claim_p95_ms"]["pairs_above_threshold"] == 7
+        assert result["metrics"]["idle_cpu_s"]["pairs_above_threshold"] == 0
+        assert result["metrics"]["recovery_s"]["paired_delta_percent"] == 0
+
+    @pytest.mark.parametrize("difference", ["missing", "changed"])
+    def test_rejects_non_equivalent_queue_outcomes(self, difference):
+        before = {
+            "measurement_protocol": "durable-queue-baseline-v1",
+            "scope": "queue repositories",
+            "database": {"dialect": "sqlite", "version": "3.50.4"},
+            "accepted_count": 4,
+            "completed_count": 4,
+            "rollback_orphans": 0,
+            "duplicate_claims": 0,
+            "stale_completion_rejected": True,
+            "production_lease_seconds": 120,
+            "terminated_worker_exit_code": -9,
+        }
+        after = dict(before)
+        if difference == "missing":
+            del after["completed_count"]
+        else:
+            after["completed_count"] = 3
+        with pytest.raises(ValueError, match="completed_count"):
+            compare_queue_contracts(before, after)

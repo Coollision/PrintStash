@@ -42,6 +42,35 @@ class TestExpansion:
         assert ranks[0][0] == passage.id
         assert 0 < ranks[0][1] <= expansion.CONTRIBUTION_CAP / 61
 
+    def test_composes_independent_rankings(
+        self,
+        db_session,
+        sparse_setup,
+        make_model,
+        make_search_passage,
+        make_search_expansion,
+        make_search_expansion_term,
+    ):
+        _, model = sparse_setup
+        subject = make_model("bicycle")
+        passage = make_search_passage(SearchSubject(SubjectType.MODEL, subject.id))
+        row = make_search_expansion(passage, recipe=model.id)
+        make_search_expansion_term(row)
+        first = ordered_passages(
+            db_session, "bike", select(SearchPassage.id)
+        ).subquery()
+        second = ordered_passages(
+            db_session, "bike", select(SearchPassage.id)
+        ).subquery()
+
+        results = db_session.exec(
+            select(first.c.passage_id, second.c.passage_id).join(
+                second, first.c.passage_id == second.c.passage_id
+            )
+        ).all()
+
+        assert results == [(passage.id, passage.id)]
+
     def test_removes_contribution_immediately_on_disable(
         self,
         db_session,

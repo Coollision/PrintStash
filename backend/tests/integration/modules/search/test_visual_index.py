@@ -44,6 +44,37 @@ def visual_setup(db_session, tmp_path, monkeypatch, make_user, make_model, make_
     return actor, model_cache.inspect(directory), model, file
 
 
+@pytest.fixture
+def cached_preview(make_model, make_file, make_thumbnail_generation):
+    from PIL import Image
+    from printstash_core.search.visual_inputs import VisualRecipe
+
+    from app.db.models import ThumbnailGenerationState
+    from app.modules.storage.storage_backend.runtime import get_backend
+
+    file = make_file(make_model(), file_type=FileType.STL)
+    recipe = VisualRecipe("c" * 64, 32, "thumbnail")
+    stream = io.BytesIO()
+    Image.new("RGB", (640, 480), "red").save(stream, "WEBP", lossless=True)
+    payload = stream.getvalue()
+    backend = get_backend()
+    key = backend.thumbnail_variant_key(file.id, file.sha256, recipe.thumbnail_recipe)
+    backend.write_bytes(payload, key)
+    row = make_thumbnail_generation(
+        file,
+        recipe_fingerprint=recipe.thumbnail_recipe,
+        state=ThumbnailGenerationState.READY,
+        storage_key=key,
+        output_sha256=hashlib.sha256(payload).hexdigest(),
+        output_size_bytes=len(payload),
+        width=640,
+        height=480,
+        strategy="full",
+        complete=True,
+    )
+    return file, recipe, row, backend
+
+
 def proposal(model, **kwargs):
     return GenerationProposal(
         local_model_id=model.id, index_backend="numpy", profile="multiview", **kwargs
@@ -792,3 +823,42 @@ class TestFilteredVisualQuery:
         )
         assert [item.subject_id for item in result.items] == [model.id]
         assert any(evidence.leg == "multiview" for evidence in result.items[0].evidence)
+
+
+class TestCachedThumbnail:
+    def test_renders_from_a_verified_cached_preview(self, cached_preview):
+        from printstash_core.inference.context import InferenceContext
+
+        file, recipe, _, _ = cached_preview
+        result = visual_index.render(
+            get_session_factory(), file, recipe, InferenceContext.bounded(10)
+        )
+
+        assert result.thumbnail.rgb == bytes([255, 0, 0]) * 32 * 32
+        assert result.views == (result.thumbnail,)
+
+    def test_rejects_preview_larger_than_its_receipt(self, db_session, cached_preview):
+        from printstash_core.inference.context import InferenceContext
+
+        file, recipe, row, _ = cached_preview
+        row.output_size_bytes -= 1
+        db_session.add(row)
+        db_session.commit()
+
+        result = visual_index.cached_thumbnail(
+            db_session, file, recipe, InferenceContext.bounded(10)
+        )
+
+        assert result is None
+
+    def test_rejects_missing_cached_object(self, db_session, cached_preview):
+        from printstash_core.inference.context import InferenceContext
+
+        file, recipe, row, _ = cached_preview
+        Path(row.storage_key).unlink()
+
+        result = visual_index.cached_thumbnail(
+            db_session, file, recipe, InferenceContext.bounded(10)
+        )
+
+        assert result is None

@@ -116,8 +116,20 @@ def pending_enrichment(
             f"SELECT COUNT(*) FROM {table} WHERE {condition}"
         ).scalar_one()
         if "state" in columns:
+            applicable = ""
+            if table == "thumbnail_generations":
+                # The public view calls this not_applicable: G-code does not
+                # promise an embedded preview. Retain every other failure,
+                # including an unknown reason or a stale source identity.
+                applicable = (
+                    " AND NOT EXISTS (SELECT 1 FROM files f "
+                    "WHERE f.id = thumbnail_generations.file_id "
+                    "AND f.sha256 = thumbnail_generations.source_sha256 "
+                    "AND f.file_type = 'GCODE' "
+                    "AND thumbnail_generations.failure_reason = 'no_embedded_thumbnail')"
+                )
             failed[table] = connection.exec_driver_sql(
-                f"SELECT COUNT(*) FROM {table} WHERE {policy}state = 'failed'"
+                f"SELECT COUNT(*) FROM {table} WHERE {policy}state = 'failed'{applicable}"
             ).scalar_one()
     return pending, failed
 

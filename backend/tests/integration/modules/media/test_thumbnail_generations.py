@@ -800,3 +800,39 @@ class TestDeferredPublication:
 
         db_session.refresh(model)
         assert model.thumbnail_file_id == second.id
+
+    def test_records_deferred_storage_failure(
+        self, db_session, make_model, make_file, monkeypatch
+    ):
+        from app.modules.media.thumbnail_generations import (
+            claim_thumbnail,
+            finish_thumbnail,
+            request_thumbnail,
+        )
+
+        model = make_model()
+        file = make_file(model, file_type=FileType.STL)
+        backend = get_backend()
+        backend.write_bytes(b"source", file.path)
+        generation = request_thumbnail(db_session, file, promote=True)
+        db_session.commit()
+        claim = claim_thumbnail(db_session, file)
+        assert claim is not None
+
+        def offline(*args, **kwargs):
+            raise OSError("storage offline")
+
+        monkeypatch.setattr(backend, "create_bytes", offline)
+        result = finish_thumbnail(
+            db_session, file, claim, _SuccessfulEngine().generate(None), backend=backend
+        )
+
+        assert result.available is False
+        assert result.failure_reason == "storage"
+        db_session.refresh(generation)
+        db_session.refresh(model)
+        assert generation.state == ThumbnailGenerationState.PENDING
+        assert generation.storage_key is None
+        assert generation.lease_token is None
+        assert model.thumbnail_path is None
+        assert backend.read_bytes(file.path) == b"source"

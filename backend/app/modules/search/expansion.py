@@ -41,7 +41,10 @@ def with_expansion(session: Session, query: str, allowed_ids, original):
     terms = query_terms(query)
     if recipe is None or not terms:
         return original
-    lexical = original.cte()
+    # prefix_with() clones the CTE. An anonymous name can retain the discarded
+    # object's id, which a later CTE may reuse (notably on Python 3.13).
+    # A scoped name survives cloning without colliding with another query.
+    lexical = original.cte("expansion_lexical_scores", nesting=True)
     if session.get_bind().dialect.name == "sqlite":
         lexical = lexical.prefix_with("MATERIALIZED")
     original_rank = select(

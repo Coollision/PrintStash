@@ -257,6 +257,12 @@ class TestMain:
             pytest.param({"max_triangles": 0}, id="triangles-zero"),
             pytest.param({"max_triangles": 30_000_000}, id="triangles-over-cap"),
             pytest.param({"max_source_bytes": 0}, id="source-zero"),
+            pytest.param({"max_source_bytes": (1 << 30) + 1}, id="source-over-cap"),
+            pytest.param({"max_candidates": 20_000_001}, id="candidates-over-cap"),
+            pytest.param({"max_lines": 10_000_001}, id="lines-over-cap"),
+            pytest.param(
+                {"address_space_bytes": (512 << 20) + 1}, id="address-space-over-cap"
+            ),
             pytest.param({"chunk_triangles": 100_000}, id="chunk-over-cap"),
             pytest.param({"max_line_bytes": 1 << 20}, id="line-bytes-over-cap"),
             pytest.param({"timeout_seconds": 0}, id="timeout-zero"),

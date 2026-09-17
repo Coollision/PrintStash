@@ -36,16 +36,23 @@ class TestControlledImportBenchmark:
             if step.get("uses", "").startswith("actions/upload-artifact@")
         ]
         assert {step["with"]["name"] for step in artifacts} == {
-            "import-benchmark-evidence",
-            "import-benchmark-release-images",
+            "import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu",
+            "import-benchmark-release-images-${{ matrix.database }}-${{ matrix.cpus }}cpu",
         }
         assert all(step["with"]["if-no-files-found"] == "error" for step in artifacts)
         evidence = next(
             step
             for step in artifacts
-            if step["with"]["name"] == "import-benchmark-evidence"
+            if step["with"]["name"]
+            == "import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu"
         )
         assert evidence["if"] == "always()"
+        assert job["strategy"]["max-parallel"] == 1
+        assert job["strategy"]["fail-fast"] is False
+        assert job["strategy"]["matrix"] == {
+            "database": ["sqlite", "postgres"],
+            "cpus": [2, 4],
+        }
 
 
 class TestNativeCoverageJob:
@@ -388,3 +395,21 @@ class TestContainerVulnerabilityScanning:
         assert upload["uses"] != "github/codeql-action/upload-sarif@v4"
         assert upload["continue-on-error"] is True
         assert upload["with"]["sarif_file"].endswith("/report.sarif")
+
+
+class TestBackendCoverageJob:
+    def test_retains_coverage_after_a_failed_floor(self):
+        artifacts = [
+            step
+            for step in _ci_workflow()["jobs"]["backend"]["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+        ]
+        assert len(artifacts) == 1
+        artifact = artifacts[0]
+        assert artifact["if"] == "always()"
+        assert artifact["with"]["name"] == "backend-coverage"
+        assert artifact["with"]["if-no-files-found"] == "error"
+        assert set(artifact["with"]["path"].splitlines()) == {
+            "backend/coverage.json",
+            "backend/.coverage-html/",
+        }

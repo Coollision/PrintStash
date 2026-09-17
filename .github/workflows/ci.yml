@@ -66,7 +66,7 @@ jobs:
           RUSTUP_TOOLCHAIN=1.91.0 uv sync --extra dev --frozen
           RUSTUP_TOOLCHAIN=1.91.0 uv pip install ./rust
           uv run python -c 'import printstash_mesh_native'
-          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_database.py scripts/bench_corpus.py scripts/bench_matrix.py
+          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_database.py scripts/bench_corpus.py scripts/bench_matrix.py scripts/bench_queue.py
           cargo +1.91.0 fmt --manifest-path rust/Cargo.toml --check
           cargo +1.91.0 clippy --manifest-path rust/Cargo.toml --locked -- -D warnings
           cargo +1.91.0 fmt --manifest-path rust/render-core/Cargo.toml --check
@@ -325,6 +325,18 @@ jobs:
         # rather than covered — the same suite reads 95.07% by lines and 93.35% with
         # branches, and the second number is the one that says something.
         run: ./scripts/test.sh coverage -v
+
+      - name: Retain backend coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.json
+            backend/.coverage-html/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
 
   backend-python313:
     name: Backend compatibility (Python 3.13, advisory)
@@ -918,10 +930,16 @@ jobs:
 
 
   import-benchmark:
-    name: Controlled import comparison
+    name: Controlled import comparison (${{ matrix.database }}, ${{ matrix.cpus }} CPU)
     if: github.event_name == 'workflow_dispatch' && inputs.benchmark_imports
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        database: [sqlite, postgres]
+        cpus: [2, 4]
     permissions:
       contents: read
     steps:
@@ -935,12 +953,13 @@ jobs:
         run: >-
           python3 backend/scripts/bench_matrix.py
           --head "$GITHUB_SHA" --base "$BENCHMARK_PARENT"
+          --database "${{ matrix.database }}" --cpus "${{ matrix.cpus }}"
           --output "$RUNNER_TEMP/import-benchmark"
       - name: Upload sanitized measurements and corpus
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: import-benchmark-evidence
+          name: import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu
           path: ${{ runner.temp }}/import-benchmark/evidence/
           retention-days: 90
           if-no-files-found: error
@@ -948,7 +967,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: import-benchmark-release-images
+          name: import-benchmark-release-images-${{ matrix.database }}-${{ matrix.cpus }}cpu
           path: ${{ runner.temp }}/import-benchmark/images/
           retention-days: 90
           if-no-files-found: error

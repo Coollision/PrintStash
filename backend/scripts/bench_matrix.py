@@ -38,6 +38,34 @@ METRICS = {
     "container_peak_bytes": ("container_memory_peak_bytes",),
 }
 
+QUEUE_METRICS = {
+    "complete_s": ("total_seconds",),
+    "recovery_s": ("recovery_seconds",),
+    "acceptance_p95_ms": ("acceptance", "p95_ms"),
+    "claim_p95_ms": ("claim", "p95_ms"),
+    "completion_p95_ms": ("completion", "p95_ms"),
+    "idle_cpu_s": ("idle", "cpu_seconds"),
+    "coordinator_cpu_s": ("coordinator_cpu_seconds",),
+    "container_peak_bytes": ("container_memory_peak_bytes",),
+}
+
+
+def compare_queue_contracts(before: dict, after: dict) -> None:
+    for key in (
+        "measurement_protocol",
+        "scope",
+        "database",
+        "accepted_count",
+        "completed_count",
+        "rollback_orphans",
+        "duplicate_claims",
+        "stale_completion_rejected",
+        "production_lease_seconds",
+        "terminated_worker_exit_code",
+    ):
+        if key not in before or key not in after or before[key] != after[key]:
+            raise ValueError(f"Queue comparison contract differs or is missing: {key}")
+
 
 def command(args: list[str], *, log: Path | None = None) -> str:
     if log is None:
@@ -73,18 +101,16 @@ def metric(report: dict, path: tuple[str, ...]) -> float:
     return float(value)
 
 
-def comparison(before: list[dict], after: list[dict]) -> dict:
+def comparison(before: list[dict], after: list[dict], *, queue: bool = False) -> dict:
     if not before or len(before) != len(after):
         raise ValueError("Comparison requires complete paired runs")
     result = {}
     noisy = False
-    for name, path in METRICS.items():
+    for name, path in (QUEUE_METRICS if queue else METRICS).items():
         left, right = (
             [metric(report, path) for report in side] for side in (before, after)
         )
-        threshold = (
-            10 if name in {"app_cpu_s", "app_rss_bytes", "container_peak_bytes"} else 5
-        )
+        threshold = 10 if name.endswith(("cpu_s", "bytes")) else 5
         deltas = [100 * (b / a - 1) for a, b in zip(left, right, strict=True) if a]
         variation = max(
             statistics.stdev(values) / statistics.mean(values) * 100
@@ -133,7 +159,7 @@ def build(rev: str, tag: str, work: Path, evidence: Path) -> str:
 def harness_context(work: Path, head: str) -> Path:
     context = work / "harness"
     context.mkdir()
-    for name in ("bench_import.py", "bench_database.py"):
+    for name in ("bench_import.py", "bench_database.py", "bench_queue.py"):
         (context / name).write_text(
             command(["git", "show", f"{head}:backend/scripts/{name}"]) + "\n"
         )
@@ -153,7 +179,7 @@ def harness_context(work: Path, head: str) -> Path:
         # non-traversable directories. Hashing those sources needs read access
         # in this instrumentation layer, without running the benchmark as root.
         "RUN chmod -R a+rX /app/packages\n"
-        "COPY bench_import.py bench_database.py /app/scripts/\n"
+        "COPY bench_import.py bench_database.py bench_queue.py /app/scripts/\n"
         f"LABEL org.printstash.benchmark.harness-revision={head}\n"
     )
     return context
@@ -216,22 +242,24 @@ class Profile:
         ]
         if db:
             args += ["--env-file", str(env_file)]
+        queue = bool(archive.get("queue"))
         cli = [
             "/app/.venv/bin/python",
-            "/app/scripts/bench_import.py",
-            f"/evidence/corpus/{archive['name']}",
-            "--database",
-            dialect,
-            "--output",
-            f"/evidence/runs/{name}.json",
-            "--timeout",
-            "1800",
+            "/app/scripts/bench_queue.py" if queue else "/app/scripts/bench_import.py",
         ]
+        if not queue:
+            cli += [f"/evidence/corpus/{archive['name']}"]
+        cli += ["--database", dialect, "--output", f"/evidence/runs/{name}.json"]
+        cli += (
+            ["--jobs", "128", "--idle-seconds", "10"]
+            if queue
+            else ["--timeout", "1800"]
+        )
         if db:
             cli += ["--postgres-admin-url-env", "PRINTSTASH_BENCH_POSTGRES"]
         if archive["similarity"]:
             cli += ["--similarity"]
-        if reference:
+        if reference and not queue:
             cli += ["--compare", f"/evidence/runs/{reference.name}"]
         # Arguments are positional, not interpolated into shell source.
         script = '"$@"; result=$?; cat /sys/fs/cgroup/memory.peak > "$BENCH_MEMORY_PEAK"; exit "$result"'
@@ -240,6 +268,8 @@ class Profile:
         previous = database_counters(db) if db else None
         command(args, log=output.with_suffix(".log"))
         report = json.loads(output.read_text())
+        if queue and reference:
+            compare_queue_contracts(json.loads(reference.read_text()), report)
         report["container_memory_peak_bytes"] = int(
             output.with_suffix(".memory-peak").read_text()
         )
@@ -398,8 +428,12 @@ def measure_case(
         if side == "base":
             reference = profile.evidence / "runs" / f"{name}.json"
     reports = {"base": [], "head": []}
+    queue = bool(archive.get("queue"))
     for pair in range(14):
-        if pair == 7 and not comparison(reports["base"], reports["head"])["noisy"]:
+        if (
+            pair == 7
+            and not comparison(reports["base"], reports["head"], queue=queue)["noisy"]
+        ):
             break
         order = (("base", ancestor), ("head", head))
         for side, rev in order if pair % 2 == 0 else reversed(order):
@@ -415,7 +449,7 @@ def measure_case(
         "database": profile.dialect,
         "total_cpus": profile.cpus,
         "total_memory_gib": profile.cpus,
-        **comparison(reports["base"], reports["head"]),
+        **comparison(reports["base"], reports["head"], queue=queue),
     }
 
 
@@ -466,6 +500,8 @@ def main() -> None:
     parser.add_argument("--base", default=ORIGINAL)
     parser.add_argument("--original", default=ORIGINAL)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--database", choices=("sqlite", "postgres"))
+    parser.add_argument("--cpus", type=int, choices=(2, 4))
     args = parser.parse_args()
     head, base, original = map(revision, (args.head, args.base, args.original))
     for ancestor in (base, original):
@@ -491,8 +527,10 @@ def main() -> None:
             corpus = prepare_corpus(images[head]["release_id"], evidence, work / head)
             pg_env, bench_env = server_environment(work, password)
             with private_network(prefix) as network:
-                for dialect in ("sqlite", "postgres"):
-                    for cpus in (2, 4):
+                for dialect in (
+                    (args.database,) if args.database else ("sqlite", "postgres")
+                ):
+                    for cpus in (args.cpus,) if args.cpus else (2, 4):
                         service = (
                             postgres_service(network, cpus, pg_env)
                             if dialect == "postgres"
@@ -503,7 +541,14 @@ def main() -> None:
                                 evidence, dialect, cpus, network, bench_env, container
                             )
                             for ancestor in dict.fromkeys((original, base)):
-                                for archive in corpus["archives"]:
+                                cases = corpus["archives"] + [
+                                    {
+                                        "name": "queue-recovery",
+                                        "queue": True,
+                                        "similarity": False,
+                                    }
+                                ]
+                                for archive in cases:
                                     summaries.append(
                                         measure_case(
                                             profile, archive, ancestor, head, images

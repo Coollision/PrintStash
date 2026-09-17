@@ -143,7 +143,9 @@ class LibrarySearch:
             SearchPassage.subject_id.in_(allowed_model_ids),
             SearchPassage.access_dependencies_json == "[]",
         )
-        ranks = ranked_statement(session, query, allowed).cte()
+        ranks = ranked_statement(session, query, allowed).cte(
+            "library_lexical_scores", nesting=True
+        )
         # SQLite cannot evaluate the FTS5 auxiliary bm25() inside an aggregate
         # after subquery flattening. Materialize its per-passage scores first.
         if session.get_bind().dialect.name == "sqlite":

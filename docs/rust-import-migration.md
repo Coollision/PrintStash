@@ -128,7 +128,7 @@ benchmark table/raw sanitized evidence, migration/rollback and limitations.
 In progress. The benchmark now selects `--database sqlite|postgres`. PostgreSQL
 uses the repository test-container owner and a fresh per-run database, never an
 existing vault URL. Both paths use the supported `app.db.migrate` bootstrap.
-Protocol `job-and-library-poll-250ms-v4` records DB backend/version and parsed
+Protocol `job-and-library-poll-250ms-v5` records DB backend/version and parsed
 metadata, and rejects incompatible comparisons. Older numbers are historical,
 not M00 evidence.
 
@@ -183,7 +183,6 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 32 | isolates databases on a host-managed service | Happy | Real PostgreSQL maintenance connection | Fresh database supports writes; cleanup leaves original database inventory intact | Integration | ✅ `tests/repo/test_bench_database.py::TestExternalPostgresServer::test_uses_only_a_fresh_database_on_the_supplied_server` |
 | 33 | imports through a private PostgreSQL service | Happy/Error | Real host-managed PostgreSQL; absent CLI environment or wrong dialect | Complete metadata-preserving import on valid service; invalid CLI rejected | E2E/Unit | ✅ `tests/e2e/test_import_benchmark.py`, `tests/repo/test_bench_import.py::TestBenchmarkArguments` |
 | 34 | preserves published search content on rollback | Edge | Committed PostgreSQL projection followed by rolled-back source edit | Original passage remains; no request from the rolled-back transaction survives | Integration | ✅ `tests/integration/postgres/test_search_passages.py::TestSearchPassages::test_batch_rollback_preserves_the_previous_publication` |
-
 | 35 | reproduces identical corpus archives | Happy | Two fresh corpus destinations | Identical archives and source hashes | Repo | ✅ `tests/repo/test_bench_corpus.py::TestBenchmarkCorpus::test_reproduces_identical_archives` |
 | 36 | retains real slicer fixtures | Happy | Existing format fixtures | Bytes unchanged; known tetrahedron geometry retained | Repo | ✅ `tests/repo/test_bench_corpus.py::TestBenchmarkCorpus::test_retains_real_slicer_fixtures` |
 | 37 | preserves an existing corpus destination | Error | Destination with baseline data | Refuses overwrite; sentinel survives | Repo | ✅ `tests/repo/test_bench_corpus.py::TestBenchmarkCorpus::test_preserves_an_existing_destination` |
@@ -198,102 +197,117 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 46 | cancels warmup after consent revocation | Edge | Concurrent real file-backed WAL reader/writer | Loader terminates; provider remains cold | Integration | ✅ `tests/integration/modules/search/test_model_warmup.py` |
 | 47 | refuses invalid performance measurements | Error | Null, boolean, string, nonpositive or nonfinite value | Comparison fails without accepting timing evidence | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_invalid_measurements` |
 | 48 | refuses missing performance measurements | Error | Absent API latency field | Comparison fails with named missing metric | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_missing_measurements` |
+| 49 | classifies missing embedded preview | Edge | G-code/mesh, expected/unknown failure reason, both databases | Only an identified G-code without an embedded preview is not applicable | Repo | ✅ `tests/repo/test_bench_database.py::TestEnrichmentInspection::test_classifies_missing_embedded_preview` |
+| 50 | records G-code without embedded previews | Happy | Existing Orca and BGCODE fixtures, both databases | Complete import, exact preview reason and slicer metadata, no cache permission error | E2E | ✅ `tests/e2e/test_import_benchmark.py::TestImportBenchmark::test_records_gcode_without_embedded_previews` |
+| 51 | accepts equal unavailable previews | Edge | Identical source and preview outcome | Comparison accepts equivalent output | Repo | ✅ `tests/repo/test_bench_import.py::TestComparePreviewOutcomes::test_accepts_equal_unavailable_previews` |
+| 52 | rejects changed failure reason | Error | Preview failure reason differs | Comparison refuses timing evidence | Repo | ✅ `tests/repo/test_bench_import.py::TestComparePreviewOutcomes::test_rejects_changed_failure_reason` |
+| 53 | requires outcome evidence | Error | Absent preview outcome catalog | Comparison refuses timing evidence | Repo | ✅ `tests/repo/test_bench_import.py::TestComparePreviewOutcomes::test_requires_outcome_evidence` |
+| 54 | composes independent rankings | Edge | Two sparse lexical rankings in one SQL statement | Both return the authorized passage without CTE name collision | Integration | ✅ `tests/integration/modules/search/test_expansion.py::TestExpansion::test_composes_independent_rankings` |
+| 55 | retains coverage after a failed floor | Error | Backend coverage gate fails | JSON/HTML evidence still uploaded; absence fails | Repo | ✅ `tests/repo/test_ci_workflows.py::TestBackendCoverageJob::test_retains_coverage_after_a_failed_floor` |
+| 56 | has no preview for empty geometry | Edge | Missing mesh/faces or empty faces | No image is returned | Unit | ✅ `tests/unit/modules/media/test_mesh_render.py::TestRenderMeshThumbnail::test_has_no_preview_for_empty_geometry` |
+| 57 | reports native render failure | Error | Native renderer rejects geometry | No image; named failure logged | Unit | ✅ `tests/unit/modules/media/test_mesh_render.py::TestRenderMeshThumbnail::test_reports_native_render_failure` |
+| 58 | requires native engine even for empty geometry | Error | Native engine unavailable | Required-capability error propagates | Unit | ✅ `tests/unit/modules/media/test_mesh_render.py::TestRenderMeshThumbnail::test_requires_native_engine_even_for_empty_geometry` |
+| 59 | rejects invalid output width | Error | Out-of-range or non-integer width | Stable validation failure | Unit | ✅ `tests/unit/modules/media/test_thumbnail.py::TestWebpNormalization::test_rejects_invalid_output_width` |
+| 60 | reports corrupt supported image | Error | Truncated PNG | No unvalidated bytes returned | Unit | ✅ `tests/unit/modules/media/test_thumbnail.py::TestWebpNormalization::test_reports_corrupt_supported_image` |
+| 61 | reads bounded native binary geometry | Happy | Ten facets, two-facet budget | Two samples and partial status | Unit | ✅ `tests/unit/modules/media/test_stl_fallback.py::TestSampleStlGeometry::test_reads_bounded_native_binary_geometry` |
+| 62 | rejects invalid geometry work budget | Error | Non-integer/out-of-range budget | Refuses before source access | Unit | ✅ `tests/unit/modules/media/test_stl_fallback.py::TestSampleStlGeometry::test_rejects_invalid_geometry_work_budget` |
+| 63 | keeps geometry partial after oversized ASCII line | Edge | Valid facet followed by oversized line | Bounded valid geometry remains explicitly partial | Unit | ✅ `tests/unit/modules/media/test_stl_fallback.py::TestSampleStlGeometry::test_keeps_geometry_partial_after_oversized_ascii_line` |
+| 64 | records deferred storage failure | Error | Create-only storage write fails | Retry remains pending; source preserved; no preview pointer | Integration | ✅ `tests/integration/modules/media/test_thumbnail_generations.py::TestDeferredPublication::test_records_deferred_storage_failure` |
+| 65 | renders from a verified cached preview | Happy | Matching receipt/source/recipe | Expected RGB pixels and view | Integration | ✅ `tests/integration/modules/search/test_visual_index.py::TestCachedThumbnail::test_renders_from_a_verified_cached_preview` |
+| 66 | rejects preview larger than its receipt | Error | Actual bytes exceed recorded size | Cached result rejected | Integration | ✅ `tests/integration/modules/search/test_visual_index.py::TestCachedThumbnail::test_rejects_preview_larger_than_its_receipt` |
+| 67 | rejects missing cached object | Error | Cache object removed | Cached result rejected | Integration | ✅ `tests/integration/modules/search/test_visual_index.py::TestCachedThumbnail::test_rejects_missing_cached_object` |
+| 68 | refuses a budget the parent should never send | Error | Source/candidate/line/address-space budgets exceed caps | Isolated worker exits with invalid-budget status | Unit | ✅ `tests/unit/modules/media/test_stl_preview_worker.py::TestMain::test_refuses_a_budget_the_parent_should_never_send` |
+| 69 | renders a binary STL with a manifest beside it | Happy | Actual isolated native worker | Complete image/manifest; subprocess execution instrumented | Unit | ✅ `tests/unit/modules/media/test_stl_preview_worker.py::TestMain::test_renders_a_binary_stl_with_a_manifest_beside_it` |
 
-The browser paths above are relative to the repository root. Verification so far:
-corrected both-database benchmark suite **31 passed**; additional comparison/CLI
-suite **21 passed**; database authentication/isolation and container startup suite
-**18 passed**. Native instrumentation executed **289 binding, 401 core mesh,
-12 application tests and 11 Rust tests**. The combined owned-source report measures
-**96.19% lines, 95.44% regions and 92.98% functions**; branch coverage is unmeasured.
-The corrected fallback, test grouping and both-database import E2Es also pass (**4 tests**).
-Rust formatting and Clippy pass. These establish functional behavior, not speedups.
+| 70 | successor completes after a rejected stale callback | Error | Expired worker attempts completion before its successor; no intervening status refresh | Durable job reaches the successor's completed state | Integration | ✅ `tests/integration/modules/ingestion/test_commands.py::TestCommandsContract::test_successor_completes_after_a_rejected_stale_callback` |
+| 71 | recovers a terminated worker without losing jobs | Error | Real process killed after claim; production lease; SQLite/PostgreSQL | Same job recovers once, stale callback rejected, successor completes | E2E | ✅ `tests/e2e/test_queue_benchmark.py::TestQueueBenchmark::test_recovers_a_terminated_worker_without_losing_jobs` |
+| 72 | refuses unbounded work before creating output | Error | Invalid count or idle duration | No benchmark output/database created | Repo | ✅ `tests/repo/test_bench_queue.py::TestQueueBenchmarkBounds::test_refuses_unbounded_work_before_creating_output` |
+| 73 | refuses internal execution without a disposable owner | Error | Internal CLI used without supervisor | Refuses before loading application database | Repo | ✅ `tests/repo/test_bench_queue.py::TestQueueBenchmarkOwnership::test_refuses_internal_execution_without_a_disposable_owner` |
+| 74 | refuses a changed database | Error | Supervisor receipt belongs to another database | Refuses application database access | Repo | ✅ `tests/repo/test_bench_queue.py::TestQueueBenchmarkOwnership::test_refuses_a_changed_database` |
+| 75 | distinguishes latency from resource regressions | Edge | Repeatable 6% latency/CPU changes | Flags latency at 5%; CPU remains below 10% threshold | Repo | ✅ `tests/repo/test_bench_matrix.py::TestQueueComparison::test_distinguishes_latency_from_resource_regressions` |
+| 76 | rejects non-equivalent queue outcomes | Error | Missing/different completion count | No timing comparison accepted | Repo | ✅ `tests/repo/test_bench_matrix.py::TestQueueComparison::test_rejects_non_equivalent_queue_outcomes` |
 
-Initial draft PR #177 CI exposed an omitted renderer coverage package, an obsolete
-MinIO registry, outdated browser contracts/selectors, a distinct-recipe fallback
-expectation, and native test-index cleanup leakage. The first exact-diff security
-review also found that benchmark PostgreSQL inherited a known test password; a
-real authentication regression test now verifies session-specific credentials.
-Corrections require fresh CI and a new exact-diff review before merge. The local
-fast run stopped after its known fallback failure (**1 failed, 4,831 passed**).
-Broader gates and controlled benchmark comparisons remain incomplete.
+### Verification and remaining gates
 
-The MinIO registry correction intentionally retains the historical migration
-source release and digest; it is not a dependency upgrade. Application execution
-ownership, schema and installed release versions remain unchanged in M00.
+No stage changes compute language, coordinator, or durable-state owner in M00.
+No queue candidate is selected, no migration milestone is merged, and no controlled
+performance comparison is accepted. The browser paths in the matrix are relative
+to the repository root; other test paths are relative to `backend/`.
 
-CI revision `927d81a5` passed frontend lint/format/types/coverage/mock Playwright,
-native source coverage, both architecture native jobs, all eight image builds/scans,
-the core matrix, SQLite async extra, extension and MinIO migration. Its main real
-browser lane passed 86 tests with one external-root test skipped for missing fixture
-configuration; upload/onboarding follow-on suites passed two tests each. The skip
-is not acceptance evidence. CI now supplies an explicit disposable external root.
-Two later browser tests exposed the collapsed migration form: local corrected
-Nextcloud editing and full Vault migration/restart tests both pass. Backend CI and
-new-revision CI remain required. M00 protocol v4 adds exact parsed metadata and
-per-tool requirements to comparison acceptance (24 comparison/CLI tests and two
-real-database import tests pass). No performance comparison is accepted yet.
+The completed CI run at `ed0a8a4d` passes **13,061 non-service tests** and
+**294 service-backed tests**, then fails the 90% module floor for `mesh_render`
+(79.17%), `stl_fallback` (88.06%), `stl_preview_worker` (88.18%), `thumbnail`
+(87.27%), `thumbnail_generations` (89.51%), and `visual_index` (89.24%). Focused
+coverage audit: **180 focused tests pass**. Their combined line/branch coverage is
+100% for `mesh_render`, 93.23% for `stl_fallback`, 95.45% for `stl_preview_worker`,
+and 91.14% for `visual_index`. The focused subset measures 81.21% for `thumbnail`
+and 87.47% for `thumbnail_generations`; coverage from the rest of the suite must
+still be measured by the complete current-revision gate.
+No floor is lowered or new debt entry added. CI now retains its JSON/HTML report
+when the coverage gate fails.
 
-The external-root browser contract now passes locally with the explicit fixture;
-it distinguishes missing proof from legacy unbound state. Updated benchmark
-code passes Ruff and Pyright.
+The baseline fixes preserve real contracts: file-backed WAL replaces an unsuitable
+shared-memory concurrency fixture; browser fixtures wait for upload/tag completion
+and target the intended Trash item; empty search uses a unique single token rather
+than a phrase whose words match existing Models. Model lifecycle/tag selection pass
+three browser repetitions each with retries disabled (**6 passed**); empty-search
+checks pass three repetitions and an explicit empty-state assertion. The full real
+browser lane requires a new revision because its prior result was **86 passed,
+one failed**. One image scanner also requires a fresh result after its vulnerability
+database download was interrupted by a network reset; that scan was incomplete.
 
-The Python 3.13 compatibility job at `927d81a5` was cancelled by its 30-minute
-job budget after reaching 80% of the non-service suite without a reported failure.
-Its job budget is now 60 minutes; individual test timeouts remain unchanged.
-The cancelled run is incomplete evidence and the full lane must pass.
+Both Python 3.13 CI runs expose an anonymous CTE identity collision in sparse
+retrieval. A bounded minimal SQLAlchemy reproduction fails on its sixth construction:
+`prefix_with()` clones an anonymous CTE, discards its original object, and a later
+CTE reuses that object's identity-based name. Scoped named CTEs preserve query
+composition. **41 focused Python 3.13 tests pass** with the locked full dependency
+set. The first isolated environment lacked the optional tokenizer and was stopped;
+it supplies no acceptance evidence. Configured Pyright and benchmark-script
+Pyright pass. Direct Pyright on the two search SQL modules reports 31 SQLModel
+column-typing errors outside the configured include list; no suppression or scope
+exclusion was added. No production dependency was upgraded for this fix.
 
-Release benchmark containers can use a host-managed isolated PostgreSQL service
-without Docker socket access or host networking. The optional maintenance URL is
-read from a named environment variable, accepts only the `postgres` database and
-no query overrides, and still creates a generated database per run. Isolation
-checks pass (19 tests); comparison/CLI and the managed-service import E2E pass
-(27 tests), with Ruff and Pyright clean. The initial socket-mounted command was
-rejected before execution; it supplies no benchmark evidence.
+Benchmark protocol v5 records exact preview source/type/state/failure-reason
+outcomes as well as parsed metadata, material requirements, geometry, source bytes,
+and preview pixels. Only an identified G-code source's `no_embedded_thumbnail`
+outcome is not applicable; unexpected failures remain fatal. The Artifact cache
+is isolated under each temporary vault. The initial regression failed before the
+fix; **61 focused tests pass**, including real SQLite/PostgreSQL and existing
+Orca/BGCODE imports. The two additional stale-source cases and three strengthened Prusa-preview
+checks pass. All seven corpus cases pass on SQLite and PostgreSQL (14 total). These local runs are functional checks, not controlled
+performance comparisons.
 
-Completed CI at `927d81a5` passed 13,020 non-service tests (including both search
-independence cases) and 291 service-backed tests. One PostgreSQL passage test
-incorrectly expected synchronous publication after the branch adopted durable
-projection requests. It now processes the committed request before testing
-rollback, and asserts that rollback leaves neither changed passage content nor
-a surviving request. The focused real-PostgreSQL test passes. The complete
-coverage gate still requires a new successful CI run; partial suite counts do not
-satisfy it.
+Native instrumentation executed **289 binding, 401 core mesh, 12 application and
+11 Rust tests**. The owned-source report measures **96.19% lines, 95.44% regions,
+92.98% functions**; native branch coverage is unmeasured. Rust formatting/Clippy
+passed. Python's separate subprocess coverage configuration now uses coverage.py's
+supported `patch = subprocess`: the same 19 isolated worker tests measure 86.36%
+instead of 31.82%, including the actual image-publication path. This configuration
+does not establish Rust coverage. See [coverage.py process guidance](https://coverage.readthedocs.io/en/latest/subprocess.html).
 
+The first controlled CI comparison built committed release images and the corpus,
+then stopped before measurements because the unprivileged instrumentation layer
+could not inspect copied core source directories. The benchmark-only layer now
+makes those source directories readable. The existing MinIO migration-source
+release remains pinned to its historical digest; its official registry mirror
+changed, not its version. Disposable PostgreSQL supports an isolated maintenance
+service without Docker socket access or host networking, and uses private generated
+credentials. Exact-diff security review through `ed0a8a4d` completed with no findings;
+it does not cover subsequent edits. A current review, controlled comparisons,
+queue-recovery baseline evidence, and all current CI gates remain open.
 
-CI at `ff6b34b0` passes Python 3.13, critical capabilities, frontend, native
-coverage/builds, core, extension, SQLite async, remote migration and image scans.
-Its required backend and real-browser jobs fail: warmup's shared-memory fixture
-cannot reproduce production WAL concurrency; the Model lifecycle has an ambiguous
-Trash selector and unsafe upload navigation; the tag fixture submits before its
-asynchronous selection completes. Corrections are under verification. The
-controlled comparison runner, corpus, and corrected WAL warmup have 32 passing
-focused tests; actual
-controlled measurements remain pending. Exact-diff security review through
-`ff6b34b0` reports no findings and does not cover subsequent uncommitted changes.
+The new queue diagnostic found a baseline correctness failure: after a rejected
+stale completion, a tentative terminal state remained cached and suppressed the
+valid successor's update. A regression reproduces the pending durable row before
+the fix. Failed persistence now invalidates that cache entry so the next update
+reloads authoritative state. **33 focused command/registry tests pass**. The
+SQLite/PostgreSQL process-kill cases both pass. The probe uses the real 120-second lease, bounded
+polling, and private migrated databases. It measures repository execution, not
+payload processing or queue-library qualification. The original revision's failed
+recovery sequence cannot supply an accepted timing comparison; no speedup is
+claimed for it. Queue comparison/CI contract checks: **38 tests pass**.
 
-
-The local fast lane completes with **8,562 passed** (22 warnings); it started
-before the new matrix tests were collected, which pass in the separate focused
-32-test run. Model lifecycle and tag selection pass three real-browser repetitions
-each with retries disabled (**6 passed**). Current full CI remains required.
-
-The first controlled CI run builds both committed releases and the corpus but
-fails before measuring: the unprivileged harness cannot traverse source directories
-copied into the release with non-executable directory modes. The instrumentation
-layer now grants read/traversal access to packaged sources; it changes no source
-bytes, installed dependencies or production image. Complete unprivileged container
-imports then pass on real SQLite and the private PostgreSQL service with both
-source Artifacts retained. These are functional checks, not accepted timing pairs.
-The complete matrix must be rerun.
-
-CI at `ed0a8a4d` passes 86 real-browser tests, including the lifecycle/tag fixes,
-but exposes a bad empty-search fixture: FTS matches any token, so `no-such-model`
-can match `model`. Its correction uses an absent single token with an explicitly
-populated library. The frontend image scan also needs rerunning after Grype's
-vulnerability database download receives a network reset; no scan bypass is used.
-
-
-The corrected unmatched-keyword browser fixture passes three repetitions with
-retries disabled. Its final assertion also checks the rendered "No models found"
-state against a populated library and passes a focused rerun. This verifies a
-completed empty response rather than mistaking a loading skeleton for one.
+The first successful recovery run exposed a benchmark transport error: application
+logs shared stdout with the JSON result. Measurement startup now redirects those
+logs to the supervisor log, preserving one structured result on stdout. Both real
+database E2Es assert the persisted JSON as well as recovered job outcomes.

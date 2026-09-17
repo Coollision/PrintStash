@@ -231,6 +231,7 @@ def run(
                 "VAULT_SETUP_MODE": "trusted_network",
                 "VAULT_SETUP_ALLOWED_HOSTS": "127.0.0.1",
                 "VAULT_IMPORT_WORKERS": str(workers),
+                "VAULT_ARTIFACT_CACHE_ROOT": str(root / "artifact-cache"),
             }
         )
         for key, folder in (
@@ -423,6 +424,12 @@ def run(
                                 "SELECT status_json FROM background_jobs WHERE kind = 'artifact'",
                             )
                         ]
+                        preview_outcomes = read_rows(
+                            db,
+                            "SELECT t.source_sha256, f.file_type, t.state, t.failure_reason "
+                            "FROM thumbnail_generations t JOIN files f ON f.id = t.file_id "
+                            "ORDER BY t.source_sha256, f.file_type, t.state, t.failure_reason",
+                        )
                         previews = read_rows(
                             db,
                             "SELECT source_sha256, output_sha256, state FROM thumbnail_generations "
@@ -541,7 +548,7 @@ def run(
                         "processing_seconds": finished - accepted,
                         "total_seconds": finished - start,
                         "saved_seconds": saved - start,
-                        "measurement_protocol": "job-and-library-poll-250ms-v4",
+                        "measurement_protocol": "job-and-library-poll-250ms-v5",
                         "failed_enrichment": failed_enrichment,
                         "navigation_samples": navigation_samples,
                         "navigation_latency": latency_summary(navigation_samples),
@@ -558,6 +565,7 @@ def run(
                         "samples": samples,
                         "artifact_jobs": artifact_jobs,
                         "preview_catalog": previews,
+                        "preview_outcome_catalog": preview_outcomes,
                         "preview_pixel_catalog": sorted(pixel_catalog),
                         "preview_bytes": preview_bytes,
                         "thumbnail_states_at_import_completion": dict(
@@ -595,6 +603,14 @@ def run(
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait()
+
+
+def compare_preview_outcomes(before: dict, after: dict) -> None:
+    key = "preview_outcome_catalog"
+    if key not in before or key not in after:
+        raise SystemExit("Comparison refused: preview outcome evidence is missing")
+    if before[key] != json.loads(json.dumps(after[key])):
+        raise SystemExit("Comparison refused: preview outcomes differ")
 
 
 def compare_previews(before: dict, after: dict, *, mode: str = "bytes") -> None:
@@ -674,7 +690,7 @@ def main() -> None:
             raise SystemExit(
                 "Comparison refused: reference import did not complete successfully"
             )
-        if before.get("measurement_protocol") != "job-and-library-poll-250ms-v4":
+        if before.get("measurement_protocol") != "job-and-library-poll-250ms-v5":
             raise SystemExit("Comparison refused: measurement protocols differ")
         if before.get("similarity_on_ingest", False) != args.similarity:
             raise SystemExit("Comparison refused: similarity settings differ")
@@ -718,6 +734,7 @@ def main() -> None:
             raise SystemExit(
                 "Comparison refused: imported geometry measurements differ; inspect both reports"
             )
+        compare_preview_outcomes(before, report)
         compare_previews(before, report, mode=args.preview_comparison)
         if args.similarity:
             compare_fingerprints(before, report)

@@ -36,6 +36,48 @@ class TestEnrichmentInspection:
         with database.connect() as db:
             assert pending_enrichment(db) == (1, {"artifact_analysis_generations": 1})
 
+    @pytest.mark.parametrize(
+        ("file_type", "reason", "source_hash", "failures"),
+        [
+            ("GCODE", "no_embedded_thumbnail", "source", 0),
+            ("GCODE", "no_embedded_thumbnail", "replaced-source", 1),
+            ("STL", "no_embedded_thumbnail", "source", 1),
+            ("GCODE", "enrichment_failed", "source", 1),
+            ("GCODE", None, "source", 1),
+        ],
+        ids=[
+            "gcode-without-preview",
+            "stale-source",
+            "mesh-failure",
+            "unexpected-failure",
+            "unknown-failure",
+        ],
+    )
+    def test_classifies_missing_embedded_preview(
+        self, database, file_type, reason, source_hash, failures
+    ):
+        with database.begin() as db:
+            db.exec_driver_sql(
+                "CREATE TABLE files (id INTEGER, file_type TEXT, sha256 TEXT)"
+            )
+            db.exec_driver_sql(
+                "CREATE TABLE thumbnail_generations "
+                "(file_id INTEGER, source_sha256 TEXT, state TEXT, processing_policy TEXT, failure_reason TEXT)"
+            )
+            db.execute(
+                text("INSERT INTO files VALUES (1, :type, :hash)"),
+                {"type": file_type, "hash": source_hash},
+            )
+            db.execute(
+                text(
+                    "INSERT INTO thumbnail_generations VALUES (1, 'source', 'failed', 'background', :reason)"
+                ),
+                {"reason": reason},
+            )
+
+        with database.connect() as db:
+            assert pending_enrichment(db) == (0, {"thumbnail_generations": failures})
+
     def test_includes_similarity_only_when_requested(self, database):
         with database.begin() as db:
             db.exec_driver_sql("CREATE TABLE similarity_runs (state TEXT)")
