@@ -74,7 +74,7 @@ class TestControlledImportBenchmark:
 
 
 class TestQueueQualification:
-    def test_runs_locked_contracts_and_publishes_native_coverage(self):
+    def test_runs_locked_contracts_with_native_coverage(self):
         job = _ci_workflow()["jobs"]["queue-qualification"]
         commands = "\n".join(step.get("run", "") for step in job["steps"])
 
@@ -93,7 +93,7 @@ class TestQueueQualification:
         assert artifact["if"] == "always()"
         assert artifact["with"]["if-no-files-found"] == "error"
 
-    def test_benchmark_is_opt_in_serial_and_preserves_each_profile(self):
+    def test_benchmark_preserves_serial_profiles(self):
         workflow = _workflow("queue-qualification-benchmark.yml")
         job = workflow["jobs"]["compare"]
 

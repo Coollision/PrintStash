@@ -29,18 +29,19 @@ class TestQueueBenchmarkBounds:
         assert not output.parent.exists()
 
 
-def test_measures_real_sqlite_database_bytes(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'queue.sqlite'}")
-    before = database_bytes(engine)
-    with engine.begin() as connection:
-        connection.exec_driver_sql("CREATE TABLE queue_probe (value TEXT NOT NULL)")
-        connection.exec_driver_sql(
-            "INSERT INTO queue_probe (value) VALUES (?)", ("measured",)
-        )
+class TestQueueDatabaseMeasurement:
+    def test_measures_real_sqlite_database_bytes(self, tmp_path):
+        engine = create_engine(f"sqlite:///{tmp_path / 'queue.sqlite'}")
+        before = database_bytes(engine)
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE queue_probe (value TEXT NOT NULL)")
+            connection.exec_driver_sql(
+                "INSERT INTO queue_probe (value) VALUES (?)", ("measured",)
+            )
 
-    assert before >= 0
-    assert database_bytes(engine) > before
-    engine.dispose()
+        assert before >= 0
+        assert database_bytes(engine) > before
+        engine.dispose()
 
 
 class TestQueueBenchmarkOwnership:

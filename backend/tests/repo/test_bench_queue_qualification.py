@@ -57,61 +57,78 @@ def candidate_report(**overrides) -> dict:
     return report
 
 
-def test_normalizes_current_queue_metrics():
-    report = current_report()
+class TestQueueQualificationComparison:
+    def test_normalizes_current_queue_metrics(self):
+        report = current_report()
 
-    metrics = current_metrics(report)
+        metrics = current_metrics(report)
 
-    assert metrics["throughput_jobs_per_second"] == 2
-    assert metrics["enqueue_p95_ms"] == 2
-    assert metrics["start_p95_ms"] == 5
-    assert metrics["acknowledgment_p95_ms"] == 4
-
-
-def test_normalizes_candidate_metrics_only_after_correctness_counts_match():
-    report = candidate_report()
-
-    assert candidate_metrics(report)["throughput_jobs_per_second"] == 4
-    report["completed_count"] = 7
-    with pytest.raises(ValueError, match="counts or duplicate executions"):
-        candidate_metrics(report)
+        assert metrics["throughput_jobs_per_second"] == 2
+        assert metrics["enqueue_p95_ms"] == 2
+        assert metrics["start_p95_ms"] == 5
+        assert metrics["acknowledgment_p95_ms"] == 4
 
 
-@pytest.mark.parametrize(
-    ("cpus", "memory_gib", "pairs", "jobs"),
-    [(1, 2, 7, 128), (2, 3, 7, 128), (2, 2, 8, 128), (4, 4, 7, 0)],
-)
-def test_rejects_non_protocol_profiles(cpus, memory_gib, pairs, jobs):
-    with pytest.raises(ValueError, match="controlled queue profile"):
-        validate_profile(cpus=cpus, memory_gib=memory_gib, pairs=pairs, jobs=jobs)
+    def test_rejects_candidate_count_mismatch(self):
+        report = candidate_report()
+
+        assert candidate_metrics(report)["throughput_jobs_per_second"] == 4
+        report["completed_count"] = 7
+        with pytest.raises(ValueError, match="counts or duplicate executions"):
+            candidate_metrics(report)
 
 
-def test_rotates_three_implementations_without_changing_pair_identity():
-    assert execution_order(0) == ("current", "apalis", "azums")
-    assert execution_order(1) == ("apalis", "azums", "current")
-    assert execution_order(2) == ("azums", "current", "apalis")
-    assert execution_order(3) == execution_order(0)
-
-
-def test_summary_applies_metric_direction_to_review_thresholds():
-    current = current_report()
-    candidate = candidate_report()
-
-    report = summarize(
-        {
-            "current": [current] * 7,
-            "apalis": [candidate] * 7,
-            "azums": [candidate] * 7,
-        }
+    @pytest.mark.parametrize(
+        ("cpus", "memory_gib", "pairs", "jobs"),
+        [(1, 2, 7, 128), (2, 3, 7, 128), (2, 2, 8, 128), (4, 4, 7, 0)],
     )
+    def test_rejects_non_protocol_profiles(self, cpus, memory_gib, pairs, jobs):
+        with pytest.raises(ValueError, match="controlled queue profile"):
+            validate_profile(cpus=cpus, memory_gib=memory_gib, pairs=pairs, jobs=jobs)
 
-    throughput = report["metrics"]["throughput_jobs_per_second"]
-    assert report["noisy"] is False
-    assert throughput["direction"] == "higher_is_better"
-    assert throughput["implementations_over_threshold"] == []
 
-    noisy = summarize(
-        {
+    def test_preserves_pair_identity_during_rotation(self):
+        assert execution_order(0) == ("current", "apalis", "azums")
+        assert execution_order(1) == ("apalis", "azums", "current")
+        assert execution_order(2) == ("azums", "current", "apalis")
+        assert execution_order(3) == execution_order(0)
+
+
+    def test_summary_applies_metric_direction_to_review_thresholds(self):
+        current = current_report()
+        candidate = candidate_report()
+
+        report = summarize(
+            {
+                "current": [current] * 7,
+                "apalis": [candidate] * 7,
+                "azums": [candidate] * 7,
+            }
+        )
+
+        throughput = report["metrics"]["throughput_jobs_per_second"]
+        assert report["noisy"] is False
+        assert throughput["direction"] == "higher_is_better"
+        assert throughput["implementations_over_threshold"] == []
+
+        noisy = summarize(
+            {
+                "current": [current] * 7,
+                "apalis": [
+                    {**candidate, "throughput_jobs_per_second": value}
+                    for value in (1, 8, 1, 8, 1, 8, 1)
+                ],
+                "azums": [candidate] * 7,
+            }
+        )
+        assert noisy["noisy"] is True
+
+
+    def test_noisy_comparison_uses_seven_or_fourteen_pairs(self):
+        current = current_report()
+        candidate = candidate_report()
+
+        runs = {
             "current": [current] * 7,
             "apalis": [
                 {**candidate, "throughput_jobs_per_second": value}
@@ -119,39 +136,23 @@ def test_summary_applies_metric_direction_to_review_thresholds():
             ],
             "azums": [candidate] * 7,
         }
-    )
-    assert noisy["noisy"] is True
+        boundary = summarize_completed_boundary(runs)
+        assert boundary is not None
+        assert boundary["pairs"] == 7
+        assert boundary["noisy"] is True
 
+        for values, report in (
+            (runs["current"], current),
+            (runs["apalis"], candidate),
+            (runs["azums"], candidate),
+        ):
+            values.append(report)
+        assert summarize_completed_boundary(runs) is None
 
-def test_noisy_comparison_summarizes_only_at_seven_and_fourteen_pairs():
-    current = current_report()
-    candidate = candidate_report()
-
-    runs = {
-        "current": [current] * 7,
-        "apalis": [
-            {**candidate, "throughput_jobs_per_second": value}
-            for value in (1, 8, 1, 8, 1, 8, 1)
-        ],
-        "azums": [candidate] * 7,
-    }
-    boundary = summarize_completed_boundary(runs)
-    assert boundary is not None
-    assert boundary["pairs"] == 7
-    assert boundary["noisy"] is True
-
-    for values, report in (
-        (runs["current"], current),
-        (runs["apalis"], candidate),
-        (runs["azums"], candidate),
-    ):
-        values.append(report)
-    assert summarize_completed_boundary(runs) is None
-
-    for values, report in (
-        (runs["current"], current),
-        (runs["apalis"], candidate),
-        (runs["azums"], candidate),
-    ):
-        values.extend([report] * 6)
-    assert summarize_completed_boundary(runs)["pairs"] == 14
+        for values, report in (
+            (runs["current"], current),
+            (runs["apalis"], candidate),
+            (runs["azums"], candidate),
+        ):
+            values.extend([report] * 6)
+        assert summarize_completed_boundary(runs)["pairs"] == 14
