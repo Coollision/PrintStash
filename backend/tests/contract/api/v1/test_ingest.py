@@ -23,6 +23,7 @@ covered separately in ``test_import_resolvers.py``.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import threading
 import uuid
@@ -894,16 +895,19 @@ class TestDownloadToStaging:
         }
 
         # Only the SSRF guard's IP classification is relaxed; the rest of the
-        # download (real httpx stream against the pinned peer, header parsing,
+        # download (real Rust stream against the pinned peer, header parsing,
         # disk write) runs for real.
         with patch.object(url_safety, "is_public_ip", return_value=True):
-            staged, filename = await importer.download_to_staging(f"{base}/download")
+            staged, filename, digest = await importer.download_to_staging_with_receipt(
+                f"{base}/download"
+            )
 
         assert filename == "3dbenchy.stl"
         assert staged.exists()
         assert staged.read_bytes() == stl_bytes
         assert staged.parent == settings.incoming_dir
         assert staged.suffix == ".stl"
+        assert digest == hashlib.sha256(stl_bytes).hexdigest()
 
     @pytest.mark.asyncio
     async def test_download_to_staging_follows_redirect(
@@ -940,6 +944,36 @@ class TestDownloadToStaging:
 
         assert str(exc.value) == "download_too_large"
         # The oversized partial download was cleaned up, not left in staging.
+        assert set(settings.incoming_dir.iterdir()) == incoming_before
+
+    @pytest.mark.asyncio
+    async def test_download_to_staging_rejects_redirect_without_location(
+        self, tmp_path: Path, http_server: tuple[str, dict[str, dict]]
+    ) -> None:
+        use_local_storage(tmp_path)
+        base, routes = http_server
+        routes["/start"] = {"status": 302}
+
+        with patch.object(url_safety, "is_public_ip", return_value=True):
+            with pytest.raises(importer.ImportError_) as exc:
+                await importer.download_to_staging(f"{base}/start")
+
+        assert str(exc.value) == "url_redirect_without_location"
+
+    @pytest.mark.asyncio
+    async def test_download_to_staging_rejects_http_failure_without_partial_file(
+        self, tmp_path: Path, http_server: tuple[str, dict[str, dict]]
+    ) -> None:
+        use_local_storage(tmp_path)
+        base, routes = http_server
+        routes["/missing.stl"] = {"status": 404, "body": b"not a model"}
+        incoming_before = set(settings.incoming_dir.iterdir())
+
+        with patch.object(url_safety, "is_public_ip", return_value=True):
+            with pytest.raises(importer.ImportError_) as exc:
+                await importer.download_to_staging(f"{base}/missing.stl")
+
+        assert str(exc.value) == "download_http_status"
         assert set(settings.incoming_dir.iterdir()) == incoming_before
 
     @pytest.mark.asyncio

@@ -81,6 +81,16 @@ SIMILARITY_METRICS = {
     "container_peak_bytes": ("container_memory_peak_bytes",),
 }
 
+ACQUISITION_METRICS = {
+    "complete_s": ("total_seconds",),
+    "small_p95_ms": ("download_latency", "small", "p95_ms"),
+    "large_p95_ms": ("download_latency", "large", "p95_ms"),
+    "redirect_p95_ms": ("download_latency", "redirect", "p95_ms"),
+    "app_cpu_s": ("process_cpu_seconds",),
+    "app_rss_bytes": ("process_peak_rss_bytes",),
+    "container_peak_bytes": ("container_memory_peak_bytes",),
+}
+
 
 def compare_queue_contracts(before: dict, after: dict) -> None:
     if any(
@@ -145,12 +155,13 @@ def comparison(
     archive: bool = False,
     mesh: bool = False,
     similarity: bool = False,
+    acquisition: bool = False,
 ) -> dict:
     if not before or len(before) != len(after):
         raise ValueError("Comparison requires complete paired runs")
     result = {}
     noisy = False
-    if sum((queue, gcode, archive, mesh, similarity)) > 1:
+    if sum((queue, gcode, archive, mesh, similarity, acquisition)) > 1:
         raise ValueError("A benchmark case cannot use two measurement protocols")
     contract = (
         QUEUE_METRICS
@@ -163,6 +174,8 @@ def comparison(
         if mesh
         else SIMILARITY_METRICS
         if similarity
+        else ACQUISITION_METRICS
+        if acquisition
         else METRICS
     )
     for name, path in contract.items():
@@ -225,6 +238,7 @@ def harness_context(work: Path, head: str) -> Path:
         "bench_gcode.py",
         "bench_mesh_preview.py",
         "bench_similarity.py",
+        "bench_acquisition.py",
         "bench_queue.py",
     ):
         (context / name).write_text(
@@ -255,7 +269,7 @@ def harness_context(work: Path, head: str) -> Path:
         # non-traversable directories. Hashing those sources needs read access
         # in this instrumentation layer, without running the benchmark as root.
         "RUN chmod -R a+rX /app/packages\n"
-        "COPY bench_import.py bench_database.py bench_archive.py bench_gcode.py bench_mesh_preview.py bench_similarity.py bench_queue.py /app/scripts/\n"
+        "COPY bench_import.py bench_database.py bench_archive.py bench_gcode.py bench_mesh_preview.py bench_similarity.py bench_acquisition.py bench_queue.py /app/scripts/\n"
         "COPY gcode-fixtures /app/scripts/gcode-fixtures\n"
         f"LABEL org.printstash.benchmark.harness-revision={head}\n"
     )
@@ -343,6 +357,7 @@ class Profile:
         archive_benchmark = bool(archive.get("archive_benchmark"))
         mesh = bool(archive.get("mesh_benchmark"))
         similarity_benchmark = bool(archive.get("similarity_benchmark"))
+        acquisition_benchmark = bool(archive.get("acquisition_benchmark"))
         cli = [
             "/app/.venv/bin/python",
             (
@@ -354,6 +369,8 @@ class Profile:
                 if mesh
                 else "/app/scripts/bench_similarity.py"
                 if similarity_benchmark
+                else "/app/scripts/bench_acquisition.py"
+                if acquisition_benchmark
                 else "/app/scripts/bench_gcode.py"
                 if gcode
                 else "/app/scripts/bench_import.py"
@@ -366,6 +383,7 @@ class Profile:
             and not archive_benchmark
             and not mesh
             and not similarity_benchmark
+            and not acquisition_benchmark
         ):
             cli += [f"/evidence/corpus/{archive['name']}"]
         cli += ["--database", dialect, "--output", f"/evidence/runs/{name}.json"]
@@ -378,6 +396,7 @@ class Profile:
             and not archive_benchmark
             and not mesh
             and not similarity_benchmark
+            and not acquisition_benchmark
         ):
             cli += ["--timeout", "1800"]
         if (
@@ -386,6 +405,7 @@ class Profile:
             and not archive_benchmark
             and not mesh
             and not similarity_benchmark
+            and not acquisition_benchmark
         ):
             cli += ["--postgres-admin-url-env", "PRINTSTASH_BENCH_POSTGRES"]
         if archive["similarity"]:
@@ -563,6 +583,7 @@ def measure_case(
     archive_benchmark = bool(archive.get("archive_benchmark"))
     mesh = bool(archive.get("mesh_benchmark"))
     similarity_benchmark = bool(archive.get("similarity_benchmark"))
+    acquisition_benchmark = bool(archive.get("acquisition_benchmark"))
     for pair in range(14):
         if (
             pair == 7
@@ -574,6 +595,7 @@ def measure_case(
                 archive=archive_benchmark,
                 mesh=mesh,
                 similarity=similarity_benchmark,
+                acquisition=acquisition_benchmark,
             )["noisy"]
         ):
             break
@@ -599,6 +621,7 @@ def measure_case(
             archive=archive_benchmark,
             mesh=mesh,
             similarity=similarity_benchmark,
+            acquisition=acquisition_benchmark,
         ),
     }
 
@@ -713,6 +736,11 @@ def main() -> None:
                                     {
                                         "name": "geometric-similarity",
                                         "similarity_benchmark": True,
+                                        "similarity": False,
+                                    },
+                                    {
+                                        "name": "url-acquisition",
+                                        "acquisition_benchmark": True,
                                         "similarity": False,
                                     },
                                     {

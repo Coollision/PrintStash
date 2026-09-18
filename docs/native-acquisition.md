@@ -1,0 +1,115 @@
+# Native URL acquisition
+
+PrintStash streams direct HTTP and HTTPS imports in Rust while preserving the
+existing Python import coordinator, SSRF policy, capacity admission, durable
+checkpoints, and public API. This is the URL-acquisition increment of M13;
+provider-specific discovery/downloads, inbox scanning, and portable/external
+sources have not changed ownership yet.
+
+## Ownership
+
+| Concern | Owner |
+| --- | --- |
+| One-hop HTTP request, DNS pin use, redirect refusal, byte ceiling, streaming SHA-256, temporary spool, flush/sync, and create-only publication | Rust native extension |
+| URL normalization, DNS resolution, public-address policy, and validation of every redirect hop | Framework-independent `printstash-core` policy called by the Python coordinator |
+| Redirect coordination, filename selection, capacity admission, and error translation | Python ingestion coordinator |
+| Download checkpoints and staging identity receipts | Python `AcquisitionJournal` and `StagingLease` transactions |
+| Durable job, Artifact publication, storage generation, and credentials | Existing Python application owners |
+
+Rust receives a normalized URL and its already validated `(host, IP, port)`
+tuple. It rejects mismatches and configures Reqwest to dial that IP while
+retaining the URL host for the HTTP `Host` header, TLS SNI, and certificate
+verification. Automatic redirects and proxies are disabled. Python resolves
+and validates the next URL before each redirect request, so a redirect cannot
+bypass the existing address policy.
+
+The async binding uses `pyo3-async-runtimes`' process-wide Tokio runtime. The
+response body remains in a Rust-owned `NamedTempFile`; Python receives only
+status/header metadata, selects the established safe suffix, and asks the
+native result to publish into the same directory with `persist_noclobber`.
+Dropping, cancelling, rejecting, or failing before publication removes the
+temporary file. Python never copies or rereads the response body, and the
+streaming digest becomes the durable staging receipt.
+
+## Dependencies
+
+The direct dependencies were rechecked against their stable releases on
+2026-09-18 and are exact in `backend/rust/Cargo.toml` and `Cargo.lock`:
+
+| Dependency | Version | Purpose and selected features | License |
+| --- | ---: | --- | --- |
+| Reqwest | 0.13.5 | Established async HTTP client; redirects, proxy discovery, compression, and default TLS features disabled | MIT OR Apache-2.0 |
+| Tokio | 1.53.1 | Native async file, socket, timer, and runtime support; no custom executor | MIT |
+| pyo3-async-runtimes | 0.29.0 | Asyncio/Tokio bridge matching PyO3 0.29 | Apache-2.0 |
+| Rustls | 0.23.45 | TLS 1.2/1.3 with the Ring provider; no OpenSSL or AWS-LC build dependency | Apache-2.0 OR ISC OR MIT |
+| sha2 | 0.11.0 | Streaming SHA-256 receipt | MIT OR Apache-2.0 |
+| tempfile | 3.27.0 | OS-backed temporary ownership and create-only persistence | MIT OR Apache-2.0 |
+
+All support the repository Rust 1.88 toolchain. Reqwest requires Rust 1.85 and
+`pyo3-async-runtimes` requires Rust 1.83. The application retains only policy
+that these libraries do not supply: public-address admission, redirect-by-
+redirect revalidation, capacity reservations, checkpoint fencing, safe display
+names, and stable application errors.
+
+## Preserved contracts
+
+- HTTP and HTTPS only; credentials in URLs remain rejected before network I/O.
+- Every DNS answer must pass the existing public-address policy. Rust connects
+  only to the selected validated address and refuses an inconsistent URL tuple.
+- Redirects are bounded by the existing setting, resolved relative to the
+  normalized response URL, and revalidated before the next request.
+- `Content-Encoding` is requested as `identity`; both declared and streamed
+  bytes are bounded by `max_upload_bytes` without unbounded buffering.
+- A successful body is flushed and synced before a create-only rename. Existing
+  destination bytes are never replaced, and failed/oversized bodies leave no
+  published or temporary staging file.
+- The existing `Content-Disposition` and final-URL filename behavior determines
+  the staging suffix and original filename.
+- The journal stores the native streaming digest with the existing path identity
+  receipt. Replay restores valid bytes without a second request and rejects a
+  replaced staging object.
+- No database, queue, HTTP response, command envelope, Artifact schema, storage
+  provider, or credential format changes.
+
+## Coverage matrix
+
+| # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | rejects an inconsistent pinned target | Error | URL host/port differs from validated tuple or URL contains credentials | Stable refusal before client creation | Rust | ✅ `rust/src/acquisition.rs::tests::{rejects_a_target_that_does_not_match_the_url,rejects_credentials_and_invalid_limits}` |
+| 2 | preserves create-only publication | Edge | Destination already contains bytes | Existing bytes remain intact; native publication fails | Rust | ✅ `rust/src/acquisition.rs::tests::create_only_publication_preserves_an_existing_destination` |
+| 3 | streams and hashes a real file | Happy | Loopback server, disposition filename, committed STL fixture | Exact bytes, suffix, filename, SHA-256, and staging parent | Contract | ✅ `tests/contract/api/v1/test_ingest.py::TestDownloadToStaging::test_download_to_staging_fetches_real_file` |
+| 4 | revalidates redirects | Edge | Relative redirect to final STL | Final name and bytes returned after a separate validated hop | Contract | ✅ `TestDownloadToStaging::test_download_to_staging_follows_redirect` |
+| 5 | rejects unsafe destinations | Error | Loopback target under the real SSRF policy | No request is admitted | Contract | ✅ `TestDownloadToStaging::test_download_to_staging_rejects_private_host` |
+| 6 | bounds and cleans failed downloads | Error | Oversized body, missing redirect location, or HTTP 404 | Stable error and no partial staging file | Contract | ✅ `TestDownloadToStaging::{test_download_to_staging_enforces_size_limit,test_download_to_staging_rejects_redirect_without_location,test_download_to_staging_rejects_http_failure_without_partial_file}` |
+| 7 | persists the streaming receipt | Happy/Replay | Native download result with digest, claimed durable command | Checkpoint and lease restore the exact staged object without hashing it again | Integration | ✅ `tests/integration/modules/ingestion/test_acquisition.py::TestAcquisitionContract::test_records_the_streaming_download_receipt_without_rereading` |
+| 8 | imports the native download | Happy | Real loopback download through `/ingest/url` | Completed job, Model source URL, STL Artifact and exact size | Contract | ✅ `tests/contract/api/v1/test_ingest.py::TestIngestUrl::test_ingest_url_imports_a_real_download` |
+| 9 | compares committed acquisition paths | Performance | Small, large, and redirected bodies | Exact filenames, sizes, hashes, request count, and transferred bytes match before timing | Repo | ✅ `tests/repo/test_bench_acquisition.py` |
+
+## Performance protocol
+
+Protocol `native-acquisition-v1` runs the public `download_to_staging` seam from
+the immediate parent and M00 baseline release images. A private loopback server
+serves a small STL, an 8 MiB 3MF payload, and a redirect to that payload. The
+quick correctness lane uses 256 KiB. Each measured run verifies filenames,
+sizes, SHA-256 digests, four requests per iteration, and exact transferred bytes.
+
+One warm-up precedes seven alternating pairs under 2 CPU/2 GiB and 4 CPU/4 GiB,
+extended to fourteen when noisy. The report records workload p50/p95/max,
+throughput, wall time, process CPU, sampled RSS, and container peak memory. The
+database label is retained because the full matrix runs under both application
+profiles; this isolated stage uses a disposable local capacity database and does
+not attribute PostgreSQL service cost to HTTP streaming. The standard 5%
+elapsed/latency and 10% CPU/memory review thresholds apply after correctness.
+
+## Delivery and remaining M13 scope
+
+There is no schema or stored-data migration. Rollback deploys the parent image;
+existing staging receipts and Artifacts remain readable. A missing or
+incompatible native extension fails clearly rather than selecting the former
+Python body streamer.
+
+Provider-specific acquisition, inbox/source enumeration, portable/external
+source adapters, and credential transport remain Python-owned. Connection reuse
+is intentionally limited to one validated hop because a shared client cannot
+silently retain host-to-IP mappings across a new DNS validation. Those remaining
+M13 paths need their own native contracts and evidence before M13 is complete.
