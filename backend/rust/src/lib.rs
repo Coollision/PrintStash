@@ -5,6 +5,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
+mod archive;
 mod components;
 mod gcode;
 mod geometry;
@@ -275,6 +276,10 @@ fn rasterize_phong<'py>(
 
 #[pymodule]
 fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(archive::inspect_archive, module)?)?;
+    module.add_function(wrap_pyfunction!(archive::safe_entry_name, module)?)?;
+    module.add_function(wrap_pyfunction!(archive::safe_subdir, module)?)?;
+    module.add_class::<archive::NativeArchive>()?;
     module.add_function(wrap_pyfunction!(gcode::parse_gcode_metadata, module)?)?;
     module.add_function(wrap_pyfunction!(gcode::parse_gcode_duration, module)?)?;
     module.add_function(wrap_pyfunction!(gcode::is_bgcode, module)?)?;
