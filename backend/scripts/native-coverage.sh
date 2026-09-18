@@ -36,11 +36,20 @@ python_bin="${PRINTSTASH_TEST_PYTHON:-$backend/.venv/bin/python}"
 "$python_bin" -m pytest -q --no-cov rust/tests
 # The app and autonomous core have distinct packages both named `tests`.
 # Run each in its own interpreter, preserving the same native profile sink.
-(cd packages/printstash-core && "$python_bin" -m pytest -q --no-cov tests/mesh)
+(cd packages/printstash-core && "$python_bin" -m pytest -q --no-cov tests/mesh tests/gcode)
 "$python_bin" -m pytest -q --no-cov tests/integration/modules/media/test_mesh_render.py \
-  tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh
+  tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh \
+  tests/unit/modules/media/test_bgcode.py
+cargo test --manifest-path rust/Cargo.toml --locked \
+  --package printstash-gcode-core --package printstash-libbgcode
 cargo test --manifest-path rust/render-core/Cargo.toml --locked
-report_args=(--manifest-path rust/Cargo.toml --package printstash-mesh-native --package printstash-render-core)
+report_args=(
+  --manifest-path rust/Cargo.toml
+  --package printstash-mesh-native
+  --package printstash-gcode-core
+  --package printstash-libbgcode
+  --package printstash-render-core
+)
 cargo llvm-cov report "${report_args[@]}" --json --output-path "$output/coverage.json"
 "$python_bin" - "$output/coverage.json" <<'PY'
 import json
@@ -48,7 +57,12 @@ import sys
 
 report = json.load(open(sys.argv[1]))
 files = [file for entry in report["data"] for file in entry["files"]]
-for source in ("/rust/src/", "/rust/render-core/src/"):
+for source in (
+    "/rust/src/",
+    "/rust/gcode-core/src/",
+    "/rust/libbgcode-sys/src/",
+    "/rust/render-core/src/",
+):
     measured = [file for file in files if source in file["filename"]]
     if not measured or not sum(file["summary"]["lines"]["covered"] for file in measured):
         raise SystemExit(f"Missing executed native coverage for {source}")

@@ -22,6 +22,16 @@ def _report(value):
     }
 
 
+def _gcode_report(value):
+    return {
+        "total_seconds": value,
+        "parse_latency": {"p95_ms": value},
+        "process_cpu_seconds": value,
+        "process_peak_rss_bytes": value,
+        "container_memory_peak_bytes": value,
+    }
+
+
 class TestPerformanceComparison:
     def test_flags_a_repeatable_regression(self):
         result = comparison([_report(10)] * 7, [_report(12)] * 7)
@@ -65,6 +75,25 @@ class TestPerformanceComparison:
             "container_memory_peak_bytes": 4096,
         }
         assert '"$@"' in container_measurement_script()
+
+    def test_compares_gcode_latency_and_resources(self):
+        result = comparison(
+            [_gcode_report(10)] * 7,
+            [_gcode_report(11)] * 7,
+            gcode=True,
+        )
+        assert set(result["metrics"]) == {
+            "complete_s",
+            "parse_p95_ms",
+            "app_cpu_s",
+            "app_rss_bytes",
+            "container_peak_bytes",
+        }
+        assert result["metrics"]["parse_p95_ms"]["pairs_above_threshold"] == 7
+
+    def test_refuses_a_case_with_two_measurement_protocols(self):
+        with pytest.raises(ValueError, match="both queue and G-code"):
+            comparison([_gcode_report(1)], [_gcode_report(1)], queue=True, gcode=True)
 
 
 class TestBenchmarkRevision:

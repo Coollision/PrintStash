@@ -48,6 +48,14 @@ QUEUE_METRICS = {
     "container_peak_bytes": ("container_memory_peak_bytes",),
 }
 
+GCODE_METRICS = {
+    "complete_s": ("total_seconds",),
+    "parse_p95_ms": ("parse_latency", "p95_ms"),
+    "app_cpu_s": ("process_cpu_seconds",),
+    "app_rss_bytes": ("process_peak_rss_bytes",),
+    "container_peak_bytes": ("container_memory_peak_bytes",),
+}
+
 
 def compare_queue_contracts(before: dict, after: dict) -> None:
     if any(
@@ -103,12 +111,21 @@ def metric(report: dict, path: tuple[str, ...]) -> float:
     return float(value)
 
 
-def comparison(before: list[dict], after: list[dict], *, queue: bool = False) -> dict:
+def comparison(
+    before: list[dict],
+    after: list[dict],
+    *,
+    queue: bool = False,
+    gcode: bool = False,
+) -> dict:
     if not before or len(before) != len(after):
         raise ValueError("Comparison requires complete paired runs")
     result = {}
     noisy = False
-    for name, path in (QUEUE_METRICS if queue else METRICS).items():
+    if queue and gcode:
+        raise ValueError("A benchmark case cannot be both queue and G-code")
+    contract = QUEUE_METRICS if queue else GCODE_METRICS if gcode else METRICS
+    for name, path in contract.items():
         left, right = (
             [metric(report, path) for report in side] for side in (before, after)
         )
@@ -161,9 +178,23 @@ def build(rev: str, tag: str, work: Path, evidence: Path) -> str:
 def harness_context(work: Path, head: str) -> Path:
     context = work / "harness"
     context.mkdir()
-    for name in ("bench_import.py", "bench_database.py", "bench_queue.py"):
+    for name in (
+        "bench_import.py",
+        "bench_database.py",
+        "bench_gcode.py",
+        "bench_queue.py",
+    ):
         (context / name).write_text(
             command(["git", "show", f"{head}:backend/scripts/{name}"]) + "\n"
+        )
+    fixtures = context / "gcode-fixtures"
+    fixtures.mkdir()
+    for name in ("sample.gcode", "bgcode/prusaslicer.bgcode"):
+        destination = fixtures / Path(name).name
+        destination.write_bytes(
+            subprocess.check_output(
+                ["git", "show", f"{head}:backend/tests/fixtures/{name}"], cwd=ROOT
+            )
         )
     lock = tomllib.loads(command(["git", "show", f"{head}:backend/uv.lock"]))
     package = next(item for item in lock["package"] if item["name"] == "psutil")
@@ -181,7 +212,8 @@ def harness_context(work: Path, head: str) -> Path:
         # non-traversable directories. Hashing those sources needs read access
         # in this instrumentation layer, without running the benchmark as root.
         "RUN chmod -R a+rX /app/packages\n"
-        "COPY bench_import.py bench_database.py bench_queue.py /app/scripts/\n"
+        "COPY bench_import.py bench_database.py bench_gcode.py bench_queue.py /app/scripts/\n"
+        "COPY gcode-fixtures /app/scripts/gcode-fixtures\n"
         f"LABEL org.printstash.benchmark.harness-revision={head}\n"
     )
     return context
@@ -264,20 +296,29 @@ class Profile:
         if db:
             args += ["--env-file", str(env_file)]
         queue = bool(archive.get("queue"))
+        gcode = bool(archive.get("gcode"))
         cli = [
             "/app/.venv/bin/python",
-            "/app/scripts/bench_queue.py" if queue else "/app/scripts/bench_import.py",
+            (
+                "/app/scripts/bench_queue.py"
+                if queue
+                else "/app/scripts/bench_gcode.py"
+                if gcode
+                else "/app/scripts/bench_import.py"
+            ),
         ]
-        if not queue:
+        if gcode:
+            cli += ["--fixtures", "/app/scripts/gcode-fixtures"]
+        elif not queue:
             cli += [f"/evidence/corpus/{archive['name']}"]
         cli += ["--database", dialect, "--output", f"/evidence/runs/{name}.json"]
         if queue:
             cli += ["--jobs", "128", "--idle-seconds", "10"]
             if not archive.get("queue_recovery"):
                 cli.append("--steady-state")
-        else:
+        elif not gcode:
             cli += ["--timeout", "1800"]
-        if db:
+        if db and not gcode:
             cli += ["--postgres-admin-url-env", "PRINTSTASH_BENCH_POSTGRES"]
         if archive["similarity"]:
             cli += ["--similarity"]
@@ -450,10 +491,13 @@ def measure_case(
             reference = profile.evidence / "runs" / f"{name}.json"
     reports = {"base": [], "head": []}
     queue = bool(archive.get("queue"))
+    gcode = bool(archive.get("gcode"))
     for pair in range(14):
         if (
             pair == 7
-            and not comparison(reports["base"], reports["head"], queue=queue)["noisy"]
+            and not comparison(
+                reports["base"], reports["head"], queue=queue, gcode=gcode
+            )["noisy"]
         ):
             break
         order = (("base", ancestor), ("head", head))
@@ -470,7 +514,7 @@ def measure_case(
         "database": profile.dialect,
         "total_cpus": profile.cpus,
         "total_memory_gib": profile.cpus,
-        **comparison(reports["base"], reports["head"], queue=queue),
+        **comparison(reports["base"], reports["head"], queue=queue, gcode=gcode),
     }
 
 
@@ -567,10 +611,15 @@ def main() -> None:
                             for ancestor in dict.fromkeys((original, base)):
                                 cases = corpus["archives"] + [
                                     {
+                                        "name": "gcode-parse",
+                                        "gcode": True,
+                                        "similarity": False,
+                                    },
+                                    {
                                         "name": "queue-steady",
                                         "queue": True,
                                         "similarity": False,
-                                    }
+                                    },
                                 ]
                                 for archive in cases:
                                     summaries.append(

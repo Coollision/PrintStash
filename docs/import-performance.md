@@ -160,7 +160,9 @@ optimization was measured on the small fixture above.
 
 The required `printstash-mesh-native` extension moves triangle coverage and
 depth selection into Rust. It also parses 3MF mesh coordinates and face indices
-from a stream, reads binary STL geometry, and measures mesh bounds and volume.
+from a stream, reads binary STL geometry, measures mesh bounds and volume, and
+hosts the native G-code metadata binding. The independently reusable G-code core
+and its libbgcode adapter are described in [Native G-code metadata engine](native-gcode.md).
 Rust owns camera selection, normals, lighting and image encoding. Stored and DEFLATE model parts inside 3MF packages are read and
 decompressed in Rust using `zip`, `flate2` and `zlib-rs`. The XML parser reads
 64 KiB buffers without Python callbacks and retains size limits and CRC checks.
@@ -170,8 +172,10 @@ Outer ZIP extraction, STEP tessellation, storage and job coordination remain
 in the existing pipeline.
 
 Both Docker variants build and install the required Rust extension. Source
-checkouts need Rust and Cargo before `uv sync --extra dev`; CI and Docker use
-Rust 1.98.1. The toolchain is needed to build the wheel, not to run it.
+checkouts need Rust, Cargo, and a C++17 compiler before `uv sync --extra dev`;
+CI and Docker use Rust 1.98.1 and GCC. The build toolchains are needed to build
+the wheel, not to run it; the resulting Linux wheel links the C++ runtime and
+statically includes its pinned zlib/Heatshrink codec code.
 
 Backend rendering, thumbnail encoding, import admission and the import executor
 require Rust. The renderer, loader and geometry engine selectors have been

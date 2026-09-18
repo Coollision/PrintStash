@@ -2,13 +2,15 @@ ARG PRINTSTASH_VARIANT=full
 
 FROM rust:1.98.1-slim-bookworm@sha256:ebd900bae66fd508b466cef82d64a83a5fb34682e4c8b2797a42908bddc95a57 AS mesh-native-builder
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-venv \
+ && apt-get install -y --no-install-recommends g++ python3 python3-venv \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -m venv /tmp/maturin \
  && /tmp/maturin/bin/pip install --no-cache-dir 'maturin==1.15.0'
 WORKDIR /src/mesh-native
 COPY rust/Cargo.toml rust/Cargo.lock rust/pyproject.toml ./
 COPY rust/src ./src
+COPY rust/gcode-core ./gcode-core
+COPY rust/libbgcode-sys ./libbgcode-sys
 COPY rust/render-core/Cargo.toml ./render-core/Cargo.toml
 COPY rust/render-core/src ./render-core/src
 RUN /tmp/maturin/bin/maturin build --release --locked --out /wheels

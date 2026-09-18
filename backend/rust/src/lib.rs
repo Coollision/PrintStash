@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 mod components;
+mod gcode;
 mod geometry;
 mod image_processing;
 mod mesh_prepare;
@@ -274,6 +275,12 @@ fn rasterize_phong<'py>(
 
 #[pymodule]
 fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(gcode::parse_gcode_metadata, module)?)?;
+    module.add_function(wrap_pyfunction!(gcode::parse_gcode_duration, module)?)?;
+    module.add_function(wrap_pyfunction!(gcode::is_bgcode, module)?)?;
+    module.add_function(wrap_pyfunction!(gcode::is_valid_bgcode, module)?)?;
+    module.add_function(wrap_pyfunction!(gcode::bgcode_metadata_text, module)?)?;
+    module.add_function(wrap_pyfunction!(gcode::gcode_thumbnails, module)?)?;
     module.add_function(wrap_pyfunction!(render_job::render_preview, module)?)?;
     module.add_function(wrap_pyfunction!(render_job::render_views, module)?)?;
     module.add_function(wrap_pyfunction!(render_job::render_stl_fallback, module)?)?;
