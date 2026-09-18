@@ -102,6 +102,8 @@ describe("LibrarySearch", () => {
     searchBox();
     await user.type(screen.getByRole("searchbox"), "small boat{Enter}");
     expect(screen.getByTestId("location")).toHaveTextContent("/search?q=small+boat");
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+    expect(screen.getByTestId("location")).toHaveTextContent("/search?q=small+boat");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
   it("shows AI only when the active capability is usable", async () => {
