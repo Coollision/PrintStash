@@ -69,7 +69,7 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M11 | step | **Blocked:** evaluated Rust libraries do not preserve the existing helper contract within the 2 GiB profile; see `native-step.md` |
 | M12 | similarity | Native voxelization, descriptor kernels, alignment, exact proof, and verification decisions; see `native-similarity.md` for ownership, quality/work evidence, and comparison protocol |
 | M13 | acquisition | **Complete for the revised boundary:** Rust `printstash-acquisition-core` owns all server-side HTTP(S) import bodies, bounds, hashing, and create-only staging. Python retains provider credential/metadata coordination, inbox enumeration, checkpoints, and deferred `StorageBackend` materialization; see `native-acquisition.md` |
-| M14 | native-enrichment | Native inference/tokenization with optional installation and asset validation; canaries/cold/warm/batching/memory |
+| M14 | native-enrichment | **Blocked:** the maintained Rust ORT wrapper remains prerelease and trails the selected stable runtime API; see `native-enrichment.md` |
 | M15 | native-stage-closeout | Remove Python compute implementations replaced by M08–M14; audit every entry point and package; retain the documented Python coordinator/queue/publication/storage owners |
 
 M03–M07 are outside the active delivery sequence. M08–M14 continue through the
