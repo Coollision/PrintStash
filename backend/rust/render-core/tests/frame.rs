@@ -70,8 +70,12 @@ fn prepared_mesh_renders_without_python() {
         .unwrap()
         .rgba()
         .unwrap();
-    assert!(pixels.chunks_exact(4).any(|p| p == [20, 40, 60, 255]));
-    assert!(pixels.chunks_exact(4).any(|p| p[3] == 0));
+    assert!(pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|p| p == &[20, 40, 60, 255]));
+    assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 0));
 }
 
 #[test]

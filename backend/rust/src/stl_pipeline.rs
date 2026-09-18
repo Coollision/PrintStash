@@ -100,7 +100,7 @@ impl NativeStlSource {
                 .read_exact(&mut raw[..count * 50])
                 .map_err(io_error)?;
             triangles.clear();
-            for record in raw[..count * 50].chunks_exact(50) {
+            for record in raw[..count * 50].as_chunks::<50>().0 {
                 let tri = points(record);
                 for point in tri {
                     for axis in 0..3 {
@@ -311,7 +311,7 @@ impl NativeStlSource {
         })?;
         let bytes = PyBytes::new_with(py, depth.len() * 4, |output| {
             py.detach(|| {
-                for (target, value) in output.chunks_exact_mut(4).zip(depth) {
+                for (target, value) in output.as_chunks_mut::<4>().0.iter_mut().zip(depth) {
                     target.copy_from_slice(&(value as f32).to_ne_bytes());
                 }
             });

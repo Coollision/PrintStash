@@ -171,7 +171,7 @@ in the existing pipeline.
 
 Both Docker variants build and install the required Rust extension. Source
 checkouts need Rust and Cargo before `uv sync --extra dev`; CI and Docker use
-Rust 1.91. The toolchain is needed to build the wheel, not to run it.
+Rust 1.98.1. The toolchain is needed to build the wheel, not to run it.
 
 Backend rendering, thumbnail encoding, import admission and the import executor
 require Rust. The renderer, loader and geometry engine selectors have been

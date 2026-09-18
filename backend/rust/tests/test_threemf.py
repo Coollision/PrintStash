@@ -28,6 +28,13 @@ class TestParse3mfXml:
             np.frombuffer(meshes[0][1], dtype=np.int64), [2, 0, 1]
         )
 
+    def test_normalizes_xml_1_0_character_references_in_geometry(self):
+        encoded = XML.replace(b'x="1.25"', b'x="&#49;.25"')
+
+        assert native.parse_3mf_xml(io.BytesIO(encoded)) == native.parse_3mf_xml(
+            io.BytesIO(XML)
+        )
+
     def test_removes_geometry_from_metadata_xml(self):
         shell, _ = native.parse_3mf_xml(io.BytesIO(XML))
         root = ET.fromstring(shell)

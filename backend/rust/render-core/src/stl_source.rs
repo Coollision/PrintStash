@@ -115,7 +115,7 @@ impl NativeStlSource {
                 .read_exact(&mut raw[..count * 50])
                 .map_err(io_error)?;
             triangles.clear();
-            for record in raw[..count * 50].chunks_exact(50) {
+            for record in raw[..count * 50].as_chunks::<50>().0 {
                 let tri = points(record);
                 for point in tri {
                     for axis in 0..3 {

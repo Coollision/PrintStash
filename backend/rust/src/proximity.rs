@@ -52,7 +52,7 @@ impl SurfaceTree {
             return Err("invalid_proximity_surface");
         }
         let mut triangles = Vec::with_capacity(bytes.len() / 72);
-        for chunk in bytes.chunks_exact(72) {
+        for chunk in bytes.as_chunks::<72>().0 {
             let triangle = [
                 point(&chunk[..24]),
                 point(&chunk[24..48]),
@@ -148,7 +148,7 @@ impl SurfaceTree {
         }
         let mut output = Vec::with_capacity(bytes.len() / 24 * 32);
         let mut work = 0usize;
-        for chunk in bytes.chunks_exact(24) {
+        for chunk in bytes.as_chunks::<24>().0 {
             let p = point(chunk);
             if !p.iter().all(|v| v.is_finite()) {
                 return Err("invalid_proximity_points");

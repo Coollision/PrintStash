@@ -26,7 +26,7 @@ outside this crate. STEP conversion still uses OpenCASCADE through Cascadio.
 The browser continues to use Three.js.
 
 Backend source installs build the required PyO3 extension during `uv sync`.
-Install Rust and Cargo first; the native CI and container build use Rust 1.91.
+Install Rust and Cargo first; the native CI and container build use Rust 1.98.1.
 Container runtime stages install the wheel produced by the native build stage.
 The standalone crate itself does not require Python.
 

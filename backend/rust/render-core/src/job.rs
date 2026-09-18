@@ -67,7 +67,7 @@ impl Profile {
         let fill = normalize([0.55, -0.25, 0.55]);
         let half = normalize([key[0], key[1], key[2] + 1.0]);
         let mut result = [0.0; 31];
-        for (target, source) in result[..21].chunks_exact_mut(3).zip([
+        for (target, source) in result[..21].as_chunks_mut::<3>().0.iter_mut().zip([
             key,
             fill,
             half,

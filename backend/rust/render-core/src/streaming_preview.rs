@@ -46,7 +46,7 @@ pub(crate) fn draw_depth(
     remaining: usize,
 ) -> Result<usize, &'static str> {
     let mut faces = Vec::with_capacity(triangles.len() / 36);
-    for bytes in triangles.chunks_exact(36) {
+    for bytes in triangles.as_chunks::<36>().0 {
         let p: [f32; 9] = std::array::from_fn(|i| {
             f32::from_ne_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
         });

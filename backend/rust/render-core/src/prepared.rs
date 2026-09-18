@@ -63,7 +63,9 @@ impl PreparedPreview {
         }
         let mut mesh = (|| -> Result<Self, &'static str> {
             let mut points: Vec<[f32; 3]> = vertices
-                .chunks_exact(12)
+                .as_chunks::<12>()
+                .0
+                .iter()
                 .map(|p| {
                     std::array::from_fn(|a| {
                         f32::from_ne_bytes(p[a * 4..a * 4 + 4].try_into().unwrap())
@@ -74,7 +76,7 @@ impl PreparedPreview {
                 return Err("non-finite vertex");
             }
             let mut indices = Vec::with_capacity(faces.len() / 24);
-            for face in faces.chunks_exact(24) {
+            for face in faces.as_chunks::<24>().0 {
                 let raw: [u64; 3] = std::array::from_fn(|a| {
                     u64::from_ne_bytes(face[a * 8..a * 8 + 8].try_into().unwrap())
                 });

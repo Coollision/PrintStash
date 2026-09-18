@@ -60,7 +60,12 @@ fn visibility(
     if depth.len() != pixels * 8 {
         return Err("invalid depth buffer length");
     }
-    let mut closest: Vec<f64> = depth.chunks_exact(8).map(|v| number(v, 8)).collect();
+    let mut closest: Vec<f64> = depth
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|v| number(v, 8))
+        .collect();
     let mut winners = vec![u32::MAX; pixels];
     let (visible, candidates) = visibility_into(
         triangles,
@@ -190,7 +195,7 @@ fn rasterize<'py>(
     // Native-endian records: pixel u64, source face u64, depth f64.
     let output = PyBytes::new_with(py, result.visible * 24, |bytes| {
         py.detach(|| {
-            let mut records = bytes.chunks_exact_mut(24);
+            let mut records = bytes.as_chunks_mut::<24>().0.iter_mut();
             for (pixel, &face) in result.winners.iter().enumerate() {
                 if face != u32::MAX {
                     let record = records.next().unwrap();
@@ -235,7 +240,7 @@ fn rasterize_phong<'py>(
         .map_err(PyValueError::new_err)?;
     let output = PyBytes::new_with(py, result.visible * 15, |bytes| {
         py.detach(|| {
-            let mut outputs = bytes.chunks_exact_mut(15);
+            let mut outputs = bytes.as_chunks_mut::<15>().0.iter_mut();
             for (pixel, &face) in result.winners.iter().enumerate() {
                 if face == u32::MAX {
                     continue;

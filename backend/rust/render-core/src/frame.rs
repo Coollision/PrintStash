@@ -140,7 +140,7 @@ impl Frame {
         if output.len() != self.depth.len() * 4 {
             return Err("invalid output buffer");
         }
-        for (pixel, rgba) in output.chunks_exact_mut(4).enumerate() {
+        for (pixel, rgba) in output.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             rgba[..3].copy_from_slice(&self.rgb[pixel * 3..pixel * 3 + 3]);
             rgba[3] = if self.depth[pixel] < f64::INFINITY {
                 255

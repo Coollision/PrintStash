@@ -35,13 +35,15 @@ pub fn load_binary_stl<'py>(
     let vertices = PyBytes::new_with(py, faces * 72, |output| {
         py.detach(|| -> PyResult<()> {
             let mut record = [0_u8; 50];
-            for triangle in output.chunks_exact_mut(72) {
+            for triangle in output.as_chunks_mut::<72>().0 {
                 reader.read_exact(&mut record)?;
                 for (source, target) in record[12..48]
-                    .chunks_exact(4)
-                    .zip(triangle.chunks_exact_mut(8))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(triangle.as_chunks_mut::<8>().0.iter_mut())
                 {
-                    let coordinate = f32::from_le_bytes(source.try_into().unwrap()) as f64;
+                    let coordinate = f32::from_le_bytes(*source) as f64;
                     if !coordinate.is_finite() {
                         return Err(PyValueError::new_err("STL coordinates must be finite"));
                     }
@@ -53,7 +55,7 @@ pub fn load_binary_stl<'py>(
     })?;
     let indices = PyBytes::new_with(py, faces * 24, |output| {
         py.detach(|| {
-            for (index, target) in output.chunks_exact_mut(8).enumerate() {
+            for (index, target) in output.as_chunks_mut::<8>().0.iter_mut().enumerate() {
                 target.copy_from_slice(&(index as u64).to_ne_bytes());
             }
         });

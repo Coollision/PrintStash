@@ -5,7 +5,7 @@ set -euo pipefail
 
 backend=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$backend"
-export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.91.0}"
+export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.98.1}"
 export CARGO_TARGET_DIR="$backend/rust/target/native-coverage"
 output="$backend/rust/target/native-coverage-report"
 mkdir -p "$output"

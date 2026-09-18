@@ -17,7 +17,12 @@ pub(crate) fn shade_into(
 ) -> Result<(), &'static str> {
     let round = |v: f64| if itemsize == 4 { (v as f32) as f64 } else { v };
     let faces = triangles.len() / (9 * itemsize);
-    for (record, rgb) in records.chunks_exact(24).zip(output.chunks_exact_mut(3)) {
+    for (record, rgb) in records
+        .as_chunks::<24>()
+        .0
+        .iter()
+        .zip(output.as_chunks_mut::<3>().0.iter_mut())
+    {
         let pixel = u64::from_ne_bytes(record[..8].try_into().unwrap());
         let face = u64::from_ne_bytes(record[8..16].try_into().unwrap());
         if pixel >= pixels as u64 || face >= faces as u64 {

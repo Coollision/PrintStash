@@ -31,7 +31,7 @@ fn resize_rgba(
 ) -> Result<Vec<u8>, String> {
     let mut current = rgba.to_vec();
     if alpha {
-        for p in current.chunks_exact_mut(4) {
+        for p in current.as_chunks_mut::<4>().0 {
             let a = p[3] as u32;
             for c in &mut p[..3] {
                 let t = *c as u32 * a + 128;
@@ -61,14 +61,10 @@ fn resize_rgba(
         current = destination.into_vec();
     }
     if alpha {
-        for p in current.chunks_exact_mut(4) {
+        for p in current.as_chunks_mut::<4>().0 {
             let a = p[3] as u32;
             for c in &mut p[..3] {
-                *c = if a == 0 {
-                    0
-                } else {
-                    (255 * (*c as u32) / a).min(255) as u8
-                };
+                *c = (255 * (*c as u32)).checked_div(a).unwrap_or(0).min(255) as u8;
             }
         }
     }
@@ -112,7 +108,7 @@ pub fn process_image(
             )?
         };
         if vignette {
-            for (i, p) in data.chunks_exact_mut(4).enumerate() {
+            for (i, p) in data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 let x = if width == 1 {
                     -1.0
                 } else {
@@ -131,7 +127,9 @@ pub fn process_image(
         }
         if format == "RGB" {
             return Ok(data
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .flat_map(|p| {
                     let alpha = p[3] as u32;
                     std::array::from_fn::<_, 3, _>(|a| {
@@ -180,8 +178,10 @@ pub fn shade_depth(
     }
     let data = {
         let z: Vec<f32> = depth
-            .chunks_exact(4)
-            .map(|p| f32::from_ne_bytes(p.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| f32::from_ne_bytes(*p))
             .collect();
         let w = width as usize;
         let h = height as usize;
