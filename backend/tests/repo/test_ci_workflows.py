@@ -144,7 +144,6 @@ class TestQueueQualification:
         assert set(triggers) == {"pull_request", "workflow_dispatch"}
         assert triggers["pull_request"]["paths"] == [
             "backend/qualification/queue/**",
-            "backend/scripts/bench_matrix.py",
             "backend/scripts/bench_queue.py",
             "backend/scripts/bench_queue_qualification.py",
             "backend/scripts/bench_queue_qualification_matrix.py",
