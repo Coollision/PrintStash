@@ -2,7 +2,13 @@
 
 import pytest
 
-from scripts.bench_matrix import compare_queue_contracts, comparison, revision
+from scripts.bench_matrix import (
+    compare_queue_contracts,
+    comparison,
+    container_measurement_script,
+    container_resources,
+    revision,
+)
 
 
 def _report(value):
@@ -48,6 +54,17 @@ class TestPerformanceComparison:
         del report["navigation_latency"]
         with pytest.raises(ValueError, match="Missing benchmark metric"):
             comparison([_report(10)], [report])
+
+    def test_reads_container_cgroup_evidence(self, tmp_path):
+        output = tmp_path / "run.json"
+        output.with_suffix(".cpu-usec").write_text("1250000\n")
+        output.with_suffix(".memory-peak").write_text("4096\n")
+
+        assert container_resources(output) == {
+            "container_cpu_seconds": 1.25,
+            "container_memory_peak_bytes": 4096,
+        }
+        assert '"$@"' in container_measurement_script()
 
 
 class TestBenchmarkRevision:

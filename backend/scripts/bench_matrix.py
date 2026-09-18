@@ -206,6 +206,25 @@ def database_counters(container: str) -> dict:
     }
 
 
+def container_measurement_script() -> str:
+    """Record cgroup totals after an argv-safe container command finishes."""
+    return (
+        '"$@"; result=$?; '
+        "awk '/^usage_usec / {print $2}' /sys/fs/cgroup/cpu.stat > \"$BENCH_CPU\"; "
+        'cat /sys/fs/cgroup/memory.peak > "$BENCH_MEMORY_PEAK"; exit "$result"'
+    )
+
+
+def container_resources(output: Path) -> dict[str, float | int]:
+    return {
+        "container_cpu_seconds": int(output.with_suffix(".cpu-usec").read_text())
+        / 1_000_000,
+        "container_memory_peak_bytes": int(
+            output.with_suffix(".memory-peak").read_text()
+        ),
+    }
+
+
 @dataclass(frozen=True)
 class Profile:
     """One total system budget and the isolated service used by its measurements."""
@@ -252,11 +271,12 @@ class Profile:
         if not queue:
             cli += [f"/evidence/corpus/{archive['name']}"]
         cli += ["--database", dialect, "--output", f"/evidence/runs/{name}.json"]
-        cli += (
-            ["--jobs", "128", "--idle-seconds", "10", "--steady-state"]
-            if queue
-            else ["--timeout", "1800"]
-        )
+        if queue:
+            cli += ["--jobs", "128", "--idle-seconds", "10"]
+            if not archive.get("queue_recovery"):
+                cli.append("--steady-state")
+        else:
+            cli += ["--timeout", "1800"]
         if db:
             cli += ["--postgres-admin-url-env", "PRINTSTASH_BENCH_POSTGRES"]
         if archive["similarity"]:
@@ -264,17 +284,16 @@ class Profile:
         if reference and not queue:
             cli += ["--compare", f"/evidence/runs/{reference.name}"]
         # Arguments are positional, not interpolated into shell source.
-        script = '"$@"; result=$?; cat /sys/fs/cgroup/memory.peak > "$BENCH_MEMORY_PEAK"; exit "$result"'
+        script = container_measurement_script()
         args += ["--env", f"BENCH_MEMORY_PEAK=/evidence/runs/{name}.memory-peak"]
+        args += ["--env", f"BENCH_CPU=/evidence/runs/{name}.cpu-usec"]
         args += ["--entrypoint", "/bin/sh", image, "-c", script, "benchmark", *cli]
         previous = database_counters(db) if db else None
         command(args, log=output.with_suffix(".log"))
         report = json.loads(output.read_text())
         if queue and reference:
             compare_queue_contracts(json.loads(reference.read_text()), report)
-        report["container_memory_peak_bytes"] = int(
-            output.with_suffix(".memory-peak").read_text()
-        )
+        report.update(container_resources(output))
         if db and previous:
             current = database_counters(db)
             report["database_resources"] = {

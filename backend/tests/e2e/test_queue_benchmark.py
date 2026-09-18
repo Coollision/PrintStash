@@ -24,6 +24,8 @@ class TestQueueBenchmark:
         assert report["terminated_worker_exit_code"] == -signal.SIGKILL
         assert report["recovery_seconds"] > 0
         assert report["claim"]["count"] == 3
+        assert report["enqueue_to_start"]["count"] == 3
+        assert report["database_growth_bytes"] > 0
         assert json.loads(output.read_text()) == report
 
     @pytest.mark.parametrize(
@@ -44,3 +46,5 @@ class TestQueueBenchmark:
         assert "recovery_seconds" not in report
         assert "stale_completion_rejected" not in report
         assert report["claim"]["count"] == 3
+        assert report["enqueue_to_start"]["count"] == 3
+        assert report["database_growth_bytes"] > 0
