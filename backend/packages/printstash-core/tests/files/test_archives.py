@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -78,6 +79,23 @@ def _inspect(path: Path, **overrides: int) -> list:
 
 
 class TestInspectArchive:
+    def test_preserves_unrelated_native_errors(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from printstash_core.files import archives
+
+        def reject(*_args, **_kwargs):
+            raise ValueError("native_contract_error")
+
+        monkeypatch.setattr(
+            archives,
+            "kernel",
+            lambda: SimpleNamespace(inspect_archive=reject),
+        )
+
+        with pytest.raises(ValueError, match="native_contract_error"):
+            _inspect(tmp_path / "unused.zip")
+
     def test_lists_a_supported_model_file_with_its_type(self, tmp_path: Path) -> None:
         path = _archive(tmp_path / "bundle.zip", {"parts/a.stl": b"a"})
 
@@ -393,6 +411,47 @@ class TestInspectArchiveLimits:
 
 
 class TestExtractSelectedFailures:
+    def test_removes_prior_outputs_when_native_extraction_fails(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from printstash_core.files import archives
+
+        class FailingArchive:
+            def __init__(self, _path: Path) -> None:
+                pass
+
+            def selected_entries(self, *_args):
+                return [(0, ".stl", "first.stl"), (1, ".stl", "second.stl")]
+
+            def extract_to(
+                self, index: int, destination: Path, _max_entry_bytes: int
+            ) -> None:
+                if index == 1:
+                    raise ValueError("archive_extract_failed")
+                destination.write_bytes(b"first")
+
+            def close(self) -> None:
+                pass
+
+        monkeypatch.setattr(
+            archives,
+            "kernel",
+            lambda: SimpleNamespace(NativeArchive=FailingArchive),
+        )
+        staging = tmp_path / "staging"
+        staging.mkdir()
+
+        with pytest.raises(ArchivePolicyError, match="archive_extract_failed"):
+            extract_selected(
+                tmp_path / "unused.zip",
+                ["first.stl", "second.stl"],
+                staging_dir=staging,
+                max_entry_bytes=100,
+                importable_suffixes={".stl"},
+            )
+
+        assert list(staging.iterdir()) == []
+
     def test_removes_everything_it_staged_when_one_entry_is_refused(
         self, tmp_path: Path
     ) -> None:

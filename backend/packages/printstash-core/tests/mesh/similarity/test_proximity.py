@@ -1,5 +1,7 @@
 """Surface distances distinguish face interiors, edges and vertices within bounded work."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -9,36 +11,27 @@ from printstash_core.mesh.similarity.geometry import prepare_surface
 from printstash_core.mesh.similarity.proximity import SurfaceProximity
 
 
-@pytest.fixture(params=[False, True], ids=["python", "auto"])
-def use_native(request):
-    return request.param
-
-
 class TestSurfaceProximity:
-    def test_projects_onto_triangle_features(self, use_native):
+    def test_projects_onto_triangle_features(self):
         surface = prepare_surface(
             np.array([[0.0, 0, 0], [3, 0, 0], [0, 3, 0]]), np.array([[0, 1, 2]])
         )
         points = np.array([[1.0, 1, 2], [2, 2, 0], [-1, -1, 0]]) - surface.centroid
-        distances, closest = SurfaceProximity(surface, native=use_native).closest(
-            points
-        )
+        distances, closest = SurfaceProximity(surface).closest(points)
         np.testing.assert_allclose(distances, [2, np.sqrt(0.5), np.sqrt(2)])
         np.testing.assert_allclose(
             closest + surface.centroid, [[1, 1, 0], [1.5, 1.5, 0], [0, 0, 0]]
         )
 
-    def test_prunes_subdivided_surfaces(self, tetra, subdivide, use_native):
+    def test_prunes_subdivided_surfaces(self, tetra, subdivide):
         surface = prepare_surface(*subdivide(*tetra, levels=4))
         points = surface.vertices[:100]
-        distances, closest = SurfaceProximity(surface, native=use_native).closest(
-            points
-        )
+        distances, closest = SurfaceProximity(surface).closest(points)
         np.testing.assert_allclose(distances, 0, atol=1e-12)
         np.testing.assert_allclose(closest, points, atol=1e-12)
 
-    def test_stops_when_work_budget_is_exhausted(self, tetra, use_native):
-        proximity = SurfaceProximity(prepare_surface(*tetra), native=use_native)
+    def test_stops_when_work_budget_is_exhausted(self, tetra):
+        proximity = SurfaceProximity(prepare_surface(*tetra))
         with pytest.raises(GeometryError, match="proximity_work_limit"):
             proximity.closest(np.zeros((2, 3)), max_work=1)
 
@@ -51,30 +44,28 @@ class TestSurfaceProximity:
             np.full((1, 3), np.nan),
         ],
     )
-    def test_rejects_invalid_points(self, tetra, points, use_native):
+    def test_rejects_invalid_points(self, tetra, points):
         with pytest.raises(GeometryError, match="invalid_proximity_points"):
-            SurfaceProximity(prepare_surface(*tetra), native=use_native).closest(points)
+            SurfaceProximity(prepare_surface(*tetra)).closest(points)
 
     @pytest.mark.parametrize("budget", [0, True, 32_000_001])
-    def test_rejects_invalid_budget(self, tetra, budget, use_native):
+    def test_rejects_invalid_budget(self, tetra, budget):
         with pytest.raises(GeometryError, match="invalid_proximity_budget"):
-            SurfaceProximity(prepare_surface(*tetra), native=use_native).closest(
+            SurfaceProximity(prepare_surface(*tetra)).closest(
                 np.zeros((1, 3)), max_work=budget
             )
 
     @pytest.mark.parametrize("extension", [None, object()], ids=["absent", "older"])
-    def test_retains_python_without_native_kernel(self, tetra, monkeypatch, extension):
+    def test_fails_clearly_without_native_kernel(self, tetra, monkeypatch, extension):
         from printstash_core.mesh import native_rasterizer
 
         monkeypatch.setattr(native_rasterizer, "kernel", lambda: extension)
-        surface = prepare_surface(*tetra)
-        distances, closest = SurfaceProximity(surface).closest(surface.vertices)
-        np.testing.assert_allclose(distances, 0, atol=1e-12)
-        np.testing.assert_allclose(closest, surface.vertices, atol=1e-12)
+        with pytest.raises(GeometryError, match="native_similarity_unavailable"):
+            SurfaceProximity(prepare_surface(*tetra))
 
-    def test_aligns_against_the_owned_surface(self, tetra, use_native):
+    def test_aligns_against_the_owned_surface(self, tetra):
         surface = prepare_surface(*tetra)
-        proximity = SurfaceProximity(surface, native=use_native)
+        proximity = SurfaceProximity(surface)
         diagonal = float(np.linalg.norm(np.ptp(surface.vertices, axis=0)))
 
         error, rotation, offset, convergence = proximity.align(
@@ -86,14 +77,34 @@ class TestSurfaceProximity:
         np.testing.assert_allclose(rotation, np.eye(3), atol=1e-12)
         np.testing.assert_allclose(offset, 0, atol=1e-12)
 
-    def test_retains_geometry_after_caller_mutation(self, tetra, use_native):
+    def test_retains_geometry_after_caller_mutation(self, tetra):
         surface = prepare_surface(*tetra)
         points = surface.vertices.copy()
-        proximity = SurfaceProximity(surface, native=use_native)
+        proximity = SurfaceProximity(surface)
         surface.vertices[:] = 1000
         distances, closest = proximity.closest(points)
         np.testing.assert_allclose(distances, 0, atol=1e-12)
         np.testing.assert_allclose(closest, points, atol=1e-12)
+
+    def test_translates_native_alignment_rejection(self, tetra, monkeypatch):
+        from printstash_core.mesh import native_rasterizer
+
+        class RejectingTree:
+            def __init__(self, _triangles: bytes) -> None:
+                pass
+
+            def align(self, *_args):
+                raise ValueError("invalid_alignment")
+
+        monkeypatch.setattr(
+            native_rasterizer,
+            "kernel",
+            lambda: SimpleNamespace(SurfaceTree=RejectingTree),
+        )
+        proximity = SurfaceProximity(prepare_surface(*tetra))
+
+        with pytest.raises(GeometryError, match="invalid_alignment"):
+            proximity.align(np.zeros((1, 3)), np.eye(3), 1.0)
 
 
 if hasattr(kernel(), "SurfaceTree"):
@@ -105,17 +116,6 @@ if hasattr(kernel(), "SurfaceTree"):
             with pytest.raises(GeometryError, match="invalid_proximity_surface"):
                 SurfaceProximity(surface)
 
-        def test_translates_native_alignment_failure(self, tetra):
-            proximity = SurfaceProximity(prepare_surface(*tetra))
-
-            class RejectedAlignment:
-                def align(self, *_args):
-                    raise ValueError("invalid_alignment")
-
-            proximity._native = RejectedAlignment()
-            with pytest.raises(GeometryError, match="invalid_alignment"):
-                proximity.align(np.zeros((1, 3)), np.eye(3), 1.0)
-
         def test_accepts_the_maximum_query_size(self, tetra):
             surface = prepare_surface(*tetra)
             points = np.repeat(surface.vertices[:1], 5000, axis=0)
@@ -123,13 +123,13 @@ if hasattr(kernel(), "SurfaceTree"):
             np.testing.assert_allclose(distances, 0, atol=1e-12)
             np.testing.assert_allclose(closest, points, atol=1e-12)
 
-        def test_matches_python_for_arbitrary_queries(self, tetra, subdivide):
+        def test_is_deterministic_for_arbitrary_queries(self, tetra, subdivide):
             surface = prepare_surface(*subdivide(*tetra, levels=4))
             points = np.random.default_rng(927).uniform(-2, 2, size=(250, 3))
-            expected = SurfaceProximity(surface, native=False).closest(points)
-            actual = SurfaceProximity(surface).closest(points)
-            np.testing.assert_allclose(actual[0], expected[0], atol=1e-12)
-            np.testing.assert_allclose(actual[1], expected[1], atol=1e-12)
+            expected = SurfaceProximity(surface).closest(points)
+            actual = SurfaceProximity(surface).closest(points.copy())
+            np.testing.assert_array_equal(actual[0], expected[0])
+            np.testing.assert_array_equal(actual[1], expected[1])
 
         @pytest.mark.parametrize(
             "triangles",
