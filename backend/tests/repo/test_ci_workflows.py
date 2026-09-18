@@ -87,6 +87,9 @@ class TestControlledImportBenchmark:
         assert job["permissions"] == {"contents": "read"}
         commands = [step.get("run", "") for step in job["steps"]]
         assert sum("scripts/bench_matrix.py" in command for command in commands) == 1
+        harness = (REPO_ROOT / "backend" / "scripts" / "bench_matrix.py").read_text()
+        assert '"bench_gcode.py"' in harness
+        assert '"name": "gcode-parse"' in harness
         artifacts = [
             step
             for step in job["steps"]
@@ -190,9 +193,7 @@ class TestNativeCoverageJob:
             if step.get("name")
             == "Install production compiler and coverage instrumentation"
         )
-        assert (
-            "cargo +1.98.1 install cargo-audit --version 0.22.2 --locked" in install
-        )
+        assert "cargo +1.98.1 install cargo-audit --version 0.22.2 --locked" in install
         assert (
             "cargo +1.98.1 install cargo-llvm-cov --version 0.9.1 --locked" in install
         )
@@ -222,6 +223,12 @@ class TestNativeCoverageJob:
         assert artifact["if"] == "always()"
         assert artifact["with"]["if-no-files-found"] == "error"
         assert artifact["with"]["path"] == "backend/rust/target/native-coverage-report/"
+
+        script = (REPO_ROOT / "backend" / "scripts" / "native-coverage.sh").read_text()
+        assert "--package printstash-gcode-core" in script
+        assert "--package printstash-libbgcode" in script
+        assert '"/rust/gcode-core/src/"' in script
+        assert '"/rust/libbgcode-sys/src/"' in script
 
 
 class TestCriticalCapabilitiesJob:
