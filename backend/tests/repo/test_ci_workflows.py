@@ -73,7 +73,11 @@ class TestControlledImportBenchmark:
             "inputs.benchmark_imports != true"
         )
 
-        ordinary_jobs = set(jobs) - {"import-benchmark", "flaky-detection"}
+        ordinary_jobs = set(jobs) - {
+            "import-benchmark",
+            "flaky-detection",
+            "queue-qualification",
+        }
         assert ordinary_jobs
         assert all(jobs[name]["if"] == ordinary_guard for name in ordinary_jobs)
         assert jobs["flaky-detection"]["if"] == flaky_guard
@@ -135,6 +139,20 @@ class TestQueueQualification:
         )
         assert artifact["if"] == "always()"
         assert artifact["with"]["if-no-files-found"] == "error"
+
+    def test_requires_explicit_manual_dispatch(self) -> None:
+        workflow = _ci_workflow()
+        trigger = workflow[True]["workflow_dispatch"]["inputs"]["qualify_queue"]
+
+        assert trigger == {
+            "description": "Run the deferred Rust queue qualification contracts",
+            "type": "boolean",
+            "default": False,
+        }
+        assert (
+            workflow["jobs"]["queue-qualification"]["if"]
+            == "github.event_name == 'workflow_dispatch' && inputs.qualify_queue"
+        )
 
     def test_benchmark_preserves_serial_profiles(self):
         workflow = _workflow("queue-qualification-benchmark.yml")
