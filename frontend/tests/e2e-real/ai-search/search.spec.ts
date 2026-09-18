@@ -325,10 +325,15 @@ test.describe("AI Search", () => {
       await page.getByRole("button", { name: "Build new index" }).click();
       await expect
         .poll(
-          async () => (await (await page.request.get(`${API}/api/v1/search/status`)).json()).legs,
+          async () => {
+            const status: SearchStatus = await (
+              await page.request.get(`${API}/api/v1/search/status`)
+            ).json();
+            return status.legs.includes("point_cloud") && !status.backlog;
+          },
           { timeout: 90000 },
         )
-        .toContain("point_cloud");
+        .toBe(true);
       const response = page.waitForResponse((candidate) => {
         const url = new URL(candidate.url());
         return url.pathname === "/api/v1/search" && url.searchParams.get("q") === "a cube";
