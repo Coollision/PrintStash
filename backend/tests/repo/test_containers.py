@@ -64,6 +64,20 @@ class TestStartContainer:
         assert result.started is True
         assert len(created) == 2
 
+    def test_retries_when_a_pulled_digest_is_not_immediately_visible(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        factory, created = _factory(
+            [RuntimeError("No such image: provider@sha256:abc"), None]
+        )
+        monkeypatch.setattr(containers.time, "sleep", lambda _delay: None)
+
+        result = containers._start_container(factory)
+
+        assert result is created[1]
+        assert result.started is True
+        assert len(created) == 2
+
     def test_does_not_retry_a_permanent_start_failure(self) -> None:
         error = RuntimeError("container readiness check failed")
         factory, created = _factory([error])
