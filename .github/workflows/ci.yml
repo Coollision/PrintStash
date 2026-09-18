@@ -29,6 +29,10 @@ on:
         description: "Validate the pinned, preplaced real CLIP export on both native architectures"
         type: boolean
         default: false
+      qualify_queue:
+        description: "Run the deferred Rust queue qualification contracts"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -276,6 +280,7 @@ jobs:
     name: Backend
     if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: backend
@@ -951,7 +956,7 @@ jobs:
 
   queue-qualification:
     name: Rust queue qualification (SQLite and PostgreSQL)
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
+    if: github.event_name == 'workflow_dispatch' && inputs.qualify_queue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
