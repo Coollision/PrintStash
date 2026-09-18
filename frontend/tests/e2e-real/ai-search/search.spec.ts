@@ -247,6 +247,7 @@ test.describe("AI Search", () => {
       );
       await box.fill("bike lamp attachment");
       await box.press("Enter");
+      await expect(page).toHaveURL(/\/search\?q=bike\+lamp\+attachment/);
       await expect(link).toBeVisible();
       await link.click();
       await expect(page).toHaveURL(new RegExp(`/documents/${documentId}$`));
