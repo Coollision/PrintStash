@@ -183,6 +183,18 @@ class TestFlakyDetectionJob:
         assert "--deselect tests/repo/test_coverage_floors.py" in command
 
 
+class TestBackendTimeouts:
+    def test_bounds_the_coverage_job_and_each_test(self) -> None:
+        assert _ci_workflow()["jobs"]["backend"]["timeout-minutes"] == 60
+
+        project = tomllib.loads((REPO_ROOT / "backend" / "pyproject.toml").read_text())
+        assert project["tool"]["pytest"]["ini_options"]["timeout"] == 300
+        assert any(
+            dependency.startswith("pytest-timeout>=2.4,")
+            for dependency in project["project"]["optional-dependencies"]["dev"]
+        )
+
+
 class TestNativeCoverageJob:
     def test_audits_the_native_dependency_graph(self) -> None:
         steps = _ci_workflow()["jobs"]["native-coverage"]["steps"]
