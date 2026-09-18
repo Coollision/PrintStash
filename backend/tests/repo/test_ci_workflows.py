@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tomllib
 
 import pytest
 import yaml
@@ -18,6 +19,45 @@ def _workflow(name: str) -> dict:
 
 def _ci_workflow() -> dict:
     return _workflow("ci.yml")
+
+
+class TestRustToolchainPin:
+    def test_uses_one_patched_compiler_across_native_builds(self) -> None:
+        expected = "1.98.1"
+        toolchain = tomllib.loads(
+            (REPO_ROOT / "backend" / "rust" / "rust-toolchain.toml").read_text()
+        )
+        queue_toolchain = tomllib.loads(
+            (
+                REPO_ROOT
+                / "backend"
+                / "qualification"
+                / "queue"
+                / "rust-toolchain.toml"
+            ).read_text()
+        )
+        assert toolchain["toolchain"]["channel"] == expected
+        assert queue_toolchain["toolchain"]["channel"] == expected
+
+        pinned_paths = (
+            REPO_ROOT / ".github" / "workflows" / "ci.yml",
+            REPO_ROOT / "backend" / "Dockerfile",
+            REPO_ROOT / "backend" / "scripts" / "native-coverage.sh",
+            REPO_ROOT / "backend" / "qualification" / "queue" / "Dockerfile",
+        )
+        for path in pinned_paths:
+            source = path.read_text()
+            assert expected in source, path
+            assert "1.91" not in source, path
+
+    def test_pins_the_current_maturin_build_backend(self) -> None:
+        native_project = tomllib.loads(
+            (REPO_ROOT / "backend" / "rust" / "pyproject.toml").read_text()
+        )
+        assert native_project["build-system"]["requires"] == ["maturin==1.15.0"]
+
+        dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text()
+        assert dockerfile.count("maturin==1.15.0") == 2
 
 
 class TestControlledImportBenchmark:
@@ -78,10 +118,10 @@ class TestQueueQualification:
         job = _ci_workflow()["jobs"]["queue-qualification"]
         commands = "\n".join(step.get("run", "") for step in job["steps"])
 
-        assert "cargo +1.91.0 clippy --locked --all-targets --all-features" in commands
-        assert "cargo +1.91.0 audit --ignore RUSTSEC-2023-0071" in commands
-        assert "cargo +1.91.0 deny --locked" in commands
-        assert "cargo +1.91.0 llvm-cov --locked" in commands
+        assert "cargo +1.98.1 clippy --locked --all-targets --all-features" in commands
+        assert "cargo +1.98.1 audit --ignore RUSTSEC-2023-0071" in commands
+        assert "cargo +1.98.1 deny --locked" in commands
+        assert "cargo +1.98.1 llvm-cov --locked" in commands
         assert job["services"]["postgres"]["image"].endswith(
             "57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
         )
@@ -142,6 +182,29 @@ class TestFlakyDetectionJob:
 
 
 class TestNativeCoverageJob:
+    def test_audits_the_native_dependency_graph(self) -> None:
+        steps = _ci_workflow()["jobs"]["native-coverage"]["steps"]
+        install = next(
+            step["run"]
+            for step in steps
+            if step.get("name")
+            == "Install production compiler and coverage instrumentation"
+        )
+        assert (
+            "cargo +1.98.1 install cargo-audit --version 0.22.2 --locked" in install
+        )
+        assert (
+            "cargo +1.98.1 install cargo-llvm-cov --version 0.9.1 --locked" in install
+        )
+
+        audit = next(
+            step["run"]
+            for step in steps
+            if step.get("name") == "Audit the native dependency graph"
+        )
+        assert audit == "cargo +1.98.1 audit"
+        assert "--locked" not in audit
+
     def test_requires_executed_native_coverage(self):
         job = _ci_workflow()["jobs"]["native-coverage"]
         assert not job.get("continue-on-error", False)

@@ -113,6 +113,12 @@ _TRANSIENT_START_MARKERS = (
     "tls handshake timeout",
     "temporary failure in name resolution",
     "service unavailable",
+    # Docker 27 on GitHub-hosted runners can finish pulling an immutable child
+    # manifest before that reference is visible to the following image inspect.
+    # A subsequent attempt sees the already-pulled image. Keep this bounded by
+    # CONTAINER_START_ATTEMPTS; a missing registry manifest reports
+    # "manifest unknown" instead and remains an immediate failure.
+    "no such image",
 )
 
 _started: list[Any] = []

@@ -17,7 +17,7 @@ pub fn component_labels<'py>(
     let labels = py
         .detach(|| -> Result<Vec<u32>, &'static str> {
             let mut edges = Vec::with_capacity(count * 3);
-            for (face, bytes) in faces.chunks_exact(24).enumerate() {
+            for (face, bytes) in faces.as_chunks::<24>().0.iter().enumerate() {
                 let ids: [u64; 3] = std::array::from_fn(|i| {
                     u64::from_ne_bytes(bytes[i * 8..i * 8 + 8].try_into().unwrap())
                 });
@@ -51,7 +51,7 @@ pub fn component_labels<'py>(
         .map_err(PyValueError::new_err)?;
     PyBytes::new_with(py, count * 8, |bytes| {
         py.detach(|| {
-            for (out, label) in bytes.chunks_exact_mut(8).zip(labels) {
+            for (out, label) in bytes.as_chunks_mut::<8>().0.iter_mut().zip(labels) {
                 out.copy_from_slice(&(label as u64).to_ne_bytes());
             }
         });

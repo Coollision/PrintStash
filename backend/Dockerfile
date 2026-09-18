@@ -1,11 +1,11 @@
 ARG PRINTSTASH_VARIANT=full
 
-FROM rust:1.91-slim-bookworm AS mesh-native-builder
+FROM rust:1.98.1-slim-bookworm@sha256:ebd900bae66fd508b466cef82d64a83a5fb34682e4c8b2797a42908bddc95a57 AS mesh-native-builder
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-venv \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -m venv /tmp/maturin \
- && /tmp/maturin/bin/pip install --no-cache-dir 'maturin==1.9.6'
+ && /tmp/maturin/bin/pip install --no-cache-dir 'maturin==1.15.0'
 WORKDIR /src/mesh-native
 COPY rust/Cargo.toml rust/Cargo.lock rust/pyproject.toml ./
 COPY rust/src ./src
@@ -16,7 +16,7 @@ RUN /tmp/maturin/bin/maturin build --release --locked --out /wheels
 FROM scratch AS mesh-native-wheel
 COPY --from=mesh-native-builder /wheels /
 
-FROM rust:1.91-slim-bookworm AS opendal-builder
+FROM rust:1.98.1-slim-bookworm@sha256:ebd900bae66fd508b466cef82d64a83a5fb34682e4c8b2797a42908bddc95a57 AS opendal-builder
 
 ARG OPENDAL_SOURCE_VERSION=0.58.2
 ARG OPENDAL_SOURCE_SHA256=476b0358ddc2a644dd4448552331af0d814279b0c1aaf5da755510b34645a764
@@ -40,7 +40,7 @@ RUN curl -fsSL \
  && mkdir -p /src /wheels \
  && tar -xzf /tmp/opendal.tar.gz -C /src --strip-components=1 \
  && python3 -m venv /tmp/maturin \
- && /tmp/maturin/bin/pip install --no-cache-dir 'maturin==1.9.6' \
+ && /tmp/maturin/bin/pip install --no-cache-dir 'maturin==1.15.0' \
  && cd /src/bindings/python \
  && /tmp/maturin/bin/maturin build --release --no-default-features \
       --features pyo3/extension-module,abi3,services-memory,services-s3,services-webdav,services-gdrive \

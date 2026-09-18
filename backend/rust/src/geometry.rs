@@ -12,15 +12,15 @@ fn measure(triangles: &[u8]) -> Result<(Bounds, f64), &'static str> {
     let mut high = [f64::NEG_INFINITY; 3];
     let mut sum = 0.0_f64;
     let mut correction = 0.0_f64;
-    for bytes in triangles.chunks_exact(72) {
+    for bytes in triangles.as_chunks::<72>().0 {
         let mut v = [0.0_f64; 9];
-        for (target, source) in v.iter_mut().zip(bytes.chunks_exact(8)) {
-            *target = f64::from_ne_bytes(source.try_into().unwrap());
+        for (target, source) in v.iter_mut().zip(bytes.as_chunks::<8>().0) {
+            *target = f64::from_ne_bytes(*source);
             if !target.is_finite() {
                 return Err("triangle coordinates must be finite");
             }
         }
-        for vertex in v.chunks_exact(3) {
+        for vertex in v.as_chunks::<3>().0 {
             for axis in 0..3 {
                 low[axis] = low[axis].min(vertex[axis]);
                 high[axis] = high[axis].max(vertex[axis]);

@@ -28,11 +28,19 @@ pub(crate) fn smooth_normals(
     }
     let read_index = |bytes: &[u8]| u64::from_ne_bytes(bytes[..8].try_into().unwrap());
     if vertices
-        .chunks_exact(4)
-        .any(|v| !f32::from_ne_bytes(v.try_into().unwrap()).is_finite())
-        || faces.chunks_exact(8).any(|v| read_index(v) >= count as u64)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|v| !f32::from_ne_bytes(*v).is_finite())
+        || faces
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .any(|v| read_index(v) >= count as u64)
         || positions
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .any(|v| read_index(v) >= position_count as u64)
     {
         return Err("invalid mesh values or indices");
@@ -42,7 +50,7 @@ pub(crate) fn smooth_normals(
     let chunks = chunk_size.min(2_000_000) * 24;
     for chunk in faces.chunks(chunks) {
         batch.fill([0.0; 3]);
-        for face in chunk.chunks_exact(24) {
+        for face in chunk.as_chunks::<24>().0 {
             let ids: [usize; 3] = std::array::from_fn(|i| read_index(&face[i * 8..]) as usize);
             let points: [[f32; 3]; 3] = std::array::from_fn(|i| {
                 std::array::from_fn(|axis| {

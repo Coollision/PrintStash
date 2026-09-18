@@ -16,7 +16,7 @@ of truth; every direct requirement is exact and CI uses `--locked`.
 | `serde` | 1.0.229 | 1.0.229 | Derive support for versioned evidence. |
 | `serde_json` | 1.0.151 | 1.0.151 | Sanitized evidence and candidate payloads. |
 
-The production compiler is Rust 1.91.0. CI pins cargo-audit 0.22.2,
+The production compiler is Rust 1.98.1. CI pins cargo-audit 0.22.2,
 cargo-deny 0.20.2, and cargo-llvm-cov 0.9.1, the stable registry releases at
 the same check date. The dependency graph is qualification-only and does not
 enter the native extension, Python wheel, or application containers.
@@ -29,8 +29,8 @@ inactive lockfile advisory; every other advisory remains fatal. Revisit the
 exception when either candidate moves beyond SQLx 0.8.6.
 
 The test-only benchmark image pins the official multi-architecture
-`rust:1.91.0-bookworm` index at
-`sha256:e187887ec511b3d93e45c0231d2f0fd59f1347526c58aa86343aa83c74f3e1a9`
+`rust:1.98.1-slim-bookworm` index at
+`sha256:ebd900bae66fd508b466cef82d64a83a5fb34682e4c8b2797a42908bddc95a57`
 and `debian:bookworm-slim` at
 `sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171`.
 

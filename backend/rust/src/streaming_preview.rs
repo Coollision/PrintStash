@@ -63,8 +63,10 @@ pub fn streaming_depth<'py>(
     let (values, used) = py
         .detach(|| -> Result<(Vec<f64>, usize), &'static str> {
             let mut closest: Vec<f64> = depth
-                .chunks_exact(4)
-                .map(|v| f32::from_ne_bytes(v.try_into().unwrap()) as f64)
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|v| f32::from_ne_bytes(*v) as f64)
                 .collect();
             if closest.iter().any(|v| v.is_nan()) {
                 return Err("invalid depth values");
@@ -75,7 +77,7 @@ pub fn streaming_depth<'py>(
         .map_err(PyValueError::new_err)?;
     let output = PyBytes::new_with(py, depth.len(), |output| {
         py.detach(|| {
-            for (bytes, value) in output.chunks_exact_mut(4).zip(values) {
+            for (bytes, value) in output.as_chunks_mut::<4>().0.iter_mut().zip(values) {
                 bytes.copy_from_slice(&(value as f32).to_ne_bytes());
             }
         });
@@ -93,7 +95,7 @@ pub(crate) fn draw_depth(
     remaining: usize,
 ) -> Result<usize, &'static str> {
     let mut faces = Vec::with_capacity(triangles.len() / 36);
-    for bytes in triangles.chunks_exact(36) {
+    for bytes in triangles.as_chunks::<36>().0 {
         let p: [f32; 9] = std::array::from_fn(|i| {
             f32::from_ne_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap())
         });

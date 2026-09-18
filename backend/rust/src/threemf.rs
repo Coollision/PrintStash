@@ -3,7 +3,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use quick_xml::events::{BytesStart, Event};
-use quick_xml::{Reader, Writer};
+use quick_xml::{Reader, Writer, XmlVersion};
 use std::io::{self, BufReader, Read};
 use std::str::FromStr;
 
@@ -46,14 +46,16 @@ pub(crate) struct Mesh {
 
 fn triple<T: FromStr + Copy>(
     event: &BytesStart<'_>,
-    names: [&[u8]; 3],
+    names: [&str; 3],
     kind: &str,
 ) -> Result<[T; 3], String> {
     let mut values = [None; 3];
     for attr in event.attributes() {
         let attr = attr.map_err(|e| e.to_string())?;
         if let Some(index) = names.iter().position(|name| *name == attr.key.as_ref()) {
-            let value = attr.unescape_value().map_err(|e| e.to_string())?;
+            let value = attr
+                .normalized_value(XmlVersion::Implicit1_0)
+                .map_err(|e| e.to_string())?;
             values[index] = Some(
                 value
                     .trim()
@@ -72,7 +74,7 @@ pub(crate) fn parse(source: impl Read) -> Result<(Vec<u8>, Vec<Mesh>), String> {
     let mut reader = Reader::from_reader(BufReader::with_capacity(65_536, source));
     let mut writer = Writer::new(Vec::new());
     let mut buffer = Vec::new();
-    let mut stack: Vec<Vec<u8>> = Vec::new();
+    let mut stack: Vec<String> = Vec::new();
     let mut mesh_depth = None;
     let mut mesh = Mesh::default();
     let mut meshes = Vec::new();
@@ -86,7 +88,7 @@ pub(crate) fn parse(source: impl Read) -> Result<(Vec<u8>, Vec<Mesh>), String> {
                 let local = tag.local_name();
                 let name = local.as_ref();
                 let empty = matches!(event, Event::Empty(_));
-                if name == b"mesh" {
+                if name == "mesh" {
                     if mesh_depth.is_some() {
                         return Err("nested XML mesh".into());
                     }
@@ -99,16 +101,15 @@ pub(crate) fn parse(source: impl Read) -> Result<(Vec<u8>, Vec<Mesh>), String> {
                         mesh_depth = Some(stack.len());
                     }
                 } else if mesh_depth.is_some() {
-                    if name == b"vertex" && stack.last().is_some_and(|s| s == b"vertices") {
-                        let v: [f64; 3] = triple(tag, [b"x", b"y", b"z"], "coordinate")?;
+                    if name == "vertex" && stack.last().is_some_and(|s| s == "vertices") {
+                        let v: [f64; 3] = triple(tag, ["x", "y", "z"], "coordinate")?;
                         if !v.iter().all(|v| v.is_finite()) {
                             return Err("coordinates must be finite".into());
                         }
                         mesh.vertices.push(v);
-                    } else if name == b"triangle" && stack.last().is_some_and(|s| s == b"triangles")
-                    {
+                    } else if name == "triangle" && stack.last().is_some_and(|s| s == "triangles") {
                         mesh.faces
-                            .push(triple(tag, [b"v1", b"v2", b"v3"], "face index")?);
+                            .push(triple(tag, ["v1", "v2", "v3"], "face index")?);
                     }
                 } else {
                     writer
@@ -116,7 +117,7 @@ pub(crate) fn parse(source: impl Read) -> Result<(Vec<u8>, Vec<Mesh>), String> {
                         .map_err(|e| e.to_string())?;
                 }
                 if !empty {
-                    stack.push(name.to_vec());
+                    stack.push(name.to_owned());
                     if stack.len() > 256 {
                         return Err("XML nesting limit exceeded".into());
                     }
@@ -194,7 +195,7 @@ pub(crate) fn pack<'py>(
                     .vertices
                     .iter()
                     .flatten()
-                    .zip(bytes.chunks_exact_mut(8))
+                    .zip(bytes.as_chunks_mut::<8>().0.iter_mut())
                 {
                     target.copy_from_slice(&value.to_ne_bytes());
                 }
@@ -203,7 +204,12 @@ pub(crate) fn pack<'py>(
         })?;
         let faces = PyBytes::new_with(py, mesh.faces.len() * 24, |bytes| {
             py.detach(|| {
-                for (value, target) in mesh.faces.iter().flatten().zip(bytes.chunks_exact_mut(8)) {
+                for (value, target) in mesh
+                    .faces
+                    .iter()
+                    .flatten()
+                    .zip(bytes.as_chunks_mut::<8>().0.iter_mut())
+                {
                     target.copy_from_slice(&value.to_ne_bytes());
                 }
             });

@@ -133,7 +133,7 @@ metadata, and rejects incompatible comparisons. Older numbers are historical,
 not M00 evidence.
 
 Native coverage uses `scripts/native-coverage.sh`, cargo-llvm-cov 0.9.1 and the
-existing production compiler 1.91.0 plus llvm-tools-preview. It instruments a
+existing production compiler 1.98.1 plus llvm-tools-preview. It instruments a
 separate extension, asserts Python loaded that extension, and runs Rust/binding
 and application preview tests. Stable compiler reports provide line/region/function
 coverage; they **do not establish branch coverage**. Any future nightly branch

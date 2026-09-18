@@ -13,7 +13,7 @@ SQLx's default migration-history table:
 ```console
 PRINTSTASH_QUEUE_QUALIFICATION_APALIS_POSTGRES_URL=... \
 PRINTSTASH_QUEUE_QUALIFICATION_AZUMS_POSTGRES_URL=... \
-cargo +1.91.0 test --locked --features postgres-tests -- --test-threads=1
+cargo +1.98.1 test --locked --features postgres-tests -- --test-threads=1
 ```
 
 Expected candidate failures are assertions. If a pinned upstream release starts
