@@ -108,7 +108,14 @@ test.describe("AI Search", () => {
       await page
         .getByRole("checkbox", { name: "Interpret my searches as editable filters" })
         .check();
+      const preferencesSaved = page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/v1/search/preferences") &&
+          response.request().method() === "PATCH",
+      );
       await page.getByRole("button", { name: "Save preferences" }).click();
+      expect((await preferencesSaved).ok()).toBe(true);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       const input = page.getByRole("searchbox");
       await input.fill(`${name} never printed`);
       await input.press("Enter");

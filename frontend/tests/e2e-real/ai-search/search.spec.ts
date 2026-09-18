@@ -2,7 +2,12 @@
 import { test, expect } from "../helpers";
 import { modelCard, uploadModel } from "../util";
 import { readFileSync } from "node:fs";
-import type { InferenceModel, SearchResponse, SearchSettingsRead } from "../../../src/types/search";
+import type {
+  InferenceModel,
+  SearchResponse,
+  SearchSettingsRead,
+  SearchStatus,
+} from "../../../src/types/search";
 import type { ModelRead } from "../../../src/types/models";
 
 const API = `http://127.0.0.1:${process.env.PLAYWRIGHT_REAL_API_PORT ?? 8410}`;
@@ -186,6 +191,17 @@ test.describe("AI Search", () => {
       await expect(page.getByText("Search status").locator("..")).toContainText(model!.key, {
         timeout: 60000,
       });
+      await expect
+        .poll(
+          async () => {
+            const status: SearchStatus = await (
+              await page.request.get(`${API}/api/v1/search/status`)
+            ).json();
+            return status.legs.includes("semantic_text") && !status.backlog;
+          },
+          { timeout: 90000 },
+        )
+        .toBe(true);
       await page.goto("/");
       const requests: string[] = [];
       page.on("request", (request) => {
@@ -231,6 +247,7 @@ test.describe("AI Search", () => {
       );
       await box.fill("bike lamp attachment");
       await box.press("Enter");
+      await expect(page).toHaveURL(/\/search\?q=bike\+lamp\+attachment/);
       await expect(link).toBeVisible();
       await link.click();
       await expect(page).toHaveURL(new RegExp(`/documents/${documentId}$`));
@@ -309,10 +326,15 @@ test.describe("AI Search", () => {
       await page.getByRole("button", { name: "Build new index" }).click();
       await expect
         .poll(
-          async () => (await (await page.request.get(`${API}/api/v1/search/status`)).json()).legs,
+          async () => {
+            const status: SearchStatus = await (
+              await page.request.get(`${API}/api/v1/search/status`)
+            ).json();
+            return status.legs.includes("point_cloud") && !status.backlog;
+          },
           { timeout: 90000 },
         )
-        .toContain("point_cloud");
+        .toBe(true);
       const response = page.waitForResponse((candidate) => {
         const url = new URL(candidate.url());
         return url.pathname === "/api/v1/search" && url.searchParams.get("q") === "a cube";

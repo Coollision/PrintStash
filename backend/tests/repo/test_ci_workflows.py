@@ -73,7 +73,11 @@ class TestControlledImportBenchmark:
             "inputs.benchmark_imports != true"
         )
 
-        ordinary_jobs = set(jobs) - {"import-benchmark", "flaky-detection"}
+        ordinary_jobs = set(jobs) - {
+            "import-benchmark",
+            "flaky-detection",
+            "queue-qualification",
+        }
         assert ordinary_jobs
         assert all(jobs[name]["if"] == ordinary_guard for name in ordinary_jobs)
         assert jobs["flaky-detection"]["if"] == flaky_guard
@@ -136,6 +140,20 @@ class TestQueueQualification:
         assert artifact["if"] == "always()"
         assert artifact["with"]["if-no-files-found"] == "error"
 
+    def test_requires_explicit_manual_dispatch(self) -> None:
+        workflow = _ci_workflow()
+        trigger = workflow[True]["workflow_dispatch"]["inputs"]["qualify_queue"]
+
+        assert trigger == {
+            "description": "Run the deferred Rust queue qualification contracts",
+            "type": "boolean",
+            "default": False,
+        }
+        assert (
+            workflow["jobs"]["queue-qualification"]["if"]
+            == "github.event_name == 'workflow_dispatch' && inputs.qualify_queue"
+        )
+
     def test_benchmark_preserves_serial_profiles(self):
         workflow = _workflow("queue-qualification-benchmark.yml")
         job = workflow["jobs"]["compare"]
@@ -144,7 +162,6 @@ class TestQueueQualification:
         assert set(triggers) == {"pull_request", "workflow_dispatch"}
         assert triggers["pull_request"]["paths"] == [
             "backend/qualification/queue/**",
-            "backend/scripts/bench_matrix.py",
             "backend/scripts/bench_queue.py",
             "backend/scripts/bench_queue_qualification.py",
             "backend/scripts/bench_queue_qualification_matrix.py",
@@ -182,6 +199,18 @@ class TestFlakyDetectionJob:
         )
 
         assert "--deselect tests/repo/test_coverage_floors.py" in command
+
+
+class TestBackendTimeouts:
+    def test_prevents_unbounded_backend_execution(self) -> None:
+        assert _ci_workflow()["jobs"]["backend"]["timeout-minutes"] == 60
+
+        project = tomllib.loads((REPO_ROOT / "backend" / "pyproject.toml").read_text())
+        assert project["tool"]["pytest"]["ini_options"]["timeout"] == 300
+        assert any(
+            dependency.startswith("pytest-timeout>=2.4,")
+            for dependency in project["project"]["optional-dependencies"]["dev"]
+        )
 
 
 class TestNativeCoverageJob:

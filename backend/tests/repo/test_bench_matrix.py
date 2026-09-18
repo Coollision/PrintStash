@@ -86,7 +86,7 @@ class TestPerformanceComparison:
         }
         assert '"$@"' in container_measurement_script()
 
-    def test_compares_gcode_latency_and_resources(self):
+    def test_compares_gcode_resource_metrics(self):
         result = comparison(
             [_gcode_report(10)] * 7,
             [_gcode_report(11)] * 7,

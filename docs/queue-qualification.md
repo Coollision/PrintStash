@@ -92,6 +92,16 @@ The old worker uses a five-second poll interval and remains blocked inside its h
 
 The reproduction uses public worker and control APIs on real PostgreSQL with the locked dependency graph and Rust 1.91.0. It does not execute a copied internal acknowledgement query.
 
+A later ordinary CI execution independently exposed the same ownership defect
+through duplicate processing: the Apalis PostgreSQL verification expected 16
+unique executions and observed 20, with four durable job IDs executed twice.
+The workflow failed at the duplicate-execution assertion before producing a
+performance result. This converts the earlier source-level concern into an
+observed runtime qualification failure. The qualification workflow is now an
+explicit `workflow_dispatch` diagnostic so rejected candidates cannot block
+unrelated migration milestones; reopening the queue decision must run it
+deliberately and treat any duplicate as a correctness failure.
+
 ### Apalis PostgreSQL process recovery
 
 A child process claims the job and blocks inside the handler. The harness kills that process, then starts a successor with a new process-unique worker ID. The successor runs the same durable job within the bounded recovery interval, so this contract passes. Apalis worker IDs are global across queue namespaces; reusing a worker ID in an earlier probe changed the heartbeat row's namespace and produced a false failure. The final harness uses UUID-suffixed IDs and records the global-ID integration requirement.

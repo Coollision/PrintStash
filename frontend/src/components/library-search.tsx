@@ -24,6 +24,7 @@ export function LibrarySearch() {
   const [open, setOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
+  const publishTimer = useRef<number | undefined>(undefined);
   const visible = pathname === "/" || pathname === "/search";
   if (synced !== q) {
     setSynced(q);
@@ -67,7 +68,8 @@ export function LibrarySearch() {
   const params = searchParams.toString();
   useEffect(() => {
     if (!visible) return;
-    const timer = window.setTimeout(() => {
+    publishTimer.current = window.setTimeout(() => {
+      publishTimer.current = undefined;
       const next = value.trim();
       setDebounced(next);
       if (pathname !== "/" || next === q) return;
@@ -77,10 +79,15 @@ export function LibrarySearch() {
       setPublished(next);
       router.replace(updated.size ? `/?${updated}` : "/", { scroll: false });
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      if (publishTimer.current !== undefined) window.clearTimeout(publishTimer.current);
+      publishTimer.current = undefined;
+    };
   }, [pathname, params, q, router, value, visible]);
   function submit() {
     if (!value.trim()) return;
+    if (publishTimer.current !== undefined) window.clearTimeout(publishTimer.current);
+    publishTimer.current = undefined;
     setOpen(false);
     router.push(`/search?${new URLSearchParams({ q: value.trim(), parse: "1" })}`);
   }
