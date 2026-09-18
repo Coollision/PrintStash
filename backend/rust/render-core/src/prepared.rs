@@ -50,6 +50,20 @@ pub struct PreparedPreview {
 }
 
 impl PreparedPreview {
+    pub fn from_parts(
+        vertices: Vec<[f32; 3]>,
+        faces: Vec<[u32; 3]>,
+        chunk: usize,
+    ) -> Result<Self, &'static str> {
+        let packed_vertices = bytes32(&vertices);
+        let packed_faces = faces
+            .iter()
+            .flatten()
+            .flat_map(|value| (*value as u64).to_ne_bytes())
+            .collect::<Vec<_>>();
+        Self::new(&packed_vertices, &packed_faces, chunk)
+    }
+
     pub fn new(vertices: &[u8], faces: &[u8], chunk: usize) -> Result<Self, &'static str> {
         if vertices.is_empty()
             || !vertices.len().is_multiple_of(12)

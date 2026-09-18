@@ -64,6 +64,14 @@ ARCHIVE_METRICS = {
     "container_peak_bytes": ("container_memory_peak_bytes",),
 }
 
+MESH_METRICS = {
+    "complete_s": ("total_seconds",),
+    "preview_p95_ms": ("preview_latency", "p95_ms"),
+    "app_cpu_s": ("process_cpu_seconds",),
+    "app_rss_bytes": ("process_peak_rss_bytes",),
+    "container_peak_bytes": ("container_memory_peak_bytes",),
+}
+
 
 def compare_queue_contracts(before: dict, after: dict) -> None:
     if any(
@@ -126,12 +134,13 @@ def comparison(
     queue: bool = False,
     gcode: bool = False,
     archive: bool = False,
+    mesh: bool = False,
 ) -> dict:
     if not before or len(before) != len(after):
         raise ValueError("Comparison requires complete paired runs")
     result = {}
     noisy = False
-    if sum((queue, gcode, archive)) > 1:
+    if sum((queue, gcode, archive, mesh)) > 1:
         raise ValueError("A benchmark case cannot use two measurement protocols")
     contract = (
         QUEUE_METRICS
@@ -140,6 +149,8 @@ def comparison(
         if gcode
         else ARCHIVE_METRICS
         if archive
+        else MESH_METRICS
+        if mesh
         else METRICS
     )
     for name, path in contract.items():
@@ -200,6 +211,7 @@ def harness_context(work: Path, head: str) -> Path:
         "bench_database.py",
         "bench_archive.py",
         "bench_gcode.py",
+        "bench_mesh_preview.py",
         "bench_queue.py",
     ):
         (context / name).write_text(
@@ -230,7 +242,7 @@ def harness_context(work: Path, head: str) -> Path:
         # non-traversable directories. Hashing those sources needs read access
         # in this instrumentation layer, without running the benchmark as root.
         "RUN chmod -R a+rX /app/packages\n"
-        "COPY bench_import.py bench_database.py bench_archive.py bench_gcode.py bench_queue.py /app/scripts/\n"
+        "COPY bench_import.py bench_database.py bench_archive.py bench_gcode.py bench_mesh_preview.py bench_queue.py /app/scripts/\n"
         "COPY gcode-fixtures /app/scripts/gcode-fixtures\n"
         f"LABEL org.printstash.benchmark.harness-revision={head}\n"
     )
@@ -316,6 +328,7 @@ class Profile:
         queue = bool(archive.get("queue"))
         gcode = bool(archive.get("gcode"))
         archive_benchmark = bool(archive.get("archive_benchmark"))
+        mesh = bool(archive.get("mesh_benchmark"))
         cli = [
             "/app/.venv/bin/python",
             (
@@ -323,6 +336,8 @@ class Profile:
                 if queue
                 else "/app/scripts/bench_archive.py"
                 if archive_benchmark
+                else "/app/scripts/bench_mesh_preview.py"
+                if mesh
                 else "/app/scripts/bench_gcode.py"
                 if gcode
                 else "/app/scripts/bench_import.py"
@@ -330,16 +345,16 @@ class Profile:
         ]
         if gcode:
             cli += ["--fixtures", "/app/scripts/gcode-fixtures"]
-        elif not queue and not archive_benchmark:
+        elif not queue and not archive_benchmark and not mesh:
             cli += [f"/evidence/corpus/{archive['name']}"]
         cli += ["--database", dialect, "--output", f"/evidence/runs/{name}.json"]
         if queue:
             cli += ["--jobs", "128", "--idle-seconds", "10"]
             if not archive.get("queue_recovery"):
                 cli.append("--steady-state")
-        elif not gcode and not archive_benchmark:
+        elif not gcode and not archive_benchmark and not mesh:
             cli += ["--timeout", "1800"]
-        if db and not gcode and not archive_benchmark:
+        if db and not gcode and not archive_benchmark and not mesh:
             cli += ["--postgres-admin-url-env", "PRINTSTASH_BENCH_POSTGRES"]
         if archive["similarity"]:
             cli += ["--similarity"]
@@ -514,6 +529,7 @@ def measure_case(
     queue = bool(archive.get("queue"))
     gcode = bool(archive.get("gcode"))
     archive_benchmark = bool(archive.get("archive_benchmark"))
+    mesh = bool(archive.get("mesh_benchmark"))
     for pair in range(14):
         if (
             pair == 7
@@ -523,6 +539,7 @@ def measure_case(
                 queue=queue,
                 gcode=gcode,
                 archive=archive_benchmark,
+                mesh=mesh,
             )["noisy"]
         ):
             break
@@ -546,6 +563,7 @@ def measure_case(
             queue=queue,
             gcode=gcode,
             archive=archive_benchmark,
+            mesh=mesh,
         ),
     }
 
@@ -650,6 +668,11 @@ def main() -> None:
                                     {
                                         "name": "archive-extract",
                                         "archive_benchmark": True,
+                                        "similarity": False,
+                                    },
+                                    {
+                                        "name": "mesh-preview",
+                                        "mesh_benchmark": True,
                                         "similarity": False,
                                     },
                                     {

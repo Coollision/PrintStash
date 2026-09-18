@@ -65,7 +65,7 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M07 | storage | **Deferred:** existing local and remote `StorageBackend` adapters remain authoritative |
 | M08 | gcode | Bounded text metadata and established libbgcode codec; slicer compatibility, parsing/bytes read/memory |
 | M09 | archives | Bounded inspection/extraction and path safety; many-small and large-entry workloads |
-| M10 | mesh-previews | Native preparation/buffer flow and renderer orchestration; geometry and pixel parity, allocations/memory |
+| M10 | mesh-previews | Native preparation/buffer flow and renderer orchestration; path-based STL and native 3MF resource handles remove redundant preview copies; geometry and pixel parity, allocations/memory |
 | M11 | step | Supervised native Open CASCADE helper; units/settings/work limits; cold/warm complex assemblies |
 | M12 | similarity | Remaining voxelization/descriptors/alignment/verification; labeled quality and work bounds; indexing/verification latency |
 | M13 | acquisition | Rust URL/provider/inbox/source acquisition, credentials/checkpoints; safe destinations and resumed bytes |

@@ -104,6 +104,36 @@ class TestLoadScene:
         assert len(scene.graph.nodes_geometry) == 2
         np.testing.assert_array_equal(scene.bounds, [[0, 0, 0], [40, 20, 0]])
 
+    def test_renders_repeated_instances_from_native_resource_handles(
+        self, package, monkeypatch
+    ):
+        import io
+
+        import printstash_mesh_native as native
+        import trimesh
+        from PIL import Image
+
+        from printstash_core.mesh import native_rasterizer
+
+        path = package(
+            build=(
+                '<item objectid="1"/>'
+                '<item objectid="1" transform="1 0 0 0 1 0 0 0 1 30 0 0"/>'
+            )
+        )
+        scene = threemf.load_scene(path)
+        mesh = trimesh.util.concatenate(scene.dump())
+        mesh._printstash_native_preview = scene._printstash_native_preview
+        monkeypatch.setattr(
+            native,
+            "render_preview",
+            lambda *_a, **_k: pytest.fail("native scene must not copy mesh buffers"),
+        )
+
+        image = native_rasterizer.render_preview(mesh, width=80, height=60)
+
+        assert Image.open(io.BytesIO(image)).size == (80, 60)
+
 
     @pytest.mark.parametrize(
         "transform",

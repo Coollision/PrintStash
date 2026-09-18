@@ -111,6 +111,7 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
         stack.callback(native_archive.close)
         parts: dict[str, dict[str, ET.Element]] = {}
         arrays: dict[tuple[str, str], list[tuple[Any, Any]]] = {}
+        native_resources: dict[tuple[str, str], list[Any]] = {}
         roots: dict[str, ET.Element] = {}
         remaining = max_bytes
 
@@ -121,7 +122,7 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
             if part not in names:
                 raise ValueError("3MF component part is missing")
             info = names[part]
-            shell, packed = native_archive.read_part(
+            shell, packed = native_archive.read_part_native(
                 part, info.file_size, info.CRC, remaining
             )
             remaining -= names[part].file_size
@@ -138,8 +139,10 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                     raise ValueError("duplicate 3MF object id")
                 table[oid] = obj
                 geometry = []
+                handles = []
                 for _ in obj.findall(".//{*}mesh"):
-                    vertices, faces = next(parsed)
+                    handle = next(parsed)
+                    vertices, faces = handle.buffers()
                     geometry.append(
                         (
                             np.frombuffer(vertices, dtype=np.float64).reshape(-1, 3)
@@ -147,8 +150,10 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                             np.frombuffer(faces, dtype=np.int64).reshape(-1, 3),
                         )
                     )
+                    handles.append(handle)
                 if geometry:
                     arrays[(part, oid)] = geometry
+                    native_resources[(part, oid)] = handles
             if next(parsed, None) is not None:
                 raise ValueError("3MF mesh outside object resources")
             parts[part] = table
@@ -231,6 +236,7 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
         # Match the existing loader's traversal and matrix multiplication order.
         # Each path is one instance, including repeated geometry references.
         scene = trimesh.Scene(base_frame="world")
+        preview_instances = []
         paths = trimesh.graph.multigraph_paths(graph, world, cutoff=traversal_steps + 1)
         if len(paths) != instance_count:
             raise ValueError("incomplete 3MF instance traversal")
@@ -259,10 +265,24 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                 if len(transforms) == 1
                 else trimesh.util.multi_dot(transforms)
             )
+            scale = np.eye(4, dtype=np.float64)
+            scale[:3, :3] *= _unit(roots[node[0]])
+            for handle in native_resources[node]:
+                preview_instances.append((handle, (matrix @ scale).tolist()))
             scene.graph.update(
                 frame_from="world",
                 frame_to=f"instance-{index}",
                 matrix=matrix,
                 geometry=key,
+        )
+        try:
+            object.__setattr__(
+                scene,
+                "_printstash_native_preview",
+                native.NativeScenePreview(preview_instances),
             )
+        except ValueError:
+            # Geometry remains usable through the bounded existing renderer if
+            # this scene exceeds the native preview preparation ceiling.
+            pass
         return scene

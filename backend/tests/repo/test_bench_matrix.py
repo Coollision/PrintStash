@@ -42,6 +42,16 @@ def _archive_report(value):
     }
 
 
+def _mesh_report(value):
+    return {
+        "total_seconds": value,
+        "preview_latency": {"p95_ms": value},
+        "process_cpu_seconds": value,
+        "process_peak_rss_bytes": value,
+        "container_memory_peak_bytes": value,
+    }
+
+
 class TestPerformanceComparison:
     def test_flags_a_repeatable_regression(self):
         result = comparison([_report(10)] * 7, [_report(12)] * 7)
@@ -120,6 +130,22 @@ class TestPerformanceComparison:
             "container_peak_bytes",
         }
         assert result["metrics"]["archive_p95_ms"]["pairs_above_threshold"] == 7
+
+    def test_compares_mesh_preview_latency_and_resources(self):
+        result = comparison(
+            [_mesh_report(10)] * 7,
+            [_mesh_report(11)] * 7,
+            mesh=True,
+        )
+
+        assert set(result["metrics"]) == {
+            "complete_s",
+            "preview_p95_ms",
+            "app_cpu_s",
+            "app_rss_bytes",
+            "container_peak_bytes",
+        }
+        assert result["metrics"]["preview_p95_ms"]["pairs_above_threshold"] == 7
 
 
 class TestBenchmarkRevision:

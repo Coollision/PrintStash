@@ -1061,12 +1061,16 @@ class TestLimits:
 
 
 class TestRender:
-    def test_normal_stl_render_exception_uses_streaming_before_sampling(
+    def test_normal_stl_uses_streaming_before_full_or_sampled_render(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from types import SimpleNamespace
-
         import numpy as np
+
+        class LoadedMesh:
+            vertices = np.zeros((3, 3))
+            bounds = np.array([[0.0, 0.0, 0.0], [4.0, 3.0, 0.0]])
+            faces = np.zeros((12, 3), dtype=np.int64)
+            volume = 0.0
 
         path = tmp_path / "normal-render-fails.stl"
         _binary_triangle_stl(path)
@@ -1074,18 +1078,13 @@ class TestRender:
         monkeypatch.setattr(
             mesh_processing,
             "_load_mesh",
-            lambda _path: SimpleNamespace(
-                vertices=np.zeros((3, 3)),
-                bounds=np.array([[0.0, 0.0, 0.0], [4.0, 3.0, 0.0]]),
-                faces=np.zeros((12, 3), dtype=np.int64),
-                volume=0.0,
-            ),
+            lambda _path: LoadedMesh(),
         )
         monkeypatch.setattr(
             mesh_render,
             "render_mesh_thumbnail",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                RuntimeError("renderer crash")
+            lambda *args, **kwargs: pytest.fail(
+                "the path renderer should finish before the full renderer"
             ),
         )
 

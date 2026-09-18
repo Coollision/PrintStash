@@ -466,6 +466,7 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
         # ``dump`` applies build and component transforms and retains repeated
         # instances. Looking only at ``loaded.geometry.values()`` would return
         # the source mesh once at its untransformed coordinates.
+        native_preview = getattr(loaded, "_printstash_native_preview", None)
         try:
             meshes = [
                 geometry
@@ -482,9 +483,15 @@ def _load_mesh(path: Path, *, file_type: str | None = None):
         if not meshes:
             return None
         if len(meshes) == 1:
-            return meshes[0]
+            result = meshes[0]
+            if native_preview is not None:
+                object.__setattr__(result, "_printstash_native_preview", native_preview)
+            return result
         try:
-            return trimesh.util.concatenate(meshes)
+            result = trimesh.util.concatenate(meshes)
+            if native_preview is not None:
+                object.__setattr__(result, "_printstash_native_preview", native_preview)
+            return result
         except Exception:
             logger.warning(
                 "mesh_processing: failed to concatenate scene meshes for %s",
