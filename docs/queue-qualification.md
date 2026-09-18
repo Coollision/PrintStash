@@ -4,9 +4,49 @@ The executable M01 harness reproduces the decisive failures on real file-backed 
 
 ## Decision
 
-No candidate currently qualifies. Keep the existing `BackgroundJob` queue and its Python execution owner. Do not begin M03–M07. M02 and M08–M14 remain independent and can proceed through the existing execution path.
+Neither candidate evaluated in M01 qualifies. Keep the existing `BackgroundJob` queue and its Python execution owner. Defer M03–M07. M02 and M08–M14 remain independent and can proceed through the existing execution path.
 
 The decision is final for the pinned stable releases. Performance cannot override a failed correctness contract; a future release must rerun the complete qualification procedure.
+
+## Active migration scope
+
+As of 2026-09-18, the Rust queue and persistence cutover is deferred from the
+active OSS migration. M03–M07 are not prerequisites for M08–M14: those format,
+compute, and acquisition stages continue through the existing Python
+coordinator and `BackgroundJob` durable state. This avoids introducing an
+unqualified queue while the independently reusable native modules are
+completed.
+
+This is a scope decision, not a claim that Rust has no database-backed queue
+libraries. M01 proved that the pinned Apalis and Azums releases fail required
+PrintStash contracts. It did not qualify every queue in the Rust ecosystem.
+The production owner remains unchanged until a later milestone explicitly
+reopens qualification and passes the same executable gates on real file-backed
+SQLite and real PostgreSQL.
+
+Candidates discovered after the original two-candidate procedure are recorded
+for that future evaluation:
+
+| Candidate | Inspected release | Initial fit | Required evidence before adoption |
+| --- | --- | --- | --- |
+| Worklane | 0.2.1 | SQLite and PostgreSQL brokers, receipt-based leases, priorities, and caller-transaction enqueue for PostgreSQL | Atomic caller-transaction enqueue on SQLite, stale-owner fencing, upgradeable pre-1.0 schemas, maintenance history, and the complete recovery/performance matrix |
+| RustQueue | 0.3.0 | SQLite and PostgreSQL storage with an embedded worker and documented crash recovery | Caller-transaction enqueue, stale ACK fencing, schema upgrades, dependency footprint, and the complete recovery/performance matrix |
+| pgqrs | 0.15.3 | PostgreSQL plus SQLite/Turso and durable workflow execution | Queue-only integration depth, ownership fencing, atomic acceptance, schema upgrades, and the complete recovery/performance matrix |
+| Boson | Not yet inspected | Advertises pluggable SQLite and PostgreSQL backends | Stable published artifacts, immutable versions, maintenance evidence, and every correctness and performance gate |
+
+Documentation reviewed for this inventory:
+[Worklane PostgreSQL](https://docs.rs/crate/worklane-postgres/0.2.1),
+[Worklane SQLite](https://docs.rs/worklane-sqlite/0.2.1/worklane_sqlite/),
+[RustQueue](https://docs.rs/crate/rustqueue/0.3.0),
+[pgqrs](https://docs.rs/crate/pgqrs/0.15.3), and
+[Boson](https://github.com/unified-field-dev/boson).
+
+Reopening the queue work requires a new qualification PR. It must reuse the M01
+harness and may extend its adapter boundary, but it must not add candidate code
+to production until one release passes every contract. M15 cannot claim a
+complete native execution cutover while the Python durable owner remains; the
+achievable deferred-queue result is a native import processing pipeline driven
+by the existing OSS queue.
 
 ## Ownership
 
