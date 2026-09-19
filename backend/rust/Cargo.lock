@@ -1132,6 +1132,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "printstash-acquisition-core"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "rustls",
+ "sha2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "printstash-archive-core"
 version = "0.1.0"
 dependencies = [
@@ -1168,6 +1179,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "petgraph",
+ "printstash-acquisition-core",
  "printstash-archive-core",
  "printstash-gcode-core",
  "printstash-render-core",
@@ -1176,11 +1188,6 @@ dependencies = [
  "pyo3-async-runtimes",
  "quick-xml",
  "rayon",
- "reqwest",
- "rustls",
- "sha2",
- "tempfile",
- "tokio",
  "zip",
 ]
 

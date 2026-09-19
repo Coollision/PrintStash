@@ -189,7 +189,7 @@ class TestPerformanceComparison:
         }
         assert result["metrics"]["verification_p95_ms"]["pairs_above_threshold"] == 7
 
-    def test_compares_acquisition_latency_and_resources(self):
+    def test_compares_acquisition_metrics(self):
         result = comparison(
             [_acquisition_report(10)] * 7,
             [_acquisition_report(11)] * 7,

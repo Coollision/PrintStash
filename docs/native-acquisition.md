@@ -11,7 +11,8 @@ in `rust-import-migration.md`.
 
 | Concern | Owner |
 | --- | --- |
-| One-hop HTTP request, DNS pin use, redirect refusal, byte ceiling, streaming SHA-256, temporary spool, flush/sync, and create-only publication | Rust native extension |
+| One-hop HTTP request, DNS pin use, redirect refusal, byte ceiling, streaming SHA-256, temporary spool, flush/sync, and create-only publication | Framework-free Rust `printstash-acquisition-core` crate |
+| Request/result translation and asyncio integration | Narrow PyO3 adapter in `printstash-mesh-native` |
 | URL normalization, DNS resolution, public-address policy, and validation of every redirect hop | Framework-independent `printstash-core` policy called by the Python coordinator |
 | Redirect coordination, filename selection, capacity admission, and error translation | Python ingestion coordinator |
 | Download checkpoints and staging identity receipts | Python `AcquisitionJournal` and `StagingLease` transactions |
@@ -33,10 +34,12 @@ verification. Automatic redirects and proxies are disabled. Python resolves
 and validates the next URL before each redirect request, so a redirect cannot
 bypass the existing address policy.
 
-The async binding uses `pyo3-async-runtimes`' process-wide Tokio runtime. The
-response body remains in a Rust-owned `NamedTempFile`; Python receives only
-status/header metadata, selects the established safe suffix, and asks the
-native result to publish into the same directory with `persist_noclobber`.
+The PyO3 adapter uses `pyo3-async-runtimes`' process-wide Tokio runtime.
+HTTP, TLS, hashing, temporary ownership, and publication stay inside the
+reusable core crate. The response body remains in a Rust-owned
+`NamedTempFile`; Python receives only status/header metadata, selects the
+established safe suffix, and asks the native result to publish into the same
+directory with `persist_noclobber`.
 Dropping, cancelling, rejecting, or failing before publication removes the
 temporary file. Python never copies or rereads the response body, and the
 streaming digest becomes the durable staging receipt.
@@ -44,7 +47,9 @@ streaming digest becomes the durable staging receipt.
 ## Dependencies
 
 The direct dependencies were rechecked against their stable releases on
-2026-09-18 and are exact in `backend/rust/Cargo.toml` and `Cargo.lock`:
+2026-09-19 and are exact in
+`backend/rust/acquisition-core/Cargo.toml`, the root binding manifest, and
+`Cargo.lock`:
 
 | Dependency | Version | Purpose and selected features | License |
 | --- | ---: | --- | --- |
@@ -85,8 +90,8 @@ names, and stable application errors.
 
 | # | Behaviour (test name) | Category | Precondition / input | Observable outcome asserted | Tier | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | rejects an inconsistent pinned target | Error | URL host/port differs from validated tuple or URL contains credentials | Stable refusal before client creation | Rust | ✅ `rust/src/acquisition.rs::tests::{rejects_a_target_that_does_not_match_the_url,rejects_credentials_and_invalid_limits}` |
-| 2 | preserves create-only publication | Edge | Destination already contains bytes | Existing bytes remain intact; native publication fails | Rust | ✅ `rust/src/acquisition.rs::tests::create_only_publication_preserves_an_existing_destination` |
+| 1 | validates the pinned target | Error/Edge | URL host/port differs, URL contains credentials, or an IPv6 literal uses bracketed/unbracketed equivalent forms | Mismatches fail before client creation; equivalent IPv6 forms are accepted | Rust | ✅ `rust/acquisition-core/src/lib.rs::tests::{rejects_a_target_that_does_not_match_the_url,rejects_credentials_and_invalid_limits,accepts_equivalent_ipv6_literal_forms}` |
+| 2 | preserves create-only publication | Edge | Destination already contains bytes | Existing bytes remain intact; native publication fails | Rust | ✅ `rust/acquisition-core/src/lib.rs::tests::create_only_publication_preserves_an_existing_destination` |
 | 3 | streams and hashes a real file | Happy | Loopback server, disposition filename, committed STL fixture | Exact bytes, suffix, filename, SHA-256, and staging parent | Contract | ✅ `tests/contract/api/v1/test_ingest.py::TestDownloadToStaging::test_download_to_staging_fetches_real_file` |
 | 4 | revalidates redirects | Edge | Relative redirect to final STL | Final name and bytes returned after a separate validated hop | Contract | ✅ `TestDownloadToStaging::test_download_to_staging_follows_redirect` |
 | 5 | rejects unsafe destinations | Error | Loopback target under the real SSRF policy | No request is admitted | Contract | ✅ `TestDownloadToStaging::test_download_to_staging_rejects_private_host` |
@@ -124,10 +129,10 @@ The original milestone text grouped byte acquisition with provider discovery,
 credential handling, inbox enumeration, checkpoints, and external source
 adapters. That ownership would contradict the accepted post-M01 boundary: Python
 retains authentication and import coordination, and M03–M07 durable state and
-storage were deferred. M13 therefore closes on the reusable acquisition seam:
-Rust owns remote body transfer, bounding, hashing, and create-only staging;
-Python owns policy and durable coordination. There is no remaining Python HTTP
-body streamer in the import path.
+storage were deferred. M13 therefore closes on the reusable
+`printstash-acquisition-core` seam: Rust owns remote body transfer, bounding,
+hashing, and create-only staging; Python owns policy and durable coordination.
+There is no remaining Python HTTP body streamer in the import path.
 
 Connection reuse is intentionally limited to one validated hop because a shared
 client cannot silently retain host-to-IP mappings across a new DNS validation.

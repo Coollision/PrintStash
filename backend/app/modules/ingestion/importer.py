@@ -117,9 +117,8 @@ async def download_to_staging_with_receipt(url: str) -> tuple[Path, str, str]:
     current = url
     for _ in range(settings.url_import_max_redirects + 1):
         # Resolve once and dial exactly that address: validating the hostname and
-        # then letting the HTTP client resolve it again would let a hostile DNS server
-        # answer 127.0.0.1 the second time. Each redirect hop is a fresh URL, so
-        # each gets its own validation and its own pinned connection.
+        # then letting the HTTP client resolve it again would let hostile DNS
+        # answer 127.0.0.1 the second time. Every redirect gets fresh validation.
         target = _resolve_or_raise(current)
         reservation_id = uuid.uuid4().hex
         with CapacityManager(get_session_factory()).hold(
@@ -393,8 +392,10 @@ def _ingest_one_file(
                 provenance_context=provenance_context,
                 on_progress=on_progress,
                 defer_fingerprint=True,
-                prepared_analysis=(
-                    prepared_analysis.process if prepared_analysis is not None else None
+                **(
+                    {"prepared_analysis": prepared_analysis.process}
+                    if prepared_analysis is not None
+                    else {}
                 ),
             )
         child_status = registry.get(child)

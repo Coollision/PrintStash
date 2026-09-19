@@ -39,14 +39,17 @@ python_bin="${PRINTSTASH_TEST_PYTHON:-$backend/.venv/bin/python}"
 (cd packages/printstash-core && "$python_bin" -m pytest -q --no-cov tests/mesh tests/gcode)
 "$python_bin" -m pytest -q --no-cov tests/integration/modules/media/test_mesh_render.py \
   tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh \
-  tests/unit/modules/media/test_bgcode.py
+  tests/unit/modules/media/test_bgcode.py \
+  tests/contract/api/v1/test_ingest.py::TestDownloadToStaging
 cargo test --manifest-path rust/Cargo.toml --locked \
+  --package printstash-acquisition-core \
   --package printstash-gcode-core --package printstash-libbgcode \
   --package printstash-similarity-core
 cargo test --manifest-path rust/render-core/Cargo.toml --locked
 report_args=(
   --manifest-path rust/Cargo.toml
   --package printstash-mesh-native
+  --package printstash-acquisition-core
   --package printstash-gcode-core
   --package printstash-libbgcode
   --package printstash-render-core
@@ -61,6 +64,7 @@ report = json.load(open(sys.argv[1]))
 files = [file for entry in report["data"] for file in entry["files"]]
 for source in (
     "/rust/src/",
+    "/rust/acquisition-core/src/",
     "/rust/gcode-core/src/",
     "/rust/libbgcode-sys/src/",
     "/rust/render-core/src/",
