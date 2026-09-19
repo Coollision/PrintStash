@@ -203,7 +203,7 @@ class TestFlakyDetectionJob:
 
 class TestBackendTimeouts:
     def test_prevents_unbounded_backend_execution(self) -> None:
-        assert _ci_workflow()["jobs"]["backend"]["timeout-minutes"] == 60
+        assert _ci_workflow()["jobs"]["backend"]["timeout-minutes"] == 90
 
         project = tomllib.loads((REPO_ROOT / "backend" / "pyproject.toml").read_text())
         assert project["tool"]["pytest"]["ini_options"]["timeout"] == 300

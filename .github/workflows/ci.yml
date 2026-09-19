@@ -280,7 +280,8 @@ jobs:
     name: Backend
     if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The coverage lane can exceed one hour on shared runners while still making progress.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: backend
