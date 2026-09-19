@@ -71,7 +71,7 @@ jobs:
           RUSTUP_TOOLCHAIN=1.98.1 uv sync --extra dev --frozen
           RUSTUP_TOOLCHAIN=1.98.1 uv pip install ./rust
           uv run python -c 'import printstash_mesh_native'
-          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_database.py scripts/bench_corpus.py scripts/bench_matrix.py scripts/bench_queue.py scripts/bench_queue_qualification.py scripts/bench_queue_qualification_matrix.py
+          uv run ruff check rust/tests scripts/bench_import.py scripts/bench_image_quality.py scripts/bench_database.py scripts/bench_corpus.py scripts/bench_matrix.py scripts/bench_queue.py scripts/bench_queue_qualification.py scripts/bench_queue_qualification_matrix.py
           cargo +1.98.1 fmt --manifest-path rust/Cargo.toml --check
           cargo +1.98.1 clippy --manifest-path rust/Cargo.toml --locked -- -D warnings
           cargo +1.98.1 fmt --manifest-path rust/render-core/Cargo.toml --check
@@ -280,7 +280,8 @@ jobs:
     name: Backend
     if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The coverage lane can exceed one hour on shared runners while still making progress.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: backend

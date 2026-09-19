@@ -70,7 +70,7 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M12 | similarity | Native voxelization, descriptor kernels, alignment, exact proof, and verification decisions; see `native-similarity.md` for ownership, quality/work evidence, and comparison protocol |
 | M13 | acquisition | **Complete for the revised boundary:** Rust `printstash-acquisition-core` owns all server-side HTTP(S) import bodies, bounds, hashing, and create-only staging. Python retains provider credential/metadata coordination, inbox enumeration, checkpoints, and deferred `StorageBackend` materialization; see `native-acquisition.md` |
 | M14 | native-enrichment | **Blocked:** the maintained Rust ORT wrapper remains prerelease and trails the selected stable runtime API; see `native-enrichment.md` |
-| M15 | native-stage-closeout | **Implementation complete; delivery gates pending:** duplicate Python similarity/voxel kernels are removed and every import entry point is audited. STEP and enrichment remain explicit blockers to the original all-native goal; see `native-import-closeout.md` |
+| M15 | native-stage-closeout | **Implementation and current-revision CI complete; controlled comparison running:** duplicate Python similarity/voxel kernels are removed and every import entry point is audited. STEP and enrichment remain explicit blockers to the original all-native goal; see `native-import-closeout.md` |
 
 M03–M07 are outside the active delivery sequence. M08–M14 continue through the
 existing execution path, and M15 closes only those native stages. Preserve public
@@ -146,6 +146,14 @@ instrumentation must be pinned and recorded separately from production.
 
 No queue candidate is selected. No import stage has changed ownership. No
 controlled baseline performance comparison or complete migration is claimed.
+
+The first post-M15 controlled matrix, run 35461199627, was rejected during its
+original-baseline warm-up because the pre-Rust and Rust renderers do not produce
+byte-identical previews. No timing from that run is accepted. The rerun applies
+the already established M10 32 x 24 RGB Lanczos probe and mean absolute error
+ceiling of 24 only when crossing that renderer boundary. Comparisons against the
+immediate parent remain byte-exact, while source identity, preview state, full
+dimensions, metadata and geometry remain exact in both modes.
 
 ### M00 coverage matrix
 

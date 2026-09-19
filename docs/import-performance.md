@@ -71,6 +71,14 @@ That mode requires a reference containing decoded pixel hashes and rejects any
 changed pixel, dimensions or preview state. Imported source files and geometry
 must still match. It does not allow reduced resolution or lossy compression.
 
+The controlled migration matrix uses a separate `quality` mode only when the
+ancestor is the original pre-Rust renderer. It records a deterministic 32 × 24
+RGB Lanczos probe and applies the M10-approved mean absolute error ceiling of 24
+using Pillow and NumPy. Source identity, preview state, full dimensions, metadata
+and geometry remain exact. Immediate-parent comparisons still require identical
+encoded preview bytes, so the bounded quality allowance cannot hide a regression
+introduced by the current milestone.
+
 Add `--similarity` to both commands to enable similarity indexing. Source
 completion still precedes geometry and previews. The total timer waits for
 similarity runs as well. Comparisons also check final fingerprint states,

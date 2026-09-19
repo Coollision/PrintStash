@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import io
 import json
@@ -20,6 +19,7 @@ import psutil
 from PIL import Image
 
 from app.modules.media.thumbnail_engine import ThumbnailEngine, ThumbnailRequest
+from scripts.bench_image_quality import encode_rgb_probe, probes_match
 
 DEFAULT_ITERATIONS = 7
 ZIP_TIMESTAMP = (2026, 1, 1, 0, 0, 0)
@@ -141,13 +141,13 @@ def _measure(path: Path, iterations: int) -> tuple[dict, dict]:
             )
         with Image.open(io.BytesIO(result.image)) as decoded:
             decoded.load()
-            probe = decoded.convert("RGB").resize((32, 24), Image.Resampling.LANCZOS)
+            probe = encode_rgb_probe(decoded)
         current = {
             "image_sha256": _sha256(result.image),
             "image_bytes": len(result.image),
             "image_mode": decoded.mode,
             "image_size": list(decoded.size),
-            "pixel_probe_rgb_32x24": base64.b64encode(probe.tobytes()).decode(),
+            "pixel_probe_rgb_32x24": probe,
             "geometry": result.geometry,
             "strategy": result.strategy.value,
             "complete": result.complete,
@@ -213,13 +213,16 @@ def _assert_compatible(reference: dict, report: dict) -> None:
                 raise ValueError(
                     f"mesh-preview benchmark correctness differs: {name}.{key}"
                 )
-        a = np.frombuffer(
-            base64.b64decode(left["pixel_probe_rgb_32x24"]), dtype=np.uint8
-        )
-        b = np.frombuffer(
-            base64.b64decode(right["pixel_probe_rgb_32x24"]), dtype=np.uint8
-        )
-        if a.shape != b.shape or np.abs(a.astype(np.int16) - b).mean() > 24:
+        try:
+            matches = probes_match(
+                left["pixel_probe_rgb_32x24"],
+                right["pixel_probe_rgb_32x24"],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"mesh-preview benchmark pixel comparison differs: {name}"
+            ) from exc
+        if not matches:
             raise ValueError(f"mesh-preview benchmark pixel comparison differs: {name}")
 
 

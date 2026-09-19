@@ -61,8 +61,8 @@ not an alternate implementation selected when the native extension is absent.
 | 6 | preserves unrelated native archive errors | Error | Non-policy errors are not mislabeled as archive policy failures | Core | ✅ `test_archives.py::TestInspectArchive::test_preserves_unrelated_native_errors` |
 | 7 | preserves similarity application records | Happy/Edge | Fingerprints, candidate processing, cache, and verification decisions pass through real backend integration | Integration | ✅ 324 focused backend tests |
 | 8 | keeps autonomous core coverage above its ratchets | Coverage | 2,036 tests pass; aggregate branch coverage is 99.18%; changed and inherited native-stage boundary modules clear their floors | Core coverage | ✅ official coverage lane |
-| 9 | packages native stages for amd64/arm64 full/lite images | Packaging | Declared capabilities import and execute in every image | CI | ❌ pending milestone PR CI |
-| 10 | preserves every supported application import flow | E2E | Upload, URL, provider, capture, inbox, portable, and external sources produce the expected Artifacts | E2E/Playwright | ❌ pending milestone PR CI |
+| 9 | packages native stages for amd64/arm64 full/lite images | Packaging | Declared capabilities import and execute in every image | CI | ✅ run 35458444754 |
+| 10 | preserves every supported application import flow | E2E | Upload, URL, provider, capture, inbox, portable, and external sources produce the expected Artifacts | E2E/Playwright | ✅ run 35458444754 |
 
 ## Performance comparison
 
@@ -72,10 +72,15 @@ the expected native-path timing and outputs are identical to M14. The committed
 fingerprints and all verification classes before recording latency, CPU, RSS,
 and container memory against both the immediate parent and M00 baseline.
 
-The controlled 2 CPU/2 GiB and 4 CPU/4 GiB comparison must run from the M15 PR
-revision. Neutral results are acceptable; any repeatable regression above the
-standard thresholds blocks delivery. No local timing is presented as controlled
-evidence.
+The first controlled comparison from integration commit
+`2f7b58aaefe609b72b2b44c1b61915d3962ddc4e`, GitHub Actions run 35461199627,
+stopped during the original-baseline warm-up. Source identity, preview outcome,
+geometry, metadata and dimensions matched, while exact compressed preview bytes
+differed across the intentional renderer replacement. No timing from that run is
+accepted. The harness rerun uses the existing M10 32 x 24 RGB Lanczos probe and
+mean absolute error ceiling of 24 only against the original pre-Rust renderer;
+the immediate M14 comparison remains byte-exact. The controlled 2 CPU/2 GiB and
+4 CPU/4 GiB SQLite/PostgreSQL matrix remains a delivery gate.
 
 ## Verification and remaining delivery gates
 
@@ -88,6 +93,9 @@ evidence.
 - `render-core`: 11 tests passed. Binding unit tests: 7 passed with the PyO3
   interpreter and library path pinned to the backend Python 3.11 environment.
 
-Full backend/frontend/browser, native coverage, security, container, architecture,
-and controlled-performance gates remain milestone-PR evidence. M15 can merge
-into the integration branch only after those current-revision checks pass.
+Full backend, Python 3.13, frontend, real-browser, native coverage, container,
+architecture, and critical-capability gates passed for exact head `bcc01b75` in
+run 35458444754. Exact-diff security scan
+`dd6d4113-0344-4b69-bddb-ad78f32d5d1c` completed with five covered surfaces
+and zero findings. M15 merged into the integration branch as `2f7b58aa`; the
+corrected controlled performance comparison remains open.

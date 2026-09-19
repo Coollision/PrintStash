@@ -3,10 +3,12 @@
 import pytest
 
 from scripts.bench_matrix import (
+    Profile,
     compare_queue_contracts,
     comparison,
     container_measurement_script,
     container_resources,
+    preview_comparison_mode,
     revision,
 )
 
@@ -206,6 +208,55 @@ class TestPerformanceComparison:
             "container_peak_bytes",
         }
         assert result["metrics"]["large_p95_ms"]["pairs_above_threshold"] == 7
+
+
+class TestProfilePreviewComparison:
+    def test_passes_quality_mode_to_complete_import(self, monkeypatch, tmp_path):
+        from scripts import bench_matrix
+
+        evidence = tmp_path / "evidence"
+        (evidence / "runs").mkdir(parents=True)
+        reference = evidence / "runs" / "reference.json"
+        reference.write_text("{}")
+        commands = []
+
+        def fake_command(args, *, log=None):
+            commands.append(args)
+            if log is not None:
+                log.with_suffix(".json").write_text("{}")
+                log.with_suffix(".cpu-usec").write_text("1000000\n")
+                log.with_suffix(".memory-peak").write_text("4096\n")
+            return ""
+
+        monkeypatch.setattr(bench_matrix, "command", fake_command)
+        profile = Profile(
+            evidence=evidence,
+            dialect="sqlite",
+            cpus=2,
+            network="isolated",
+            env_file=tmp_path / "unused.env",
+            database_container=None,
+        )
+
+        profile.run(
+            "image",
+            "case",
+            {"name": "large-mesh.zip", "similarity": False},
+            reference,
+            preview_comparison="quality",
+        )
+
+        command = commands[0]
+        index = command.index("--preview-comparison")
+        assert command[index + 1] == "quality"
+
+
+class TestPreviewComparisonMode:
+    def test_uses_approved_quality_for_the_original_renderer(self):
+        assert preview_comparison_mode("original", "original") == "quality"
+
+    def test_requires_identical_bytes_for_the_immediate_parent(self):
+        assert preview_comparison_mode("parent", "original") == "bytes"
 
 
 class TestBenchmarkRevision:

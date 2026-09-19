@@ -1,8 +1,11 @@
 """A compression experiment must still reject any changed preview pixels."""
 
+import base64
+
 import httpx
 import pytest
 
+from scripts.bench_image_quality import PROBE_BYTES
 from scripts.bench_import import (
     compare_databases,
     compare_fingerprints,
@@ -131,6 +134,10 @@ class TestCompareFingerprints:
             compare_fingerprints({}, {"fingerprint_catalog": []})
 
 
+def quality_probe(value: int) -> str:
+    return base64.b64encode(bytes([value]) * PROBE_BYTES).decode("ascii")
+
+
 class TestComparePreviews:
     def test_allows_changed_lossless_compression(self) -> None:
         pixels = [["source", "rgba", 320, 240, "ready"]]
@@ -144,6 +151,45 @@ class TestComparePreviews:
         }
 
         compare_previews(before, after, mode="pixels")
+
+    def test_allows_an_approved_renderer_quality_change(self) -> None:
+        before = {
+            "preview_quality_catalog": [
+                ["source", quality_probe(10), 640, 480, "ready"]
+            ]
+        }
+        after = {
+            "preview_quality_catalog": [
+                ["source", quality_probe(34), 640, 480, "ready"]
+            ]
+        }
+
+        compare_previews(before, after, mode="quality")
+
+    @pytest.mark.parametrize(
+        "changed",
+        [
+            ["source", quality_probe(35), 640, 480, "ready"],
+            ["source", quality_probe(10), 480, 640, "ready"],
+            ["source", quality_probe(10), 640, 480, "failed"],
+        ],
+        ids=["quality", "dimensions", "state"],
+    )
+    def test_rejects_unapproved_renderer_change(self, changed: list) -> None:
+        before = {
+            "preview_quality_catalog": [
+                ["source", quality_probe(10), 640, 480, "ready"]
+            ]
+        }
+
+        with pytest.raises(SystemExit, match="preview quality differs"):
+            compare_previews(
+                before, {"preview_quality_catalog": [changed]}, mode="quality"
+            )
+
+    def test_rejects_missing_reference_quality_evidence(self) -> None:
+        with pytest.raises(SystemExit, match="no preview quality catalog"):
+            compare_previews({}, {"preview_quality_catalog": []}, mode="quality")
 
     def test_rejects_changed_bytes_by_default(self) -> None:
         with pytest.raises(SystemExit, match="preview bytes differ"):

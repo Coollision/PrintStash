@@ -29,6 +29,13 @@ ORIGINAL = "4b9afeb92d4e7e24298454af38c6c76aeddec437"
 POSTGRES = (
     "postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
 )
+
+
+def preview_comparison_mode(ancestor: str, original: str = ORIGINAL) -> str:
+    """Use bounded visual parity only across the intentionally replaced renderer."""
+    return "quality" if ancestor == original else "bytes"
+
+
 METRICS = {
     "source_saved_s": ("saved_seconds",),
     "complete_s": ("total_seconds",),
@@ -233,6 +240,7 @@ def harness_context(work: Path, head: str) -> Path:
     context.mkdir()
     for name in (
         "bench_import.py",
+        "bench_image_quality.py",
         "bench_database.py",
         "bench_archive.py",
         "bench_gcode.py",
@@ -269,7 +277,7 @@ def harness_context(work: Path, head: str) -> Path:
         # non-traversable directories. Hashing those sources needs read access
         # in this instrumentation layer, without running the benchmark as root.
         "RUN chmod -R a+rX /app/packages\n"
-        "COPY bench_import.py bench_database.py bench_archive.py bench_gcode.py bench_mesh_preview.py bench_similarity.py bench_acquisition.py bench_queue.py /app/scripts/\n"
+        "COPY bench_import.py bench_image_quality.py bench_database.py bench_archive.py bench_gcode.py bench_mesh_preview.py bench_similarity.py bench_acquisition.py bench_queue.py /app/scripts/\n"
         "COPY gcode-fixtures /app/scripts/gcode-fixtures\n"
         f"LABEL org.printstash.benchmark.harness-revision={head}\n"
     )
@@ -326,7 +334,13 @@ class Profile:
     database_container: str | None
 
     def run(
-        self, image: str, name: str, archive: dict, reference: Path | None = None
+        self,
+        image: str,
+        name: str,
+        archive: dict,
+        reference: Path | None = None,
+        *,
+        preview_comparison: str = "bytes",
     ) -> dict:
         evidence, dialect, cpus = self.evidence, self.dialect, self.cpus
         network, env_file, db = self.network, self.env_file, self.database_container
@@ -412,6 +426,14 @@ class Profile:
             cli += ["--similarity"]
         if reference and not queue:
             cli += ["--compare", f"/evidence/runs/{reference.name}"]
+            if (
+                not gcode
+                and not archive_benchmark
+                and not mesh
+                and not similarity_benchmark
+                and not acquisition_benchmark
+            ):
+                cli += ["--preview-comparison", preview_comparison]
         # Arguments are positional, not interpolated into shell source.
         script = container_measurement_script()
         args += ["--env", f"BENCH_MEMORY_PEAK=/evidence/runs/{name}.memory-peak"]
@@ -572,9 +594,16 @@ def measure_case(
 ) -> dict:
     label = f"{profile.dialect}-{profile.cpus}cpu-{ancestor[:12]}-{Path(archive['name']).stem}"
     reference = None
+    preview_comparison = preview_comparison_mode(ancestor)
     for side, rev in (("base", ancestor), ("head", head)):
         name = f"{label}-warmup-{side}"
-        profile.run(images[rev]["benchmark_id"], name, archive, reference)
+        profile.run(
+            images[rev]["benchmark_id"],
+            name,
+            archive,
+            reference,
+            preview_comparison=preview_comparison,
+        )
         if side == "base":
             reference = profile.evidence / "runs" / f"{name}.json"
     reports = {"base": [], "head": []}
@@ -604,7 +633,13 @@ def measure_case(
             name = f"{label}-pair{pair + 1:02d}-{side}"
             print(name, flush=True)
             reports[side].append(
-                profile.run(images[rev]["benchmark_id"], name, archive, reference)
+                profile.run(
+                    images[rev]["benchmark_id"],
+                    name,
+                    archive,
+                    reference,
+                    preview_comparison=preview_comparison,
+                )
             )
     return {
         "label": label,

@@ -46,6 +46,7 @@ from scripts.bench_database import (
     pending_enrichment,
     read_rows,
 )
+from scripts.bench_image_quality import encode_rgb_probe, probes_match
 
 _SETUP_RATE_LIMIT_BACKOFF_SECONDS = 61
 
@@ -492,12 +493,16 @@ def run(
                     from PIL import Image
 
                     pixel_catalog = []
+                    quality_catalog = []
                     preview_bytes = 0
                     if export_previews is not None:
                         export_previews.mkdir(parents=True, exist_ok=True)
                     for source_hash, key, state in preview_files:
                         if key is None:
                             pixel_catalog.append((source_hash, None, None, None, state))
+                            quality_catalog.append(
+                                (source_hash, None, None, None, state)
+                            )
                             continue
                         path = Path(key).resolve()
                         if not path.is_relative_to(root.resolve()):
@@ -512,6 +517,15 @@ def run(
                                 (
                                     source_hash,
                                     hashlib.sha256(rgba.tobytes()).hexdigest(),
+                                    rgba.width,
+                                    rgba.height,
+                                    state,
+                                )
+                            )
+                            quality_catalog.append(
+                                (
+                                    source_hash,
+                                    encode_rgb_probe(rgba),
                                     rgba.width,
                                     rgba.height,
                                     state,
@@ -586,6 +600,7 @@ def run(
                         "preview_catalog": previews,
                         "preview_outcome_catalog": preview_outcomes,
                         "preview_pixel_catalog": sorted(pixel_catalog),
+                        "preview_quality_catalog": sorted(quality_catalog),
                         "preview_bytes": preview_bytes,
                         "thumbnail_states_at_import_completion": dict(
                             Counter(
@@ -633,7 +648,47 @@ def compare_preview_outcomes(before: dict, after: dict) -> None:
 
 
 def compare_previews(before: dict, after: dict, *, mode: str = "bytes") -> None:
-    """Require identical stored images, allowing decoded comparison explicitly."""
+    """Require stored-image identity or one explicitly selected quality contract."""
+    if mode == "quality":
+        key = "preview_quality_catalog"
+        if key not in before or key not in after:
+            raise SystemExit(
+                "Comparison refused: reference has no preview quality catalog"
+            )
+        left_rows = before[key]
+        right_rows = json.loads(json.dumps(after[key]))
+        if not isinstance(left_rows, list) or not isinstance(right_rows, list):
+            raise SystemExit(
+                "Comparison refused: generated preview quality differs; inspect both reports"
+            )
+        if len(left_rows) != len(right_rows):
+            raise SystemExit(
+                "Comparison refused: generated preview quality differs; inspect both reports"
+            )
+        for left, right in zip(left_rows, right_rows, strict=True):
+            if (
+                not isinstance(left, list)
+                or not isinstance(right, list)
+                or len(left) != 5
+                or len(right) != 5
+                or [left[index] for index in (0, 2, 3, 4)]
+                != [right[index] for index in (0, 2, 3, 4)]
+            ):
+                raise SystemExit(
+                    "Comparison refused: generated preview quality differs; inspect both reports"
+                )
+            if left[1] is None or right[1] is None:
+                matches = left[1] is None and right[1] is None
+            else:
+                try:
+                    matches = probes_match(left[1], right[1])
+                except (TypeError, ValueError):
+                    matches = False
+            if not matches:
+                raise SystemExit(
+                    "Comparison refused: generated preview quality differs; inspect both reports"
+                )
+        return
     key = "preview_pixel_catalog" if mode == "pixels" else "preview_catalog"
     if mode == "pixels" and key not in before:
         raise SystemExit("Comparison refused: reference has no decoded pixel catalog")
@@ -676,7 +731,7 @@ def main() -> None:
         help="Environment variable holding an isolated PostgreSQL test server's maintenance URL",
     )
     parser.add_argument(
-        "--preview-comparison", choices=("bytes", "pixels"), default="bytes"
+        "--preview-comparison", choices=("bytes", "pixels", "quality"), default="bytes"
     )
     parser.add_argument("--export-previews", type=Path)
     parser.add_argument("--timeout", type=float, default=3600)
@@ -714,11 +769,16 @@ def main() -> None:
         if before.get("similarity_on_ingest", False) != args.similarity:
             raise SystemExit("Comparison refused: similarity settings differ")
         if (
-            args.preview_comparison == "pixels"
-            and "preview_pixel_catalog" not in before
+            args.preview_comparison in {"pixels", "quality"}
+            and (
+                "preview_pixel_catalog"
+                if args.preview_comparison == "pixels"
+                else "preview_quality_catalog"
+            )
+            not in before
         ):
             raise SystemExit(
-                "Comparison refused: reference has no decoded pixel catalog"
+                "Comparison refused: reference lacks the selected preview comparison evidence"
             )
     report = run(
         args.archive.resolve(),
