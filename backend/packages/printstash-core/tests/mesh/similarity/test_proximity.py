@@ -72,6 +72,20 @@ class TestSurfaceProximity:
         np.testing.assert_allclose(distances, 0, atol=1e-12)
         np.testing.assert_allclose(closest, surface.vertices, atol=1e-12)
 
+    def test_aligns_against_the_owned_surface(self, tetra, use_native):
+        surface = prepare_surface(*tetra)
+        proximity = SurfaceProximity(surface, native=use_native)
+        diagonal = float(np.linalg.norm(np.ptp(surface.vertices, axis=0)))
+
+        error, rotation, offset, convergence = proximity.align(
+            surface.vertices, np.eye(3), diagonal
+        )
+
+        assert error == pytest.approx(0, abs=1e-12)
+        assert convergence == pytest.approx(0, abs=1e-12)
+        np.testing.assert_allclose(rotation, np.eye(3), atol=1e-12)
+        np.testing.assert_allclose(offset, 0, atol=1e-12)
+
     def test_retains_geometry_after_caller_mutation(self, tetra, use_native):
         surface = prepare_surface(*tetra)
         points = surface.vertices.copy()
@@ -90,6 +104,17 @@ if hasattr(kernel(), "SurfaceTree"):
             surface.vertices[:] = np.nan
             with pytest.raises(GeometryError, match="invalid_proximity_surface"):
                 SurfaceProximity(surface)
+
+        def test_translates_native_alignment_failure(self, tetra):
+            proximity = SurfaceProximity(prepare_surface(*tetra))
+
+            class RejectedAlignment:
+                def align(self, *_args):
+                    raise ValueError("invalid_alignment")
+
+            proximity._native = RejectedAlignment()
+            with pytest.raises(GeometryError, match="invalid_alignment"):
+                proximity.align(np.zeros((1, 3)), np.eye(3), 1.0)
 
         def test_accepts_the_maximum_query_size(self, tetra):
             surface = prepare_surface(*tetra)
