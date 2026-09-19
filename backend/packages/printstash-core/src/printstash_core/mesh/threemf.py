@@ -274,7 +274,7 @@ def load_scene(path: Path, *, max_bytes: int = 512 * 1024**2) -> Any:
                 frame_to=f"instance-{index}",
                 matrix=matrix,
                 geometry=key,
-        )
+            )
         try:
             object.__setattr__(
                 scene,
