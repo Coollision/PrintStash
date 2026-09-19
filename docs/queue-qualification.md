@@ -33,28 +33,58 @@ for that future evaluation:
 | RustQueue | 0.3.0 | SQLite and PostgreSQL storage with an embedded worker and documented crash recovery | Caller-transaction enqueue, stale ACK fencing, schema upgrades, dependency footprint, and the complete recovery/performance matrix |
 | pgqrs | 0.15.3 | PostgreSQL plus SQLite/Turso and durable workflow execution | Queue-only integration depth, ownership fencing, atomic acceptance, schema upgrades, and the complete recovery/performance matrix |
 | Boson | Not yet inspected | Advertises pluggable SQLite and PostgreSQL backends | Stable published artifacts, immutable versions, maintenance evidence, and every correctness and performance gate |
+| DBOS Python (official) | 3.0.0 | Durable queues and workflows on SQLite or PostgreSQL, caller-transaction enqueue, priorities, recovery, and concurrency/rate controls | Strongest newly discovered coordinator candidate; run the complete correctness/performance matrix and accept that the durable coordinator remains Python |
 | DBOS Rust (official) | 0.5.0 | Mature durable-workflow model, queues, priorities, recovery, and concurrency controls, but its released Rust system database is PostgreSQL-only | Does not qualify for the OSS requirement that one embedded Rust queue use either the configured SQLite or PostgreSQL application database |
-| `dbos-core` community port | 0.1.0 | Advertises SQLite and PostgreSQL behind one Rust workflow/queue API | Establish project provenance and maintenance, then run atomic acceptance, stale-owner fencing, publication replay, upgrades, and the complete recovery/performance matrix on both databases |
+| `dbos-core` community port | 0.1.0 (yanked) | Its archived docs advertise SQLite and PostgreSQL behind one Rust workflow/queue API | Excluded: crates.io reports the only release as yanked and Cargo cannot resolve it |
 
 Documentation reviewed for this inventory:
 [Worklane PostgreSQL](https://docs.rs/crate/worklane-postgres/0.2.1),
 [Worklane SQLite](https://docs.rs/worklane-sqlite/0.2.1/worklane_sqlite/),
 [RustQueue](https://docs.rs/crate/rustqueue/0.3.0),
-[pgqrs](https://docs.rs/crate/pgqrs/0.15.3), and
+[pgqrs](https://docs.rs/crate/pgqrs/0.15.3),
 [Boson](https://github.com/unified-field-dev/boson),
-[official DBOS Rust v0.5.0](https://github.com/dbos-inc/dbos-transact-rust/tree/v0.5.0), and
-[`dbos-core` 0.1.0](https://docs.rs/dbos-core/0.1.0/dbos/).
+[official DBOS Python queues](https://docs.dbos.dev/python/reference/queues),
+[DBOS Python database configuration](https://docs.dbos.dev/python/reference/configuration),
+[DBOS Python transactional enqueue](https://docs.dbos.dev/python/reference/client#enqueue_in_transaction),
+[official DBOS Rust v0.5.0](https://github.com/dbos-inc/dbos-transact-rust/tree/v0.5.0),
+[archived `dbos-core` 0.1.0 docs](https://docs.rs/dbos-core/0.1.0/dbos/), and
+[its crates.io release](https://crates.io/crates/dbos-core/0.1.0).
 
 ### DBOS assessment
 
 DBOS was missing from the original M01 comparison and is recorded here so that
-the queue decision does not imply it was evaluated. The official Rust SDK's
-latest stable release at inspection time is `dbos` 0.5.0, released on
-2026-09-09 under MIT. It requires Rust 1.95 and SQLx 0.9 with only the
-`postgres` driver enabled. Its repository describes the system database as
-PostgreSQL, contains only a PostgreSQL system-database implementation, and runs
-its database CI against PostgreSQL and CockroachDB. SQLite is therefore not a
-hidden or optional feature in that release.
+the queue decision does not imply it was evaluated. Its official SDKs have
+different capabilities and must not be treated as one interchangeable library.
+The releases below were inspected on 2026-09-19.
+
+The official Python SDK 3.0.0 (MIT, Python 3.10+) supports durable queues on
+both SQLite and PostgreSQL; SQLite is its default system database. The release
+was published on 2026-09-16 and depends on SQLAlchemy 2.0.43+, psycopg 3.1+,
+PyYAML 6.0.2+, python-dateutil 2.9+, websockets 14+, and Click 8.1+. Its
+`enqueue_in_transaction` API accepts a caller-owned SQLAlchemy connection or
+session and writes the workflow intent inside that transaction. When PrintStash
+configures the DBOS system database as the application database, this
+directly matches the atomic acceptance shape that Apalis failed. It also provides priorities, delayed work,
+deduplication, partitioning, global/per-worker concurrency, rate limits,
+recovery, and explicit queue listeners without Redis or a separate service.
+This makes DBOS Python the strongest newly discovered candidate for a future
+OSS queue qualification.
+
+That fit does not establish production correctness. The transactional enqueue
+cannot span a separate database, and the Python SDK still needs executable
+evidence for stale completion/publication fencing, killed-process recovery,
+SQLite contention, waiting without attempt consumption, schema upgrades,
+shutdown, backup/restore, and PrintStash's foreground/background policy. It
+also leaves Python as the durable coordinator: a DBOS workflow may call the
+Rust engine through the narrow binding, but that architecture does not satisfy
+a requirement that the coordinator itself run in Rust.
+
+The official Rust SDK's latest stable release at inspection time is `dbos`
+0.5.0, released on 2026-09-09 under MIT. It requires Rust 1.95 and SQLx 0.9
+with only the `postgres` driver enabled. Its repository describes the system
+database as PostgreSQL, contains only a PostgreSQL system-database
+implementation, and runs its database CI against PostgreSQL and CockroachDB.
+SQLite is therefore not a hidden or optional feature in that release.
 
 The official SDK is technically relevant: it embeds the coordinator, durable
 workflow state, recovery, queue priorities, per-worker/global concurrency, and
@@ -67,13 +97,14 @@ required PrintStash adoption gates before a benchmark would be meaningful:
   through the supported API. The project's own Rust widget-store documentation
   calls this write window at-least-once.
 
-The official Go SDK's SQLite support does not change this result because the
-planned engine is embedded Rust and must not add a second worker service. A
-separate crate named `dbos-core` 0.1.0 advertises both SQLite and PostgreSQL,
-but it is a community port rather than the released official `dbos` crate. It
-remains a future candidate and receives no production trust from API shape
-alone. It must pass the same executable gates as Apalis and Azums before any
-queue cutover is reopened.
+The Python SDK is the practical cross-database DBOS option; the official Go
+SDK's SQLite support would add a second worker service and is not useful here.
+A separate community crate named `dbos-core` published 0.1.0 with SQLite and
+PostgreSQL APIs, but crates.io now marks that only release as yanked and Cargo
+cannot resolve it. Archived docs are discovery evidence only; the crate is not
+an installable production candidate. A future non-yanked release would still
+need provenance, maintenance, and every executable gate before a queue cutover
+could be reopened.
 
 Reopening the queue work requires a new qualification PR. It must reuse the M01
 harness and may extend its adapter boundary, but it must not add candidate code

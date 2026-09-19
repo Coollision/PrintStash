@@ -2,7 +2,7 @@
 
 Implementation starts from `perf/adaptive-rust-import` at
 `4b9afeb92d4e7e24298454af38c6c76aeddec437`. The first milestone is
-`codex/rust-m00-baseline`. This document records acceptance criteria and evidence;
+`feature/rust-m00-baseline`. This document records acceptance criteria and evidence;
 planned work is not a claim of a completed native import path.
 
 ## Architecture and ownership
@@ -47,7 +47,7 @@ thread does not change its compute language or durable ownership.
 
 ## Milestones and delivery
 
-Each row receives one branch `codex/rust-mNN-<suffix>` and one PR into the latest
+Each row receives one branch `feature/rust-mNN-<suffix>` and one PR into the latest
 verified `perf/adaptive-rust-import`. Merge only after current-revision checks,
 review, performance evidence, and the tested integration result pass. Validate
 the resulting integration commit before the next dependent milestone. Accumulate
