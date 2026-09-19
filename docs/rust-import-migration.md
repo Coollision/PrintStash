@@ -33,7 +33,7 @@ Current ownership at M00 (unchanged by the benchmark):
 | Stage | Compute language | Coordinator | Durable-state owner | Existing contract evidence to preserve |
 | --- | --- | --- | --- | --- |
 | Import acceptance/dispatch | Python | HTTP and `runtime/ingestion` | Python SQLModel transaction, `modules/ingestion/commands.py` | `tests/integration/modules/ingestion/test_commands.py`, `test_command_executor.py` |
-| Acquisition/outer archives | Python and existing codecs | Python command executor | Import commands, staging leases and checkpoints | `tests/integration/modules/ingestion/test_acquisition.py`, importer tests |
+| Acquisition/outer archives | Rust URL streaming; Python providers/inbox/source coordination | Python command executor and redirect policy | Import commands, staging leases and checkpoints | `native-acquisition.md`, acquisition/importer tests |
 | Artifact publication | Python | `ingestion.persist_artifact` | One application transaction, reservations and storage receipts | `tests/integration/modules/ingestion/ingestion/test_ingestion_atomicity.py` |
 | Mesh preparation/previews | Rust kernels plus Python dispatch/assembly | Python stages using native executor | Python analysis/thumbnail generations | `rust/tests/`, `tests/integration/modules/media/test_mesh_render.py` |
 | Resource admission | Existing Rust reservations | Python task selection, native executor | Python durable jobs | `rust/tests/test_orchestration.py`, media resource tests |
@@ -68,7 +68,7 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M10 | mesh-previews | Native preparation/buffer flow and renderer orchestration; path-based STL and native 3MF resource handles remove redundant preview copies; geometry and pixel parity, allocations/memory |
 | M11 | step | **Blocked:** evaluated Rust libraries do not preserve the existing helper contract within the 2 GiB profile; see `native-step.md` |
 | M12 | similarity | Native voxelization, descriptor kernels, alignment, exact proof, and verification decisions; see `native-similarity.md` for ownership, quality/work evidence, and comparison protocol |
-| M13 | acquisition | Rust URL/provider/inbox/source acquisition, credentials/checkpoints; safe destinations and resumed bytes |
+| M13 | acquisition | **Complete for the revised boundary:** Rust `printstash-acquisition-core` owns all server-side HTTP(S) import bodies, bounds, hashing, and create-only staging. Python retains provider credential/metadata coordination, inbox enumeration, checkpoints, and deferred `StorageBackend` materialization; see `native-acquisition.md` |
 | M14 | native-enrichment | Native inference/tokenization with optional installation and asset validation; canaries/cold/warm/batching/memory |
 | M15 | native-stage-closeout | Remove Python compute implementations replaced by M08–M14; audit every entry point and package; retain the documented Python coordinator/queue/publication/storage owners |
 

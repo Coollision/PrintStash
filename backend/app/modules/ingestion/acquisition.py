@@ -18,7 +18,6 @@ from app.db.models import BackgroundJob, StagingLease
 from app.db.session import SessionFactory
 from app.modules.ingestion.commands import require_execution_claim
 from app.modules.ingestion.staging_leases import _matching_path, record_job_lease
-from app.modules.storage.hashing import sha256_file
 
 
 class AcquisitionJournal:
@@ -74,13 +73,12 @@ class AcquisitionJournal:
             return (path, saved["filename"]) if path else None
 
     async def download(self, key: str, url: str) -> tuple[Path, str]:
-        from app.modules.ingestion.importer import download_to_staging
+        from app.modules.ingestion.importer import download_to_staging_with_receipt
 
         restored = await asyncio.to_thread(self._restore_download, key)
         if restored is not None:
             return restored
-        path, filename = await download_to_staging(url)
-        digest = await asyncio.to_thread(sha256_file, path)
+        path, filename, digest = await download_to_staging_with_receipt(url)
         await asyncio.to_thread(
             self.save,
             key,

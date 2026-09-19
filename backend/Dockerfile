@@ -9,6 +9,7 @@ RUN apt-get update \
 WORKDIR /src/mesh-native
 COPY rust/Cargo.toml rust/Cargo.lock rust/pyproject.toml ./
 COPY rust/src ./src
+COPY rust/acquisition-core ./acquisition-core
 COPY rust/archive-core ./archive-core
 COPY rust/gcode-core ./gcode-core
 COPY rust/libbgcode-sys ./libbgcode-sys

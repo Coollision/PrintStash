@@ -7,6 +7,7 @@ from sqlmodel import select
 
 from app.db.models import BackgroundJob, StagingLease
 from app.db.session import get_session_factory
+from app.modules.ingestion import acquisition
 from app.modules.ingestion.acquisition import AcquisitionJournal
 from app.modules.ingestion.commands import claim_next, enqueue, execution_scope, release
 from app.runtime.jobs import registry
@@ -26,6 +27,40 @@ def acquisition_job(db_session):
 
 
 class TestAcquisitionContract:
+    @pytest.mark.asyncio
+    async def test_records_the_streaming_download_receipt_without_rereading(
+        self,
+        db_session,
+        acquisition_job,
+        tmp_path,
+        monkeypatch,
+    ):
+        path = tmp_path / "received.stl"
+        path.write_bytes(b"received model")
+        digest = hashlib.sha256(b"received model").hexdigest()
+
+        async def native_download(_url: str):
+            return path, "source.stl", digest
+
+        async def inline_to_thread(function, *args, **kwargs):
+            return function(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "app.modules.ingestion.importer.download_to_staging_with_receipt",
+            native_download,
+        )
+        monkeypatch.setattr(acquisition.asyncio, "to_thread", inline_to_thread)
+        claim = claim_next(db_session)
+        with execution_scope(claim):
+            result = await AcquisitionJournal(
+                acquisition_job, get_session_factory()
+            ).download("download", "https://example.com/model.stl")
+
+        assert result == (path, "source.stl")
+        assert AcquisitionJournal(
+            acquisition_job, get_session_factory()
+        )._restore_download("download") == (path, "source.stl")
+
     def test_restores_download_receipts_from_a_fresh_coordinator(
         self, db_session, acquisition_job, tmp_path
     ):

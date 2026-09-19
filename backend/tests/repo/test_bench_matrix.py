@@ -63,6 +63,20 @@ def _similarity_report(value):
     }
 
 
+def _acquisition_report(value):
+    return {
+        "total_seconds": value,
+        "download_latency": {
+            "small": {"p95_ms": value},
+            "large": {"p95_ms": value},
+            "redirect": {"p95_ms": value},
+        },
+        "process_cpu_seconds": value,
+        "process_peak_rss_bytes": value,
+        "container_memory_peak_bytes": value,
+    }
+
+
 class TestPerformanceComparison:
     def test_flags_a_repeatable_regression(self):
         result = comparison([_report(10)] * 7, [_report(12)] * 7)
@@ -174,6 +188,24 @@ class TestPerformanceComparison:
             "container_peak_bytes",
         }
         assert result["metrics"]["verification_p95_ms"]["pairs_above_threshold"] == 7
+
+    def test_compares_acquisition_metrics(self):
+        result = comparison(
+            [_acquisition_report(10)] * 7,
+            [_acquisition_report(11)] * 7,
+            acquisition=True,
+        )
+
+        assert set(result["metrics"]) == {
+            "complete_s",
+            "small_p95_ms",
+            "large_p95_ms",
+            "redirect_p95_ms",
+            "app_cpu_s",
+            "app_rss_bytes",
+            "container_peak_bytes",
+        }
+        assert result["metrics"]["large_p95_ms"]["pairs_above_threshold"] == 7
 
 
 class TestBenchmarkRevision:
