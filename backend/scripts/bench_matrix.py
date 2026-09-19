@@ -56,6 +56,14 @@ GCODE_METRICS = {
     "container_peak_bytes": ("container_memory_peak_bytes",),
 }
 
+ARCHIVE_METRICS = {
+    "complete_s": ("total_seconds",),
+    "archive_p95_ms": ("archive_latency", "p95_ms"),
+    "app_cpu_s": ("process_cpu_seconds",),
+    "app_rss_bytes": ("process_peak_rss_bytes",),
+    "container_peak_bytes": ("container_memory_peak_bytes",),
+}
+
 
 def compare_queue_contracts(before: dict, after: dict) -> None:
     if any(
@@ -117,14 +125,23 @@ def comparison(
     *,
     queue: bool = False,
     gcode: bool = False,
+    archive: bool = False,
 ) -> dict:
     if not before or len(before) != len(after):
         raise ValueError("Comparison requires complete paired runs")
     result = {}
     noisy = False
-    if queue and gcode:
-        raise ValueError("A benchmark case cannot be both queue and G-code")
-    contract = QUEUE_METRICS if queue else GCODE_METRICS if gcode else METRICS
+    if sum((queue, gcode, archive)) > 1:
+        raise ValueError("A benchmark case cannot use two measurement protocols")
+    contract = (
+        QUEUE_METRICS
+        if queue
+        else GCODE_METRICS
+        if gcode
+        else ARCHIVE_METRICS
+        if archive
+        else METRICS
+    )
     for name, path in contract.items():
         left, right = (
             [metric(report, path) for report in side] for side in (before, after)
@@ -181,6 +198,7 @@ def harness_context(work: Path, head: str) -> Path:
     for name in (
         "bench_import.py",
         "bench_database.py",
+        "bench_archive.py",
         "bench_gcode.py",
         "bench_queue.py",
     ):
@@ -212,7 +230,7 @@ def harness_context(work: Path, head: str) -> Path:
         # non-traversable directories. Hashing those sources needs read access
         # in this instrumentation layer, without running the benchmark as root.
         "RUN chmod -R a+rX /app/packages\n"
-        "COPY bench_import.py bench_database.py bench_gcode.py bench_queue.py /app/scripts/\n"
+        "COPY bench_import.py bench_database.py bench_archive.py bench_gcode.py bench_queue.py /app/scripts/\n"
         "COPY gcode-fixtures /app/scripts/gcode-fixtures\n"
         f"LABEL org.printstash.benchmark.harness-revision={head}\n"
     )
@@ -297,11 +315,14 @@ class Profile:
             args += ["--env-file", str(env_file)]
         queue = bool(archive.get("queue"))
         gcode = bool(archive.get("gcode"))
+        archive_benchmark = bool(archive.get("archive_benchmark"))
         cli = [
             "/app/.venv/bin/python",
             (
                 "/app/scripts/bench_queue.py"
                 if queue
+                else "/app/scripts/bench_archive.py"
+                if archive_benchmark
                 else "/app/scripts/bench_gcode.py"
                 if gcode
                 else "/app/scripts/bench_import.py"
@@ -309,16 +330,16 @@ class Profile:
         ]
         if gcode:
             cli += ["--fixtures", "/app/scripts/gcode-fixtures"]
-        elif not queue:
+        elif not queue and not archive_benchmark:
             cli += [f"/evidence/corpus/{archive['name']}"]
         cli += ["--database", dialect, "--output", f"/evidence/runs/{name}.json"]
         if queue:
             cli += ["--jobs", "128", "--idle-seconds", "10"]
             if not archive.get("queue_recovery"):
                 cli.append("--steady-state")
-        elif not gcode:
+        elif not gcode and not archive_benchmark:
             cli += ["--timeout", "1800"]
-        if db and not gcode:
+        if db and not gcode and not archive_benchmark:
             cli += ["--postgres-admin-url-env", "PRINTSTASH_BENCH_POSTGRES"]
         if archive["similarity"]:
             cli += ["--similarity"]
@@ -492,11 +513,16 @@ def measure_case(
     reports = {"base": [], "head": []}
     queue = bool(archive.get("queue"))
     gcode = bool(archive.get("gcode"))
+    archive_benchmark = bool(archive.get("archive_benchmark"))
     for pair in range(14):
         if (
             pair == 7
             and not comparison(
-                reports["base"], reports["head"], queue=queue, gcode=gcode
+                reports["base"],
+                reports["head"],
+                queue=queue,
+                gcode=gcode,
+                archive=archive_benchmark,
             )["noisy"]
         ):
             break
@@ -514,7 +540,13 @@ def measure_case(
         "database": profile.dialect,
         "total_cpus": profile.cpus,
         "total_memory_gib": profile.cpus,
-        **comparison(reports["base"], reports["head"], queue=queue, gcode=gcode),
+        **comparison(
+            reports["base"],
+            reports["head"],
+            queue=queue,
+            gcode=gcode,
+            archive=archive_benchmark,
+        ),
     }
 
 
@@ -613,6 +645,11 @@ def main() -> None:
                                     {
                                         "name": "gcode-parse",
                                         "gcode": True,
+                                        "similarity": False,
+                                    },
+                                    {
+                                        "name": "archive-extract",
+                                        "archive_benchmark": True,
                                         "similarity": False,
                                     },
                                     {

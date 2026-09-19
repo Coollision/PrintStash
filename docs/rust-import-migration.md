@@ -7,12 +7,19 @@ planned work is not a claim of a completed native import path.
 
 ## Architecture and ownership
 
-The destination is an embedded Rust engine for acquisition, durable execution,
-archive processing, parsing, Artifact publication, previews, geometric similarity,
-and optional enrichment. Python retains HTTP, authentication, and unrelated
-capabilities. At final cutover, imports must not execute Python callbacks or
-Python workers. SQLite/local storage remains the default; PostgreSQL and existing
-remote storage contracts remain supported. No broker or Cloud service is required.
+The active destination is an embedded Rust engine for archive processing,
+parsing, previews, geometric similarity, acquisition, and optional enrichment.
+Python retains HTTP, authentication, import coordination, the existing
+`BackgroundJob` durable queue, Artifact publication, and storage adapters.
+SQLite/local storage remains the default; PostgreSQL and existing remote storage
+contracts remain supported. No broker or Cloud service is required.
+
+The Rust persistence, durable-queue, runtime, publication, and storage cutover
+(M03–M07) was deferred on 2026-09-18 after neither M01 candidate qualified. This
+lets the reusable native format and compute stages proceed without weakening
+durability. The revised closeout removes Python implementations of the migrated
+M08–M14 computations while retaining Python orchestration and durable state. See
+`queue-qualification.md` for executable evidence and future candidates.
 
 Use framework-independent domain/compute modules, a SQLx persistence adapter,
 a Tokio engine, a narrow PyO3 binding, and supervised native STEP/inference helpers.
@@ -51,11 +58,11 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M00 | baseline | Record contracts, fixtures, ownership and failures; both-DB benchmark; native coverage; repeated unchanged baseline/noise |
 | M01 | queue-qualification | Apalis/Azums executable qualification on both DBs; atomicity, crashes, stale owners, waiting, priority, shutdown/restore; idle/claim/recovery/contention costs |
 | M02 | dependencies | Latest compatible stable versions, exact lockfiles/features/licenses/MSRV/native dependencies and exceptions; dependency-only comparison |
-| M03 | persistence | Native repositories and import-owned transactions; schema/pragmas/version allocation/maintenance parity; transaction latency/contention |
-| M04 | durable-queue | Qualified adapter, preserved job IDs/checkpoints, safe pending-job upgrade and single owner; enqueue/recovery/database growth |
-| M05 | import-runtime | Rust dispatch/heartbeats/waiting/admission/drain; explicit temporary bridge; foreground/background fairness and API latency |
-| M06 | publication | Native idempotency/reservations/receipts/reconciliation/cleanup for every caller; source-saved/publication latency |
-| M07 | storage | Supported native local/remote adapters preserving identities, create-only writes and read-only sources; streaming/memory/request counts |
+| M03 | persistence | **Deferred:** native repositories and import-owned transactions remain outside the active migration |
+| M04 | durable-queue | **Deferred:** existing `BackgroundJob` identities, checkpoints, and consumers remain authoritative |
+| M05 | import-runtime | **Deferred:** Python dispatch, waiting, and draining remain; existing native resource admission is retained |
+| M06 | publication | **Deferred:** `ingestion.persist_artifact` remains the single publication owner |
+| M07 | storage | **Deferred:** existing local and remote `StorageBackend` adapters remain authoritative |
 | M08 | gcode | Bounded text metadata and established libbgcode codec; slicer compatibility, parsing/bytes read/memory |
 | M09 | archives | Bounded inspection/extraction and path safety; many-small and large-entry workloads |
 | M10 | mesh-previews | Native preparation/buffer flow and renderer orchestration; geometry and pixel parity, allocations/memory |
@@ -63,14 +70,12 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M12 | similarity | Remaining voxelization/descriptors/alignment/verification; labeled quality and work bounds; indexing/verification latency |
 | M13 | acquisition | Rust URL/provider/inbox/source acquisition, credentials/checkpoints; safe destinations and resumed bytes |
 | M14 | native-enrichment | Native inference/tokenization with optional installation and asset validation; canaries/cold/warm/batching/memory |
-| M15 | complete-cutover | Remove every Python import executor/bridge; all entry points/upgrades/packaging; original and immediate-parent corpus comparison |
+| M15 | native-stage-closeout | Remove Python compute implementations replaced by M08–M14; audit every entry point and package; retain the documented Python coordinator/queue/publication/storage owners |
 
-M03–M07 require a qualified queue. If neither candidate qualifies, retain the
-current queue and stop that cutover; independent M08–M14 can continue through
-existing execution paths. M15 requires every previous milestone. Preserve public
-HTTP contracts and job identity. Rust acceptance owns its complete transaction;
-never pass a SQLAlchemy session into SQLx. Use additive transitions and verify
-rollback; disable the old consumer before enabling its replacement.
+M03–M07 are outside the active delivery sequence. M08–M14 continue through the
+existing execution path, and M15 closes only those native stages. Preserve public
+HTTP contracts and job identity. A future queue cutover requires a new accepted
+scope and successful qualification before any competing consumer is introduced.
 
 Application migrations remain new autogenerated Alembic revisions. Do not edit
 merged migrations. Queue-internal migrations have one documented owner and run
@@ -79,15 +84,15 @@ pending work, retries, staged files and completed Artifacts.
 
 ## Queue and dependency gate
 
-Recheck stable releases at implementation. Qualify Apalis, compare Azums, and
-prefer Apalis if both pass. Azums is eligible only if Apalis fails and Azums passes
-all gates. Effectum lacks PostgreSQL support. Fang is excluded unless a stable
-release fixes its documented interrupted-job recovery limitation. No maintained
-fork or replacement custom queue is an implicit fallback.
+M01 qualified Apalis 0.7.4 and Azums 1.0.1; both failed required correctness
+contracts. Effectum lacks PostgreSQL support. Fang 0.11.0 documents that an
+interrupted task may remain in progress forever. No maintained fork or replacement
+custom queue is an implicit fallback. Worklane, RustQueue, pgqrs, and Boson are
+recorded but unqualified future candidates in `queue-qualification.md`.
 
-The Apalis 0.7.4 PostgreSQL acknowledgment ownership concern is **unresolved**
-until reproduced against real PostgreSQL. A source-level concern is not a failed
-runtime test. Qualification also needs supported atomic enqueue, crash recovery,
+The Apalis 0.7.4 PostgreSQL acknowledgment ownership concern was reproduced on
+real PostgreSQL: an old ACK overwrote its successor's running row. Qualification
+also needs supported atomic enqueue, crash recovery,
 stale acknowledgment/publication protection, replay idempotency, checkpoints,
 bounded failures, dependency waiting without attempt consumption, existing
 priority, maintenance, backups and restore on both databases. Integration must

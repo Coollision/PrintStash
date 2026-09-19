@@ -1,5 +1,5 @@
 [workspace]
-members = ["gcode-core", "libbgcode-sys", "render-core"]
+members = ["archive-core", "gcode-core", "libbgcode-sys", "render-core"]
 resolver = "2"
 
 [package]
@@ -14,6 +14,7 @@ name = "printstash_mesh_native"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+printstash-archive-core = { path = "archive-core" }
 printstash-gcode-core = { path = "gcode-core" }
 printstash-render-core = { path = "render-core" }
 pyo3 = { version = "=0.29.2", features = ["abi3-py311"] }
