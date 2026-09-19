@@ -34,6 +34,7 @@ from pathlib import Path
 
 import pytest
 
+import printstash_core.files.archives as archives_module
 from printstash_core.files import (
     ArchiveLimits,
     ArchivePolicyError,
@@ -192,6 +193,21 @@ class TestInspectArchive:
         # provider error, not a `BadZipFile` traceback in the import job.
         with pytest.raises(ArchivePolicyError, match="archive_invalid"):
             _inspect(path)
+
+    def test_preserves_an_unexpected_native_value_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class BrokenKernel:
+            @staticmethod
+            def inspect_archive(*_args, **_kwargs):
+                raise ValueError("native contract bug")
+
+        monkeypatch.setattr(archives_module, "kernel", lambda: BrokenKernel())
+
+        with pytest.raises(ValueError, match="native contract bug") as raised:
+            _inspect(tmp_path / "unused.zip")
+
+        assert not isinstance(raised.value, ArchivePolicyError)
 
 
 class TestExtractSelected:
@@ -398,6 +414,36 @@ class TestExtractSelectedFailures:
 
         # All-or-nothing: a half-extracted archive leaves staged bytes that no
         # row owns, and nothing will ever clean them up.
+        assert list(staging.iterdir()) == []
+
+    def test_removes_staged_files_when_a_later_destination_fails(
+        self, tmp_path: Path
+    ) -> None:
+        archive = _archive(
+            tmp_path / "two.zip", {"first.stl": b"one", "second.stl": b"two"}
+        )
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        calls = 0
+
+        def destination(suffix: str) -> str:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("destination unavailable")
+            return f"first{suffix}"
+
+        with pytest.raises(RuntimeError, match="destination unavailable"):
+            extract_selected(
+                archive,
+                ["first.stl", "second.stl"],
+                staging_dir=staging,
+                max_entry_bytes=100,
+                importable_suffixes={".stl"},
+                name_factory=destination,
+            )
+
+        assert calls == 2
         assert list(staging.iterdir()) == []
 
     def test_refuses_an_unsafe_entry_that_was_explicitly_selected(
