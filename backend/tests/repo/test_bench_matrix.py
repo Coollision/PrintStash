@@ -131,7 +131,7 @@ class TestPerformanceComparison:
         }
         assert result["metrics"]["archive_p95_ms"]["pairs_above_threshold"] == 7
 
-    def test_compares_mesh_preview_latency_and_resources(self):
+    def test_compares_mesh_preview_metrics(self):
         result = comparison(
             [_mesh_report(10)] * 7,
             [_mesh_report(11)] * 7,
