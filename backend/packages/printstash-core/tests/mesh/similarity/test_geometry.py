@@ -108,6 +108,17 @@ class TestNearestNeighbors:
         with pytest.raises(GeometryError, match="empty_target"):
             nearest_neighbors(np.zeros((1, 3)), np.empty((0, 3)))
 
+    def test_translates_native_neighbor_errors(self, monkeypatch):
+        from printstash_core.mesh import native_rasterizer
+
+        class RejectedNeighbors:
+            def nearest_neighbors(self, *_args):
+                raise ValueError("invalid_neighbor_points")
+
+        monkeypatch.setattr(native_rasterizer, "kernel", RejectedNeighbors)
+        with pytest.raises(GeometryError, match="invalid_neighbor_points"):
+            nearest_neighbors(np.zeros((1, 3)), np.zeros((1, 3)))
+
 
 class TestEquivalentTriangles:
     def test_verifies_permuted_vertices(self, tetra):
@@ -136,3 +147,15 @@ class TestEquivalentTriangles:
         result = equivalent_triangles(left, right, np.eye(3), 1, np.zeros(3), 1e-6)
 
         assert result is False
+
+    def test_translates_native_equivalence_errors(self, tetra, monkeypatch):
+        from printstash_core.mesh import native_rasterizer
+
+        class RejectedEquivalence:
+            def equivalent_triangles(self, *_args):
+                raise ValueError("invalid_equivalence_transform")
+
+        monkeypatch.setattr(native_rasterizer, "kernel", RejectedEquivalence)
+        surface = prepare_surface(*tetra)
+        with pytest.raises(GeometryError, match="invalid_equivalence_transform"):
+            equivalent_triangles(surface, surface, np.eye(3), 1, np.zeros(3), 1e-6)

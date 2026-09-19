@@ -14,6 +14,7 @@ COPY rust/gcode-core ./gcode-core
 COPY rust/libbgcode-sys ./libbgcode-sys
 COPY rust/render-core/Cargo.toml ./render-core/Cargo.toml
 COPY rust/render-core/src ./render-core/src
+COPY rust/similarity-core ./similarity-core
 RUN /tmp/maturin/bin/maturin build --release --locked --out /wheels
 
 FROM scratch AS mesh-native-wheel

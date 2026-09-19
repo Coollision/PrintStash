@@ -41,7 +41,8 @@ python_bin="${PRINTSTASH_TEST_PYTHON:-$backend/.venv/bin/python}"
   tests/integration/modules/media/test_mesh_processing.py::TestLoadMesh \
   tests/unit/modules/media/test_bgcode.py
 cargo test --manifest-path rust/Cargo.toml --locked \
-  --package printstash-gcode-core --package printstash-libbgcode
+  --package printstash-gcode-core --package printstash-libbgcode \
+  --package printstash-similarity-core
 cargo test --manifest-path rust/render-core/Cargo.toml --locked
 report_args=(
   --manifest-path rust/Cargo.toml
@@ -49,6 +50,7 @@ report_args=(
   --package printstash-gcode-core
   --package printstash-libbgcode
   --package printstash-render-core
+  --package printstash-similarity-core
 )
 cargo llvm-cov report "${report_args[@]}" --json --output-path "$output/coverage.json"
 "$python_bin" - "$output/coverage.json" <<'PY'
@@ -62,6 +64,7 @@ for source in (
     "/rust/gcode-core/src/",
     "/rust/libbgcode-sys/src/",
     "/rust/render-core/src/",
+    "/rust/similarity-core/src/",
 ):
     measured = [file for file in files if source in file["filename"]]
     if not measured or not sum(file["summary"]["lines"]["covered"] for file in measured):
