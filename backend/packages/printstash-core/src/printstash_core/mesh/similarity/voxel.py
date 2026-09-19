@@ -26,23 +26,21 @@ def voxelize(
 ) -> NDArray[np.bool_]:
     import numpy as np
 
+    from ..native_rasterizer import kernel
+
     if resolution not in (16, 32, 64) or not np.isfinite(half_width) or half_width <= 0:
         raise GeometryError("invalid_voxel_recipe")
-    triangles = (vertices[faces] / half_width + 1) * (resolution / 2)
-    normal = np.cross(
-        triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]
-    )
-    axis = int(np.argmax(np.abs(normal).sum(axis=0)))
-    grid = _project(triangles, axis=axis, resolution=resolution, fill=fill)
-    if not fill:
-        # One projection misses faces parallel to its rays. Open-surface
-        # descriptors use all three, without pretending that a shell is a solid.
-        for other in range(3):
-            if other != axis:
-                grid |= _project(
-                    triangles, axis=other, resolution=resolution, fill=False
-                )
-    return grid
+    try:
+        packed = kernel().voxelize(
+            np.asarray(vertices, dtype="=f8").tobytes(),
+            np.asarray(faces, dtype="=i8").tobytes(),
+            half_width,
+            resolution,
+            fill,
+        )
+    except ValueError as exc:
+        raise GeometryError(str(exc)) from exc
+    return np.frombuffer(packed, dtype=np.bool_).reshape((resolution,) * 3).copy()
 
 
 def _project(

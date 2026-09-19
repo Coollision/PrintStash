@@ -52,6 +52,17 @@ def _mesh_report(value):
     }
 
 
+def _similarity_report(value):
+    return {
+        "total_seconds": value,
+        "fingerprint_latency": {"p95_ms": value},
+        "verification_latency": {"p95_ms": value},
+        "process_cpu_seconds": value,
+        "process_peak_rss_bytes": value,
+        "container_memory_peak_bytes": value,
+    }
+
+
 class TestPerformanceComparison:
     def test_flags_a_repeatable_regression(self):
         result = comparison([_report(10)] * 7, [_report(12)] * 7)
@@ -146,6 +157,23 @@ class TestPerformanceComparison:
             "container_peak_bytes",
         }
         assert result["metrics"]["preview_p95_ms"]["pairs_above_threshold"] == 7
+
+    def test_compares_similarity_metrics(self):
+        result = comparison(
+            [_similarity_report(10)] * 7,
+            [_similarity_report(11)] * 7,
+            similarity=True,
+        )
+
+        assert set(result["metrics"]) == {
+            "complete_s",
+            "fingerprint_p95_ms",
+            "verification_p95_ms",
+            "app_cpu_s",
+            "app_rss_bytes",
+            "container_peak_bytes",
+        }
+        assert result["metrics"]["verification_p95_ms"]["pairs_above_threshold"] == 7
 
 
 class TestBenchmarkRevision:

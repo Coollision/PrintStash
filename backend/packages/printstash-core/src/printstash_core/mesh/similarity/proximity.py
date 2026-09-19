@@ -145,6 +145,54 @@ class SurfaceProximity:
                 nearest[subset[improved]] = closest[improved]
         return np.sqrt(best), nearest
 
+    def align(
+        self, points: Array, rotation: Array, diagonal: float
+    ) -> tuple[float, Array, Array, float]:
+        """Refine a row-vector rotation against the owned triangle surface."""
+        import numpy as np
+
+        if self._native is not None:
+            try:
+                result = self._native.align(
+                    np.asarray(points, dtype="=f8").tobytes(),
+                    np.asarray(rotation, dtype="=f8").ravel().tolist(),
+                    diagonal,
+                )
+            except ValueError as exc:
+                raise GeometryError(str(exc)) from exc
+            refined, offset, convergence, error = result
+            return (
+                float(error),
+                np.asarray(refined, dtype=np.float64),
+                np.asarray(offset, dtype=np.float64),
+                float(convergence),
+            )
+        return _python_surface_icp(self, points, rotation, diagonal)
+
+
+def _python_surface_icp(
+    proximity: SurfaceProximity, points: Array, rotation: Array, diagonal: float
+) -> tuple[float, Array, Array, float]:
+    """Compatibility path for an explicitly disabled native tree."""
+    import numpy as np
+
+    r, offset = rotation.copy(), np.zeros(3)
+    distances, target = proximity.closest(points @ r)
+    best = (float(distances.mean()) / diagonal, r.copy(), offset.copy(), 0.0)
+    for _ in range(8):
+        moved = points @ r + offset
+        center_a, center_b = moved.mean(axis=0), target.mean(axis=0)
+        u, _, vt = np.linalg.svd((moved - center_a).T @ (target - center_b))
+        correction = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+        r = r @ correction
+        offset = (offset - center_a) @ correction + center_b
+        distances, target = proximity.closest(points @ r + offset)
+        error = float(distances.mean()) / diagonal
+        if error >= best[0] - 1e-9:
+            break
+        best = (error, r.copy(), offset.copy(), error)
+    return best
+
 
 def _leaf(points: Array, triangles: Array) -> tuple[Array, Array]:
     import numpy as np

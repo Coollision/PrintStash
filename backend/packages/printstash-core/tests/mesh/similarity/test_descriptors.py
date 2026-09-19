@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 from importlib.resources import files
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -118,8 +119,12 @@ class TestSphericalHarmonics:
         assert np.count_nonzero(a) > 500
 
     def test_empty_occupancy_has_explicit_failure(self, tetra, monkeypatch):
+        def empty_occupancy(*args, **kwargs):
+            raise ValueError("empty_occupancy")
+
         monkeypatch.setattr(
-            descriptors, "voxelize", lambda *a, **k: np.zeros((64, 64, 64), bool)
+            "printstash_core.mesh.native_rasterizer.kernel",
+            lambda: SimpleNamespace(sh_spectrum=empty_occupancy),
         )
 
         with pytest.raises(GeometryError, match="empty_occupancy"):

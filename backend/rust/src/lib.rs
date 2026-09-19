@@ -18,6 +18,7 @@ mod preview;
 mod proximity;
 mod render_job;
 mod shading;
+mod similarity;
 mod stl;
 mod stl_pipeline;
 mod streaming_preview;
@@ -313,6 +314,13 @@ fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(wrap_pyfunction!(mesh_prepare::smooth_normals, module)?)?;
+    module.add_function(wrap_pyfunction!(similarity::voxelize, module)?)?;
+    module.add_function(wrap_pyfunction!(similarity::sh_spectrum, module)?)?;
+    module.add_function(wrap_pyfunction!(similarity::dct_hash, module)?)?;
+    module.add_function(wrap_pyfunction!(similarity::volume_inertia_ratios, module)?)?;
+    module.add_function(wrap_pyfunction!(similarity::nearest_neighbors, module)?)?;
+    module.add_function(wrap_pyfunction!(similarity::equivalent_triangles, module)?)?;
+    module.add_function(wrap_pyfunction!(similarity::verification_decision, module)?)?;
     module.add_class::<proximity::SurfaceTree>()?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     module.add_function(wrap_pyfunction!(rasterize, module)?)?;
