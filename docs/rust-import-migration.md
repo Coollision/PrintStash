@@ -37,7 +37,7 @@ Current ownership at M00 (unchanged by the benchmark):
 | Artifact publication | Python | `ingestion.persist_artifact` | One application transaction, reservations and storage receipts | `tests/integration/modules/ingestion/ingestion/test_ingestion_atomicity.py` |
 | Mesh preparation/previews | Rust kernels plus Python dispatch/assembly | Python stages using native executor | Python analysis/thumbnail generations | `rust/tests/`, `tests/integration/modules/media/test_mesh_render.py` |
 | Resource admission | Existing Rust reservations | Python task selection, native executor | Python durable jobs | `rust/tests/test_orchestration.py`, media resource tests |
-| STEP | Native Open CASCADE through Python worker | Python supervision | Python analysis generations | STEP integration fixtures |
+| STEP | Native Open CASCADE through Python worker; Rust helper unqualified | Python supervision | Python analysis generations | STEP integration fixtures and `native-step.md` rejection evidence |
 | Similarity | Rust proximity plus Python/NumPy work | Python similarity runtime | Python similarity runs/fingerprints | Similarity integration tests and labeled evaluation corpus |
 | Optional enrichment | Native inference through Python workers | Python enrichment runtime | Python generation state and validated assets | Existing inference/asset validation tests |
 
@@ -66,7 +66,7 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M08 | gcode | Bounded text metadata and established libbgcode codec; slicer compatibility, parsing/bytes read/memory |
 | M09 | archives | Bounded inspection/extraction and path safety; many-small and large-entry workloads |
 | M10 | mesh-previews | Native preparation/buffer flow and renderer orchestration; path-based STL and native 3MF resource handles remove redundant preview copies; geometry and pixel parity, allocations/memory |
-| M11 | step | Supervised native Open CASCADE helper; units/settings/work limits; cold/warm complex assemblies |
+| M11 | step | **Blocked:** evaluated Rust libraries do not initialize through their supported API or preserve the existing helper contract; see `native-step.md` |
 | M12 | similarity | Remaining voxelization/descriptors/alignment/verification; labeled quality and work bounds; indexing/verification latency |
 | M13 | acquisition | Rust URL/provider/inbox/source acquisition, credentials/checkpoints; safe destinations and resumed bytes |
 | M14 | native-enrichment | Native inference/tokenization with optional installation and asset validation; canaries/cold/warm/batching/memory |
