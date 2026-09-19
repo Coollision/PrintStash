@@ -56,9 +56,7 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-def _policy_call(
-    call: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs
-) -> _R:
+def _policy_call(call: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
     try:
         return call(*args, **kwargs)
     except ValueError as exc:
