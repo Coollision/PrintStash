@@ -70,7 +70,7 @@ the final description/evidence in draft PR #173; leave that PR to `main` unmerge
 | M12 | similarity | Native voxelization, descriptor kernels, alignment, exact proof, and verification decisions; see `native-similarity.md` for ownership, quality/work evidence, and comparison protocol |
 | M13 | acquisition | **Complete for the revised boundary:** Rust `printstash-acquisition-core` owns all server-side HTTP(S) import bodies, bounds, hashing, and create-only staging. Python retains provider credential/metadata coordination, inbox enumeration, checkpoints, and deferred `StorageBackend` materialization; see `native-acquisition.md` |
 | M14 | native-enrichment | **Blocked:** the maintained Rust ORT wrapper remains prerelease and trails the selected stable runtime API; see `native-enrichment.md` |
-| M15 | native-stage-closeout | Remove Python compute implementations replaced by M08–M14; audit every entry point and package; retain the documented Python coordinator/queue/publication/storage owners |
+| M15 | native-stage-closeout | **Implementation complete; delivery gates pending:** duplicate Python similarity/voxel kernels are removed and every import entry point is audited. STEP and enrichment remain explicit blockers to the original all-native goal; see `native-import-closeout.md` |
 
 M03–M07 are outside the active delivery sequence. M08–M14 continue through the
 existing execution path, and M15 closes only those native stages. Preserve public

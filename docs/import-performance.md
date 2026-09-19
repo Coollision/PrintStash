@@ -168,8 +168,9 @@ decompressed in Rust using `zip`, `flate2` and `zlib-rs`. The XML parser reads
 64 KiB buffers without Python callbacks and retains size limits and CRC checks.
 Package inventory validation and scene assembly remain in Python. Bzip2 and LZMA
 members also decompress through the Rust ZIP library.
-Outer ZIP extraction, STEP tessellation, storage and job coordination remain
-in the existing pipeline.
+Outer ZIP inspection and extraction use the Rust archive core. STEP tessellation
+uses the existing supervised Python helper; storage and job coordination remain
+in the Python application pipeline.
 
 Both Docker variants build and install the required Rust extension. Source
 checkouts need Rust, Cargo, and a C++17 compiler before `uv sync --extra dev`;
@@ -218,10 +219,11 @@ available. Both construction and closest-surface queries release the Python
 interpreter lock. The kernel retains the exact triangle projection algorithm,
 limits each tree to 2,000,000 triangles and each query to 5,000 points, and
 enforces a budget of at most 32,000,000 triangle tests. It rejects malformed,
-non-finite or degenerate geometry before returning a tree. Missing or older
-extensions use Python. Analysis strips Trimesh array tracking hooks at the
-numerical boundary, before cleanup and registration; the caller's mesh remains
-unchanged. The Python proximity fallback also uses plain arrays.
+non-finite or degenerate geometry before returning a tree. The native tree is a
+required capability; a missing or outdated extension produces a stable
+capability error instead of selecting another implementation. Analysis strips
+Trimesh array tracking hooks at the numerical boundary, before cleanup and
+registration; the caller's mesh remains unchanged.
 
 The renderer still copies input buffers to give Rust immutable data while the
 interpreter lock is released. Mesh loading and vertex preparation retain arrays
