@@ -36,6 +36,29 @@ def limits():
 
 
 class TestNativeStlSource:
+    def test_binding_uses_the_core_ascii_source(self, tmp_path):
+        path = tmp_path / "ascii.stl"
+        path.write_text(
+            "solid triangle\n"
+            " facet normal 0 0 1\n"
+            "  outer loop\n"
+            "   vertex 0 0 0\n"
+            "   vertex 1 0 0\n"
+            "   vertex 0 1 0\n"
+            "  endloop\n"
+            " endfacet\n"
+            "endsolid triangle\n"
+        )
+
+        source = native.NativeStlSource(path, 100, 10_000, 32, 45)
+
+        count, scanned, lower, upper, sample = source.analyze()
+        assert count == 1
+        assert scanned == path.stat().st_size
+        assert lower == [0.0, 0.0, 0.0]
+        assert upper == [1.0, 1.0, 0.0]
+        assert sample == [[pytest.approx(1 / 3), pytest.approx(1 / 3), 0.0]]
+
     def test_preserves_framing_sample(self, binary_source):
         path, triangles = binary_source
         reference = worker._FramingReservoir()

@@ -148,10 +148,34 @@ pub fn render(
     {
         return Err("invalid preview dimensions or format".into());
     }
-    let mut seconds = [0.0; 5];
     let started = Instant::now();
     let mesh = PreparedPreview::new(vertices, faces, options.chunk)?;
-    seconds[0] = started.elapsed().as_secs_f64();
+    let preparation = started.elapsed().as_secs_f64();
+    let mut rendered = render_prepared(&mesh, options)?;
+    rendered.seconds[0] = preparation;
+    Ok(rendered)
+}
+
+pub fn render_prepared(
+    mesh: &PreparedPreview,
+    options: &RenderOptions<'_>,
+) -> Result<RenderedPreview, String> {
+    options.profile.validate()?;
+    let p = options.profile;
+    let factor = p.supersampling[if options.width <= p.supersampling[0] {
+        1
+    } else {
+        2
+    }];
+    if options.width == 0
+        || options.height == 0
+        || options.width > 4096 / factor
+        || options.height > 4096 / factor
+        || !matches!(options.format, "PNG" | "WEBP" | "RGB")
+    {
+        return Err("invalid preview dimensions or format".into());
+    }
+    let mut seconds = [0.0; 5];
     let started = Instant::now();
     let rotation = options
         .rotation
@@ -170,7 +194,6 @@ pub fn render(
         flat,
     )?;
     seconds[2] = started.elapsed().as_secs_f64();
-    drop(mesh);
     let started = Instant::now();
     let rgba = frame.rgba()?;
     drop(frame);

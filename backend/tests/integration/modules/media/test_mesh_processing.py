@@ -136,6 +136,7 @@ class TestLoadMesh:
         assert mesh is not None
         assert len(mesh.faces) == 4
         assert mesh.bounds.tolist() == [[0, 0, 0], [10, 20, 30]]
+        assert mesh._printstash_native_preview is not None
 
     def test_failed_native_parser_does_not_use_python(self, tmp_path, monkeypatch):
         from printstash_core.mesh import threemf

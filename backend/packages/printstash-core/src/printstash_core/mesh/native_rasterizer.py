@@ -28,6 +28,31 @@ def render_preview(
     from .preview_profile import PREVIEW_PROFILE as p
 
     native = kernel()
+    prepared = getattr(mesh, "_printstash_native_preview", None)
+    if prepared is not None:
+        image, _seconds = prepared.render_preview(
+            width,
+            height,
+            output_format,
+            (
+                p.margin_fraction,
+                p.hero_azimuth_degrees,
+                p.hero_elevation_degrees,
+                p.flat_tilt_degrees,
+                p.flat_thickness_ratio,
+                *p.material_albedo,
+            ),
+            (
+                p.supersample_max_output_width,
+                p.supersample_small_factor,
+                p.supersample_large_factor,
+            ),
+            None
+            if view_rotation is None
+            else np.asarray(view_rotation, dtype=np.float64).tolist(),
+            matte,
+        )
+        return image
     image, _seconds = native.render_preview(
         np.asarray(mesh.vertices, dtype=np.float32).tobytes(),
         np.asarray(mesh.faces, dtype=np.int64).tobytes(),

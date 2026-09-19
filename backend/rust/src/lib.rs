@@ -11,6 +11,7 @@ mod gcode;
 mod geometry;
 mod image_processing;
 mod mesh_prepare;
+mod native_scene;
 mod orchestration;
 mod prepared_preview;
 mod preview;
@@ -302,6 +303,8 @@ fn printstash_mesh_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_class::<preview::NativeFrame>()?;
     module.add_class::<prepared_preview::PreparedPreview>()?;
+    module.add_class::<native_scene::NativeMeshResource>()?;
+    module.add_class::<native_scene::NativeScenePreview>()?;
     module.add_class::<stl_pipeline::NativeStlSource>()?;
     module.add_function(wrap_pyfunction!(stl_pipeline::sample_binary_stl, module)?)?;
     module.add_function(wrap_pyfunction!(components::component_labels, module)?)?;

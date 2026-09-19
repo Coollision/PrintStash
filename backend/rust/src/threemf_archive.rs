@@ -3,6 +3,7 @@
 use crate::threemf::{pack, parse, ParsedModel};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::PathBuf;
@@ -33,6 +34,34 @@ pub struct ThreeMfArchive {
     archive: Option<ZipArchive<BufReader<File>>>,
 }
 
+impl ThreeMfArchive {
+    fn read_part_data(
+        &mut self,
+        name: &str,
+        expected_size: u64,
+        expected_crc: u32,
+        max_bytes: u64,
+    ) -> Result<(Vec<u8>, Vec<crate::threemf::Mesh>), String> {
+        let archive = self.archive.as_mut().ok_or("3MF archive is closed")?;
+        let entry = archive.by_name(name).map_err(|e| e.to_string())?;
+        if entry.size() != expected_size || entry.crc32() != expected_crc {
+            return Err("3MF package member changed".into());
+        }
+        if entry.size() > max_bytes {
+            return Err("3MF XML input limit exceeded".into());
+        }
+        let mut source = LimitedReader {
+            inner: entry,
+            remaining: expected_size,
+        };
+        let result = parse(&mut source)?;
+        if source.remaining != 0 {
+            return Err("3MF XML member size mismatch".into());
+        }
+        Ok(result)
+    }
+}
+
 #[pymethods]
 impl ThreeMfArchive {
     #[new]
@@ -57,27 +86,31 @@ impl ThreeMfArchive {
         max_bytes: u64,
     ) -> PyResult<ParsedModel<'py>> {
         let (shell, meshes) = py
-            .detach(|| -> Result<_, String> {
-                let archive = self.archive.as_mut().ok_or("3MF archive is closed")?;
-                let entry = archive.by_name(name).map_err(|e| e.to_string())?;
-                if entry.size() != expected_size || entry.crc32() != expected_crc {
-                    return Err("3MF package member changed".into());
-                }
-                if entry.size() > max_bytes {
-                    return Err("3MF XML input limit exceeded".into());
-                }
-                let mut source = LimitedReader {
-                    inner: entry,
-                    remaining: expected_size,
-                };
-                let result = parse(&mut source)?;
-                if source.remaining != 0 {
-                    return Err("3MF XML member size mismatch".into());
-                }
-                Ok(result)
-            })
+            .detach(|| self.read_part_data(name, expected_size, expected_crc, max_bytes))
             .map_err(PyValueError::new_err)?;
         pack(py, shell, meshes)
+    }
+
+    /// Keep geometry in native resource handles while Python resolves the
+    /// small component graph and transform list.
+    fn read_part_native<'py>(
+        &mut self,
+        py: Python<'py>,
+        name: &str,
+        expected_size: u64,
+        expected_crc: u32,
+        max_bytes: u64,
+    ) -> PyResult<(
+        Bound<'py, PyBytes>,
+        Vec<Py<crate::native_scene::NativeMeshResource>>,
+    )> {
+        let (shell, meshes) = py
+            .detach(|| self.read_part_data(name, expected_size, expected_crc, max_bytes))
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            PyBytes::new(py, &shell),
+            crate::native_scene::resources(py, meshes)?,
+        ))
     }
 
     fn close(&mut self) {

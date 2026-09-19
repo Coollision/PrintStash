@@ -123,9 +123,20 @@ class TestProcessOne:
         # Exercise real SQL renewal with the production lease duration.
         # Shortening expiry makes this test lose its claim under build load.
         sleep = asyncio.sleep
+        renewed_event = asyncio.Event()
+        block_second_heartbeat = asyncio.Event()
+        heartbeat_waits = 0
 
         async def heartbeat_sleep(delay):
-            await sleep(0.01 if delay == commands.LEASE_SECONDS / 3 else delay)
+            nonlocal heartbeat_waits
+            if delay != commands.LEASE_SECONDS / 3:
+                await sleep(delay)
+                return
+            heartbeat_waits += 1
+            if heartbeat_waits == 1:
+                await sleep(0.01)
+                return
+            await block_second_heartbeat.wait()
 
         monkeypatch.setattr(ingestion.asyncio, "sleep", heartbeat_sleep)
         original_renew = commands.renew
@@ -138,15 +149,13 @@ class TestProcessOne:
             after = session.get(BackgroundJob, job).lease_expires_at
             if changed:
                 renewed.append((before, after))
+                renewed_event.set()
             return changed
 
         monkeypatch.setattr(commands, "renew", record_renewal)
 
         async def held(claim, sessions):
-            for _ in range(60):
-                await asyncio.sleep(0.05)
-                if renewed:
-                    break
+            await asyncio.wait_for(renewed_event.wait(), timeout=3)
             registry.finish(claim.job_id, state="completed")
 
         monkeypatch.setattr(ingestion.command_executor, "execute", held)

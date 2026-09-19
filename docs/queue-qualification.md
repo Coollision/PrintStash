@@ -33,13 +33,47 @@ for that future evaluation:
 | RustQueue | 0.3.0 | SQLite and PostgreSQL storage with an embedded worker and documented crash recovery | Caller-transaction enqueue, stale ACK fencing, schema upgrades, dependency footprint, and the complete recovery/performance matrix |
 | pgqrs | 0.15.3 | PostgreSQL plus SQLite/Turso and durable workflow execution | Queue-only integration depth, ownership fencing, atomic acceptance, schema upgrades, and the complete recovery/performance matrix |
 | Boson | Not yet inspected | Advertises pluggable SQLite and PostgreSQL backends | Stable published artifacts, immutable versions, maintenance evidence, and every correctness and performance gate |
+| DBOS Rust (official) | 0.5.0 | Mature durable-workflow model, queues, priorities, recovery, and concurrency controls, but its released Rust system database is PostgreSQL-only | Does not qualify for the OSS requirement that one embedded Rust queue use either the configured SQLite or PostgreSQL application database |
+| `dbos-core` community port | 0.1.0 | Advertises SQLite and PostgreSQL behind one Rust workflow/queue API | Establish project provenance and maintenance, then run atomic acceptance, stale-owner fencing, publication replay, upgrades, and the complete recovery/performance matrix on both databases |
 
 Documentation reviewed for this inventory:
 [Worklane PostgreSQL](https://docs.rs/crate/worklane-postgres/0.2.1),
 [Worklane SQLite](https://docs.rs/worklane-sqlite/0.2.1/worklane_sqlite/),
 [RustQueue](https://docs.rs/crate/rustqueue/0.3.0),
 [pgqrs](https://docs.rs/crate/pgqrs/0.15.3), and
-[Boson](https://github.com/unified-field-dev/boson).
+[Boson](https://github.com/unified-field-dev/boson),
+[official DBOS Rust v0.5.0](https://github.com/dbos-inc/dbos-transact-rust/tree/v0.5.0), and
+[`dbos-core` 0.1.0](https://docs.rs/dbos-core/0.1.0/dbos/).
+
+### DBOS assessment
+
+DBOS was missing from the original M01 comparison and is recorded here so that
+the queue decision does not imply it was evaluated. The official Rust SDK's
+latest stable release at inspection time is `dbos` 0.5.0, released on
+2026-09-09 under MIT. It requires Rust 1.95 and SQLx 0.9 with only the
+`postgres` driver enabled. Its repository describes the system database as
+PostgreSQL, contains only a PostgreSQL system-database implementation, and runs
+its database CI against PostgreSQL and CockroachDB. SQLite is therefore not a
+hidden or optional feature in that release.
+
+The official SDK is technically relevant: it embeds the coordinator, durable
+workflow state, recovery, queue priorities, per-worker/global concurrency, and
+rate controls without Redis or a separate orchestrator. It still fails two
+required PrintStash adoption gates before a benchmark would be meaningful:
+
+- it cannot use PrintStash's default SQLite application database; and
+- Rust transactional steps are not implemented, so application writes and
+  workflow checkpoints cannot provide PrintStash's required atomic acceptance
+  through the supported API. The project's own Rust widget-store documentation
+  calls this write window at-least-once.
+
+The official Go SDK's SQLite support does not change this result because the
+planned engine is embedded Rust and must not add a second worker service. A
+separate crate named `dbos-core` 0.1.0 advertises both SQLite and PostgreSQL,
+but it is a community port rather than the released official `dbos` crate. It
+remains a future candidate and receives no production trust from API shape
+alone. It must pass the same executable gates as Apalis and Azums before any
+queue cutover is reopened.
 
 Reopening the queue work requires a new qualification PR. It must reuse the M01
 harness and may extend its adapter boundary, but it must not add candidate code

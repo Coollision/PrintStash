@@ -40,8 +40,8 @@ impl Read for Source {
 
 #[derive(Default)]
 pub(crate) struct Mesh {
-    vertices: Vec<[f64; 3]>,
-    faces: Vec<[u64; 3]>,
+    pub(crate) vertices: Vec<[f64; 3]>,
+    pub(crate) faces: Vec<[u64; 3]>,
 }
 
 fn triple<T: FromStr + Copy>(
