@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Callable, Mapping, Set
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ParamSpec, TypeVar
 
 from .native_archive import kernel
 
@@ -51,7 +52,13 @@ def safe_subdir(relative_name: str) -> str:
     return kernel().safe_subdir(relative_name)
 
 
-def _policy_call(call, /, *args, **kwargs):
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _policy_call(
+    call: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs
+) -> _R:
     try:
         return call(*args, **kwargs)
     except ValueError as exc:
