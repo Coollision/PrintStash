@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import uuid as _uuid
 import zipfile
@@ -22,6 +23,10 @@ from tests._env import use_local_storage
 from tests.factories import (
     build_user,
 )
+
+
+def _download_receipt(path: Path, filename: str) -> tuple[Path, str, str]:
+    return path, filename, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 @pytest.fixture
@@ -236,8 +241,14 @@ class TestHandleCollectionUrl:
                 "resolve_collection_url",
                 AsyncMock(return_value=("Cool Collection", members)),
             ),
-            patch.object(import_resolvers, "resolve_page_url", AsyncMock(return_value=None)),
-            patch.object(importer, "download_to_staging", AsyncMock(return_value=(staged, "cube.stl"))),
+            patch.object(
+                import_resolvers, "resolve_page_url", AsyncMock(return_value=None)
+            ),
+            patch.object(
+                importer,
+                "download_to_staging_with_receipt",
+                AsyncMock(return_value=_download_receipt(staged, "cube.stl")),
+            ),
         ):
             await ingest_background._handle_collection_url(
                 job_id=job_id,
@@ -303,7 +314,7 @@ class TestImportFromUrl:
             ),
             patch.object(
                 importer,
-                "download_to_staging",
+                "download_to_staging_with_receipt",
                 AsyncMock(side_effect=ImportError_("download_failed")),
             ),
         ):
@@ -339,7 +350,7 @@ class TestImportFromUrl:
             ),
             patch.object(
                 importer,
-                "download_to_staging",
+                "download_to_staging_with_receipt",
                 AsyncMock(side_effect=RuntimeError("network blew up")),
             ),
         ):
@@ -370,7 +381,7 @@ class TestImportFromUrl:
         req = UrlIngestRequest(url="https://example.com/some-page")
 
         async def fake_download(url: str):
-            return staged, "some-page.html"
+            return _download_receipt(staged, "some-page.html")
 
         with (
             patch.object(import_resolvers, "classify_collection", return_value=None),
@@ -380,7 +391,7 @@ class TestImportFromUrl:
             patch.object(
                 import_resolvers, "resolve_page_url", AsyncMock(return_value=None)
             ),
-            patch.object(importer, "download_to_staging", fake_download),
+            patch.object(importer, "download_to_staging_with_receipt", fake_download),
         ):
             await ingest_background.import_from_url(
                 job_id=job_id,
@@ -410,7 +421,7 @@ class TestImportFromUrl:
         req = UrlIngestRequest(url="https://cdn.test/bundle.zip")
 
         async def fake_download(url: str):
-            return staged, "bundle.zip"
+            return _download_receipt(staged, "bundle.zip")
 
         with (
             patch.object(import_resolvers, "classify_collection", return_value=None),
@@ -420,7 +431,7 @@ class TestImportFromUrl:
             patch.object(
                 import_resolvers, "resolve_page_url", AsyncMock(return_value=None)
             ),
-            patch.object(importer, "download_to_staging", fake_download),
+            patch.object(importer, "download_to_staging_with_receipt", fake_download),
         ):
             await ingest_background.import_from_url(
                 job_id=job_id,
@@ -486,7 +497,7 @@ class TestImportFromUrl:
         req = UrlIngestRequest(url="https://cdn.test/bundle.zip")
 
         async def fake_download(url: str):
-            return staged, "bundle.zip"
+            return _download_receipt(staged, "bundle.zip")
 
         with (
             patch.object(import_resolvers, "classify_collection", return_value=None),
@@ -496,7 +507,7 @@ class TestImportFromUrl:
             patch.object(
                 import_resolvers, "resolve_page_url", AsyncMock(return_value=None)
             ),
-            patch.object(importer, "download_to_staging", fake_download),
+            patch.object(importer, "download_to_staging_with_receipt", fake_download),
             patch.object(
                 importer,
                 "inspect_archive",
@@ -531,7 +542,7 @@ class TestImportFromUrl:
         req = UrlIngestRequest(url="https://cdn.test/cube.stl")
 
         async def fake_download(url: str):
-            return staged, "cube.stl"
+            return _download_receipt(staged, "cube.stl")
 
         with (
             patch.object(import_resolvers, "classify_collection", return_value=None),
@@ -541,7 +552,7 @@ class TestImportFromUrl:
             patch.object(
                 import_resolvers, "resolve_page_url", AsyncMock(return_value=None)
             ),
-            patch.object(importer, "download_to_staging", fake_download),
+            patch.object(importer, "download_to_staging_with_receipt", fake_download),
         ):
             await ingest_background.import_from_url(
                 job_id=job_id,
@@ -653,7 +664,9 @@ class TestRunFileSelectionImport:
                 AsyncMock(return_value=["https://cdn.test/readme.txt"]),
             ),
             patch.object(
-                importer, "download_to_staging", AsyncMock(return_value=(staged, "readme.txt"))
+                importer,
+                "download_to_staging_with_receipt",
+                AsyncMock(return_value=_download_receipt(staged, "readme.txt")),
             ),
         ):
             await ingest_background.run_file_selection_import(
@@ -714,7 +727,13 @@ class TestRunCollectionMemberImport:
         ):
             await ingest_background.run_collection_member_import(
                 job_id=job_id,
-                members=[import_resolvers.CollectionMember(page_url="https://example.com/model", title="Broken", source_id="1")],
+                members=[
+                    import_resolvers.CollectionMember(
+                        page_url="https://example.com/model",
+                        title="Broken",
+                        source_id="1",
+                    )
+                ],
                 target_collection="Cool",
                 tags=None,
                 actor_user_id=owner.id,
@@ -742,10 +761,13 @@ def _zip_bytes(*, entry: str = "cube.stl", content: bytes | None = None) -> byte
 
 class TestBackgroundContract:
     @pytest.mark.asyncio
-    async def test_saves_the_first_download_before_acquiring_the_next(self, db_session, make_user, tmp_path, monkeypatch):
+    async def test_saves_the_first_download_before_acquiring_the_next(
+        self, db_session, make_user, tmp_path, monkeypatch
+    ):
         from sqlmodel import select
 
         from app.db.models import File
+
         use_local_storage(tmp_path)
         actor = make_user(superuser=True)
         job_id = registry.create(owner_user_id=actor.id)
@@ -756,26 +778,42 @@ class TestBackgroundContract:
         async def download(url):
             if url.endswith("second.stl"):
                 with get_session_factory().scoped_session() as session:
-                    assert len(session.exec(select(File).where(File.ingestion_key.is_not(None))).all()) == 1
+                    assert (
+                        len(
+                            session.exec(
+                                select(File).where(File.ingestion_key.is_not(None))
+                            ).all()
+                        )
+                        == 1
+                    )
             path = tmp_path / Path(url).name
             path.write_bytes(_cube_stl_bytes())
-            return path, path.name
+            return _download_receipt(path, path.name)
 
         monkeypatch.setattr(import_resolvers, "resolve_selected_download", links)
-        monkeypatch.setattr(importer, "download_to_staging", download)
-        await ingest_background.run_file_selection_import(job_id=job_id, page_url="https://example.com/model",
-            files=[], collection=None, tags=None, actor_user_id=actor.id, session_factory=get_session_factory())
+        monkeypatch.setattr(importer, "download_to_staging_with_receipt", download)
+        await ingest_background.run_file_selection_import(
+            job_id=job_id,
+            page_url="https://example.com/model",
+            files=[],
+            collection=None,
+            tags=None,
+            actor_user_id=actor.id,
+            session_factory=get_session_factory(),
+        )
         assert registry.get(job_id).succeeded == 2
         assert registry.get(job_id).failed == 0
 
-
     @pytest.mark.asyncio
-    async def test_resumes_a_partial_selection_without_downloading_saved_files(self, db_session, make_user, tmp_path, monkeypatch):
+    async def test_resumes_a_partial_selection_without_downloading_saved_files(
+        self, db_session, make_user, tmp_path, monkeypatch
+    ):
         import asyncio
 
         from sqlmodel import select
 
         from app.db.models import File
+
         use_local_storage(tmp_path)
         actor = make_user(superuser=True)
         job_id = registry.create(owner_user_id=actor.id)
@@ -788,12 +826,21 @@ class TestBackgroundContract:
                 raise asyncio.CancelledError("worker stopped")
             path = tmp_path / "first.stl"
             path.write_bytes(_cube_stl_bytes())
-            return path, path.name
+            return _download_receipt(path, path.name)
 
         monkeypatch.setattr(import_resolvers, "resolve_selected_download", links)
-        monkeypatch.setattr(importer, "download_to_staging", interrupted_download)
-        arguments = dict(job_id=job_id, page_url="https://example.com/model", files=[], collection=None,
-            tags=None, actor_user_id=actor.id, session_factory=get_session_factory())
+        monkeypatch.setattr(
+            importer, "download_to_staging_with_receipt", interrupted_download
+        )
+        arguments = dict(
+            job_id=job_id,
+            page_url="https://example.com/model",
+            files=[],
+            collection=None,
+            tags=None,
+            actor_user_id=actor.id,
+            session_factory=get_session_factory(),
+        )
         with pytest.raises(asyncio.CancelledError, match="worker stopped"):
             await ingest_background.run_file_selection_import(**arguments)
 
@@ -802,11 +849,20 @@ class TestBackgroundContract:
                 raise AssertionError("saved source was downloaded again")
             path = tmp_path / "second.stl"
             path.write_bytes(_cube_stl_bytes())
-            return path, path.name
+            return _download_receipt(path, path.name)
 
-        monkeypatch.setattr(importer, "download_to_staging", remaining_download)
+        monkeypatch.setattr(
+            importer, "download_to_staging_with_receipt", remaining_download
+        )
         await ingest_background.run_file_selection_import(**arguments)
         assert registry.get(job_id).succeeded == 2
         assert registry.get(job_id).failed == 0
         with get_session_factory().scoped_session() as session:
-            assert len(session.exec(select(File).where(File.ingestion_key.is_not(None))).all()) == 2
+            assert (
+                len(
+                    session.exec(
+                        select(File).where(File.ingestion_key.is_not(None))
+                    ).all()
+                )
+                == 2
+            )

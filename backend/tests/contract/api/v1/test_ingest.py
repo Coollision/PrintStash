@@ -96,7 +96,11 @@ def _fake_download(staged: Path, original_filename: str) -> AsyncMock:
     """Mock for ``download_to_staging`` that yields an already-staged file."""
 
     async def _dl(url: str):  # signature mirrors the real coroutine
-        return staged, original_filename
+        return (
+            staged,
+            original_filename,
+            hashlib.sha256(staged.read_bytes()).hexdigest(),
+        )
 
     return AsyncMock(side_effect=_dl)
 
@@ -234,7 +238,7 @@ class TestImportFromUrl:
             # The Printables page resolves to a direct STL link server-side.
             _patch_resolver("https://files.printables.test/3dbenchy.stl"),
             patch(
-                "app.modules.ingestion.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
                 new=_fake_download(staged, "3dbenchy.stl"),
             ),
         ):
@@ -282,7 +286,7 @@ class TestImportFromUrl:
             # The MakerWorld page resolves to a direct .zip bundle link server-side.
             _patch_resolver("https://makerworld.test/instance/123/f3mf.zip"),
             patch(
-                "app.modules.ingestion.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
                 new=_fake_download(staged, "3d-benchy.zip"),
             ),
         ):
@@ -464,7 +468,7 @@ class TestImportFromUrl:
             ),
             _patch_resolver(None),  # unrecognised host -> treated as a direct URL
             patch(
-                "app.modules.ingestion.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
                 new=_fake_download(staged, "some-page"),
             ),
         ):
@@ -509,7 +513,10 @@ class TestImportFromUrl:
                 "app.modules.ingestion.import_resolvers.list_model_files",
                 new=AsyncMock(return_value=None),
             ),
-            patch("app.modules.ingestion.importer.download_to_staging", new=download),
+            patch(
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
+                new=download,
+            ),
         ):
             payload = _job(
                 client,
@@ -567,7 +574,10 @@ class TestImportFromUrl:
                 "app.modules.ingestion.import_resolvers.resolve_page_url",
                 new=AsyncMock(return_value="https://files.printables.test/x"),
             ),
-            patch("app.modules.ingestion.importer.download_to_staging", new=download),
+            patch(
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
+                new=download,
+            ),
         ):
             payload = _job(
                 client,
@@ -651,7 +661,10 @@ class TestImportFromUrl:
                 "app.modules.ingestion.import_resolvers.resolve_page_url",
                 new=AsyncMock(return_value="https://files.printables.test/x"),
             ),
-            patch("app.modules.ingestion.importer.download_to_staging", new=download),
+            patch(
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
+                new=download,
+            ),
         ):
             payload = _job(
                 client,
@@ -734,7 +747,10 @@ class TestImportFromUrl:
                     ]
                 ),
             ),
-            patch("app.modules.ingestion.importer.download_to_staging", new=download),
+            patch(
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
+                new=download,
+            ),
         ):
             payload = _job(
                 client,
@@ -779,7 +795,7 @@ class TestImportFromUrl:
             ),
             _patch_resolver("https://files.printables.test/3dbenchy.stl"),
             patch(
-                "app.modules.ingestion.importer.download_to_staging",
+                "app.modules.ingestion.importer.download_to_staging_with_receipt",
                 new=_fake_download(staged, "3dbenchy.stl"),
             ),
         ):
@@ -833,7 +849,7 @@ def _fake_download_seq(items: list[tuple[bytes, str]]) -> AsyncMock:
     async def _dl(url: str):
         data, filename = pending.pop(0)
         staged = _stage_bytes(data, Path(filename).suffix or ".bin")
-        return staged, filename
+        return staged, filename, hashlib.sha256(data).hexdigest()
 
     return AsyncMock(side_effect=_dl)
 

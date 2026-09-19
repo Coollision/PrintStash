@@ -25,6 +25,7 @@ finished jobs is a payload that grows until the page stops loading.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import zipfile
@@ -550,15 +551,13 @@ class TestIngestUrl:
         staged.write_bytes(_cube_stl_bytes())
 
         async def fake_download(url: str):
-            return staged, "cube.stl"
+            return staged, "cube.stl", hashlib.sha256(staged.read_bytes()).hexdigest()
 
         with (
             patch.object(
                 ingest_module.importer, "validate_public_url", return_value=None
             ),
-            patch.object(
-                import_resolvers, "classify_collection", return_value=None
-            ),
+            patch.object(import_resolvers, "classify_collection", return_value=None),
             patch.object(
                 import_resolvers,
                 "list_model_files",
@@ -569,7 +568,11 @@ class TestIngestUrl:
                 "resolve_page_url",
                 AsyncMock(return_value=None),
             ),
-            patch.object(ingest_module.importer, "download_to_staging", fake_download),
+            patch.object(
+                ingest_module.importer,
+                "download_to_staging_with_receipt",
+                fake_download,
+            ),
         ):
             response = client.post(
                 "/api/v1/ingest/url",
@@ -866,12 +869,14 @@ class TestSelectArchiveEntries:
     ) -> None:
         use_local_storage(tmp_path)
         upload = client.post(
-            "/api/v1/ingest/archive", headers=auth_headers,
+            "/api/v1/ingest/archive",
+            headers=auth_headers,
             files={"file": ("bundle.zip", _zip_bytes(), "application/zip")},
         )
         archive_id = upload.json()["archive_id"]
         response = client.post(
-            f"/api/v1/ingest/archive/{archive_id}/select", headers=auth_headers,
+            f"/api/v1/ingest/archive/{archive_id}/select",
+            headers=auth_headers,
             json={"names": ["notes.txt"]},
         )
         assert response.status_code == 400, response.text
@@ -1018,7 +1023,7 @@ class TestSelectModelFiles:
             return ["https://cdn.test/cube.stl"]
 
         async def fake_download_and_collect(url: str):
-            return (staged, "cube.stl")
+            return staged, "cube.stl", hashlib.sha256(staged.read_bytes()).hexdigest()
 
         with (
             patch.object(
@@ -1026,7 +1031,7 @@ class TestSelectModelFiles:
             ),
             patch.object(
                 importer,
-                "download_to_staging",
+                "download_to_staging_with_receipt",
                 side_effect=fake_download_and_collect,
             ),
         ):
@@ -1098,8 +1103,20 @@ class TestSelectCollectionMembers:
         staged.write_bytes(_cube_stl_bytes())
 
         with (
-            patch.object(import_resolvers, "resolve_page_url", AsyncMock(return_value=None)),
-            patch.object(importer, "download_to_staging", AsyncMock(return_value=(staged, "cube.stl"))),
+            patch.object(
+                import_resolvers, "resolve_page_url", AsyncMock(return_value=None)
+            ),
+            patch.object(
+                importer,
+                "download_to_staging_with_receipt",
+                AsyncMock(
+                    return_value=(
+                        staged,
+                        "cube.stl",
+                        hashlib.sha256(staged.read_bytes()).hexdigest(),
+                    )
+                ),
+            ),
         ):
             response = client.post(
                 f"/api/v1/ingest/collection/{token}/select",
