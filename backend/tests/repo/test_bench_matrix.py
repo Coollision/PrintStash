@@ -105,7 +105,7 @@ class TestPerformanceComparison:
         with pytest.raises(ValueError, match="two measurement protocols"):
             comparison([_gcode_report(1)], [_gcode_report(1)], queue=True, gcode=True)
 
-    def test_compares_archive_latency_and_resources(self):
+    def test_compares_archive_metrics(self):
         result = comparison(
             [_archive_report(10)] * 7,
             [_archive_report(11)] * 7,
