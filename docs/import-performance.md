@@ -367,7 +367,7 @@ M00 adds `scripts/bench_corpus.py` and `scripts/bench_matrix.py`. The opt-in
 `benchmark_imports` input on the CI workflow runs a dedicated Ubuntu runner:
 
 ```bash
-gh workflow run ci.yml --ref codex/rust-m00-baseline \
+gh workflow run ci.yml --ref feature/rust-m00-baseline \
   -f benchmark_imports=true \
   -f benchmark_parent=4b9afeb92d4e7e24298454af38c6c76aeddec437
 ```
