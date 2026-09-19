@@ -104,6 +104,39 @@ class TestThumbnailEngine:
         assert result.strategy is ThumbnailStrategy.FULL
 
     @staticmethod
+    def test_full_renderer_exception_returns_a_typed_failure(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        source = tmp_path / "part.stl"
+        source.write_bytes(b"solid part\nendsolid part\n")
+        monkeypatch.setattr(mesh_processing, "_exceeds_cap", lambda *_a, **_k: False)
+        monkeypatch.setattr(mesh_processing, "_load_mesh", lambda *_a, **_k: _Mesh())
+        monkeypatch.setattr(
+            mesh_processing, "_geometry_from_mesh", lambda _mesh: _geometry()
+        )
+        monkeypatch.setattr(
+            "app.modules.media.stl_streaming.render_stl_preview_isolated",
+            lambda *_a, **_k: None,
+        )
+
+        def fail_render(*_args, **_kwargs):
+            raise RuntimeError("render failed")
+
+        monkeypatch.setattr(
+            "app.modules.media.mesh_render.render_mesh_thumbnail", fail_render
+        )
+        monkeypatch.setattr(
+            "app.modules.media.stl_fallback.render_stl_thumbnail",
+            lambda *_a, **_k: None,
+        )
+
+        result = ThumbnailEngine().generate(ThumbnailRequest(path=source))
+
+        assert result.image is None
+        assert result.strategy is ThumbnailStrategy.NONE
+        assert result.failure_reason is ThumbnailFailureReason.RENDERER_NO_OUTPUT
+
+    @staticmethod
     def test_large_stl_uses_the_existing_isolated_streamer(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
