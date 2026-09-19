@@ -72,12 +72,15 @@ the expected native-path timing and outputs are identical to M14. The committed
 fingerprints and all verification classes before recording latency, CPU, RSS,
 and container memory against both the immediate parent and M00 baseline.
 
-The controlled 2 CPU/2 GiB and 4 CPU/4 GiB comparison is running from
-integration commit `2f7b58aaefe609b72b2b44c1b61915d3962ddc4e` in GitHub Actions
-run 35461199627. It compares both the original M00 baseline and immediate M14
-parent on SQLite and PostgreSQL. Neutral results are acceptable; any repeatable
-regression above the standard thresholds blocks final delivery. No timing is
-claimed before the run publishes complete sanitized evidence.
+The first controlled comparison from integration commit
+`2f7b58aaefe609b72b2b44c1b61915d3962ddc4e`, GitHub Actions run 35461199627,
+stopped during the original-baseline warm-up. Source identity, preview outcome,
+geometry, metadata and dimensions matched, while exact compressed preview bytes
+differed across the intentional renderer replacement. No timing from that run is
+accepted. The harness rerun uses the existing M10 32 x 24 RGB Lanczos probe and
+mean absolute error ceiling of 24 only against the original pre-Rust renderer;
+the immediate M14 comparison remains byte-exact. The controlled 2 CPU/2 GiB and
+4 CPU/4 GiB SQLite/PostgreSQL matrix remains a delivery gate.
 
 ## Verification and remaining delivery gates
 
@@ -94,5 +97,5 @@ Full backend, Python 3.13, frontend, real-browser, native coverage, container,
 architecture, and critical-capability gates passed for exact head `bcc01b75` in
 run 35458444754. Exact-diff security scan
 `dd6d4113-0344-4b69-bddb-ad78f32d5d1c` completed with five covered surfaces
-and zero findings. M15 merged into the integration branch as `2f7b58aa`; only
-the controlled performance comparison remains open.
+and zero findings. M15 merged into the integration branch as `2f7b58aa`; the
+corrected controlled performance comparison remains open.

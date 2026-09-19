@@ -147,6 +147,14 @@ instrumentation must be pinned and recorded separately from production.
 No queue candidate is selected. No import stage has changed ownership. No
 controlled baseline performance comparison or complete migration is claimed.
 
+The first post-M15 controlled matrix, run 35461199627, was rejected during its
+original-baseline warm-up because the pre-Rust and Rust renderers do not produce
+byte-identical previews. No timing from that run is accepted. The rerun applies
+the already established M10 32 x 24 RGB Lanczos probe and mean absolute error
+ceiling of 24 only when crossing that renderer boundary. Comparisons against the
+immediate parent remain byte-exact, while source identity, preview state, full
+dimensions, metadata and geometry remain exact in both modes.
+
 ### M00 coverage matrix
 
 Paths below are relative to `backend/`. Database-sensitive cases are parametrized
