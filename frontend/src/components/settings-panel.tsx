@@ -40,6 +40,7 @@ import {
   RefreshCw,
   RotateCcw,
   Trash2,
+  Search,
   Server,
   Tag,
   UserPlus,
@@ -69,6 +70,7 @@ import { ProviderConnectionsPanel } from "@/components/provider-connections-pane
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { SpoolmanConnectCard } from "@/components/spoolman-connect-card";
 import { OidcSettingsCard } from "@/components/oidc-settings-card";
+import { AiSearchSettings } from "@/components/ai-search-settings";
 import { SimilaritySettingsPanel } from "@/components/similarity-settings-panel";
 import { MaintenancePanel } from "@/components/maintenance-panel";
 import { BrandMark } from "@/components/brand-mark";
@@ -189,6 +191,7 @@ type SettingsSection =
   | "remote-storage"
   | "imports"
   | "maintenance"
+  | "ai-search"
   | "libraries"
   | "notifications"
   | "sso"
@@ -209,6 +212,7 @@ const SETTINGS_SECTIONS: {
   { id: "backup", labelKey: "settings.backup", icon: Database },
   { id: "remote-storage", labelKey: "settings.remoteStorage", icon: Cloud },
   { id: "imports", labelKey: "settings.imports", icon: Download },
+  { id: "ai-search", labelKey: "aiSearch.settingsTitle", icon: Search },
   { id: "maintenance", labelKey: "settings.maintenance", icon: HeartPulse },
   { id: "libraries", labelKey: "settings.libraries", icon: FolderSync },
   { id: "notifications", labelKey: "settings.notifications", icon: Bell },
@@ -551,7 +555,7 @@ export function SettingsPanel() {
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
   const [restartBusy, setRestartBusy] = useState(false);
   const visibleSettingsSections = SETTINGS_SECTIONS.filter(
-    (section) => !["sso", "maintenance"].includes(section.id) || user?.is_superuser,
+    (section) => !["sso", "maintenance", "ai-search"].includes(section.id) || user?.is_superuser,
   );
 
   function changeSection(section: SettingsSection) {
@@ -3391,6 +3395,8 @@ export function SettingsPanel() {
                 <ProviderConnectionsPanel />
               </div>
             )}
+
+            {activeSection === "ai-search" && user?.is_superuser && <AiSearchSettings />}
 
             {activeSection === "maintenance" && user?.is_superuser && (
               <>

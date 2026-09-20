@@ -11,6 +11,74 @@ import { test, expect } from "./helpers";
 import { clickModelAction, modelCard, uploadGcodeModel } from "./util";
 
 test.describe("settings", () => {
+  test("guides AI setup across screen sizes", async ({ page }, testInfo) => {
+    for (const theme of ["light", "dark"]) {
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await page.goto("/settings?section=ai-search");
+        await expect(
+          page.getByRole("heading", { name: "Where should AI Search run?" }),
+        ).toBeVisible();
+        await page.evaluate(
+          (dark) => document.documentElement.classList.toggle("dark", dark),
+          theme === "dark",
+        );
+        await expect(page.getByRole("combobox")).toHaveCount(0);
+        await page.screenshot({
+          path: testInfo.outputPath(`ai-${theme}-${width}.png`),
+          fullPage: true,
+          animations: "disabled",
+        });
+        await page.getByRole("button", { name: "Use this machine" }).click();
+        await expect(page.getByRole("button", { name: "Change location" })).toBeVisible();
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+        ).toBeLessThanOrEqual(0);
+        await page.getByRole("button", { name: "Change location" }).click();
+        await page.getByRole("button", { name: "Connect another server" }).click();
+        await expect(page.getByRole("form", { name: "Inference server" })).toBeVisible();
+        await page.getByRole("button", { name: "Advanced AI controls" }).click();
+        await expect(
+          page.getByRole("checkbox", { name: "Enable AI Search", exact: true }),
+        ).toBeVisible();
+        await page.getByRole("button", { name: "Back to guided setup" }).click();
+        await expect(
+          page.getByRole("heading", { name: "Where should AI Search run?" }),
+        ).toBeVisible();
+      }
+    }
+  });
+
+  test("returns from advanced AI controls without searching the page", async ({
+    page,
+  }, testInfo) => {
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/settings?section=ai-search");
+      await page.getByRole("button", { name: "Connect another server" }).click();
+      await page.getByRole("button", { name: "Advanced AI controls" }).click();
+      await page
+        .getByRole("checkbox", { name: "Enable AI Search", exact: true })
+        .scrollIntoViewIfNeeded();
+      const back = page.getByRole("button", { name: "Back to guided setup" });
+      await expect(back).toBeInViewport();
+      await expect(back).toBeFocused();
+      await page.screenshot({
+        path: testInfo.outputPath(`advanced-${width}.png`),
+        animations: "disabled",
+      });
+      await page.keyboard.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: "Where should AI Search run?" }),
+      ).toBeInViewport();
+      await expect(page.getByRole("button", { name: "Advanced AI controls" })).toBeFocused();
+      await page.screenshot({
+        path: testInfo.outputPath(`guided-return-${width}.png`),
+        animations: "disabled",
+      });
+    }
+  });
+
   test("create and revoke an API key", async ({ page }) => {
     const keyName = `e2e-key-${Date.now()}`;
     await page.goto("/settings");

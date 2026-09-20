@@ -19,7 +19,7 @@ from sqlalchemy import delete, exists, func, or_
 from sqlmodel import Session, select
 
 from app.core.time import utcnow
-from app.db.models import BackgroundJob, StagingLease
+from app.db.models import BackgroundJob, IndexGeneration, StagingLease
 from app.db.session import get_session_factory
 from app.schemas.ingest import (
     FingerprintStatus,
@@ -271,31 +271,35 @@ class JobRegistry:
         session: Session | None = None,
     ) -> str:
         job_id = uuid.uuid4().hex
+        job = IngestJobStatus(
+            job_id=job_id,
+            owner_user_id=owner_user_id,
+            visible=visible,
+            state="pending",
+            kind=kind[:64] or "ingest",
+        )
+        if session is not None:
+            # Join the caller's transaction. A second session used for pruning
+            # would deadlock its SQLite writer (or commit a shared connection).
+            # Load into the cache only after commit through get/update.
+            session.add(
+                BackgroundJob(
+                    id=job_id,
+                    owner_user_id=owner_user_id,
+                    visible=visible,
+                    kind=job.kind,
+                    state="pending",
+                    status_json=self._status_payload(job),
+                    created_at=utcnow(),
+                    updated_at=utcnow(),
+                )
+            )
+            session.flush()
+            return job_id
         with self._lock:
             self._prune_locked()
-            self._jobs[job_id] = IngestJobStatus(
-                job_id=job_id,
-                owner_user_id=owner_user_id,
-                visible=visible,
-                state="pending",
-                kind=kind[:64] or "ingest",
-            )
-            if session is None:
-                self._persist(self._jobs[job_id])
-            else:
-                session.add(
-                    BackgroundJob(
-                        id=job_id,
-                        owner_user_id=owner_user_id,
-                        visible=visible,
-                        kind=kind[:64] or "ingest",
-                        state="pending",
-                        status_json=self._status_payload(self._jobs[job_id]),
-                        created_at=utcnow(),
-                        updated_at=utcnow(),
-                    )
-                )
-                session.flush()
+            self._jobs[job_id] = job
+            self._persist(job)
         return job_id
 
     def update(
@@ -518,7 +522,14 @@ def reconcile_interrupted_jobs() -> int:
     with get_session_factory().scoped_session() as session:
         rows = list(
             session.exec(
-                select(BackgroundJob).where(BackgroundJob.state.in_(_ACTIVE_STATES))  # type: ignore[union-attr]
+                select(BackgroundJob).where(
+                    BackgroundJob.state.in_(_ACTIVE_STATES),  # type: ignore[union-attr]
+                    ~exists().where(
+                        IndexGeneration.job_id == BackgroundJob.id,
+                        IndexGeneration.version_token.is_not(None),
+                        IndexGeneration.state.in_(("active", "building")),
+                    ),
+                )
             ).all()
         )
     for row in rows:

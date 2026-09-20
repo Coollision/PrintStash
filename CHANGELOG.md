@@ -4,6 +4,28 @@
 
 ### Added
 
+- AI Search adds transactional text indexing for Models, Collections, Multipart
+  Models and Documents, authorized lexical suggestions, hybrid results with match
+  evidence, and local image/geometry search. Image queries support file selection,
+  drag-and-drop and device camera capture. Pinned BGE, CLIP and OpenShape models
+  use one bounded CPU runtime; acquisition and activation require explicit action.
+  AI inference is optional and off by default; library features and ordinary
+  keyword search require no model, inference server or OpenAI account.
+- AI Search settings manage encrypted compatible endpoints, model provenance,
+  capacity estimates and resumable index rebuilds. Serving generations remain
+  available during replacement; float, int8/binary and approved MRL transforms
+  preserve native vectors. SQLite/PostgreSQL derivatives can fall back to portable
+  retrieval and rebuild after restore. Local models warm after restart while
+  lexical search remains available.
+- Separate captions preserve human descriptions and require explicit render
+  consent. Editable print-history filters use actual duration and timezone-aware
+  calendar bounds; optional personal natural-language consent enables parsing and
+  Saved Views. Optional local SPLADE expansion stores bounded weighted terms
+  separately from original text. The AI master disables these inference consumers;
+  query text and images stay out of durable search data and request/error logs.
+- PostgreSQL supports the existing backup API through verified portable snapshots.
+  A dry-run-first SQLite-to-PostgreSQL command preserves encrypted fields, IDs,
+  cyclic library references and native vector bytes without re-embedding.
 - Model Families preserve independent Models and Revisions while recording human
   variant roles, an explicit canonical selection and relative measurements.
   Membership moves and Family restoration are atomic; Model trash reserves its
@@ -22,6 +44,31 @@
   separate from verified geometry, and analysis never downloads model weights.
 
 ### Fixed
+
+- AI Search guides setup and preserves keyboard focus between basic and advanced controls. Clearing a query cancels stale navigation; result views support a grid, list and on-demand match details.
+- Deferred search projection commits bounded source notifications with content edits and hides stale evidence until refreshed. Sparse ranking preserves independent SQL identities without excessive nesting.
+
+- Search backfill yields to complete user write requests, including upload staging
+  and cleanup, without holding a database transaction while waiting.
+- AI Search bounds permission checks and Model-card loading to result identities,
+  avoids repeated full top-k sorting during portable vector scans, and keeps
+  periodic SQLite projection-repair transactions short during browsing.
+- Search backfill drains bounded batches between periodic pauses, removing the
+  one-second delay per embedding batch while preserving maintenance and shutdown
+  coordination. Settled active generations stop a burst without inference.
+- Family browsing uses recent changes when relevance scores are unavailable,
+  preserving valid cursors for collapsed cards and the Families list.
+
+- Restoring AI Search backups no longer requires optional vector extensions to
+  inspect unversioned databases. Durable vectors remain searchable through the
+  portable backend while native acceleration is disabled.
+
+- AI Search activation acquires the SQLite writer lock before verification, so
+  concurrent worker commits cannot invalidate the cutover snapshot. Search and
+  ordinary Model results start without the optional Families annotation package.
+
+- Caption text and unsaved edits now clear when the signed-in account changes,
+  including account changes received from another browser tab.
 
 - Idle similarity polling no longer transiently blocks backup restoration with a storage-retention conflict.
 
