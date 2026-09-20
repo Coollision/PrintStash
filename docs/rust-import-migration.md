@@ -2,7 +2,7 @@
 
 This document records qualification on the original combined PR #173. The
 standalone Rust branch starts from `main`; AI Search and its deferred projection
-worker belong to `codex/ai-search-only`. Search-related measurements below are
+worker belong to `feat/166-ai-search`. Search-related measurements below are
 historical evidence, not validation of this branch.
 
 
