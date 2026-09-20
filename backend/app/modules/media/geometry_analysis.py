@@ -147,4 +147,3 @@ def _render_views(mesh, image_size, frames):
         EmbeddingInput("image", rgb=rgb, width=image_size, height=image_size)
         for rgb in images
     )
-
