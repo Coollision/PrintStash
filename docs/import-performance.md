@@ -373,54 +373,46 @@ is not a promise across these image engines.
 
 ## Controlled migration comparison
 
-M00 adds `scripts/bench_corpus.py` and `scripts/bench_matrix.py`. The opt-in
-`benchmark_imports` input on the CI workflow runs a dedicated Ubuntu runner:
+M00 adds `scripts/bench_corpus.py` and `scripts/bench_matrix.py`. Import
+performance measurements run only on an otherwise idle local host; they are not
+GitHub Actions jobs and the CLI refuses `GITHUB_ACTIONS=true`.
+
+The normal review loop is the bounded quick preset:
 
 ```bash
-gh workflow run ci.yml --ref feature/rust-m00-baseline \
-  -f benchmark_imports=true \
-  -f benchmark_parent=4b9afeb92d4e7e24298454af38c6c76aeddec437
+head="$(git rev-parse HEAD)"
+python3 backend/scripts/bench_matrix.py \
+  --quick \
+  --head "$head" \
+  --output "/tmp/printstash-import-benchmark-$head"
 ```
 
-The runner builds the original, immediate-parent, and current committed full
-release images before measurement. It records immutable image IDs and retains
-release image archives alongside sanitized evidence for 90 days. The same
-hash-pinned psutil instrumentation and v5 harness are layered over each release;
-application dependencies are not upgraded. Packaged source directories receive
-read/traversal permissions in the instrumentation layer so an unprivileged runner
-can hash their unchanged bytes. Subsequent milestones must retain the
-M00 image archive and corpus: rebuilding a moving Docker base or regenerating
-fixtures with changed numerical dependencies is not an equivalent baseline.
-When `benchmark_imports` is true, ordinary CI, browser, image-build and scan jobs
-remain skipped so they cannot contend with the controlled measurement cells.
+The preset uses one SQLite profile with 4 CPU/4 GiB. It compares the original
+M00 commit with the committed HEAD for four representative first-wave workloads:
+large-mesh import, G-code parsing, archive extraction and geometric similarity.
+Each workload gets one warm-up per revision and three alternating before/after
+pairs. It records sanitized evidence and immutable image IDs but does not create
+a duplicate release-image archive. This is a fast regression signal, not a
+publication-quality performance study.
 
-The deterministic corpus covers small STL/3MF, 128 small meshes, a 327,680-face
-mesh, a mixed large archive, existing Prusa/Orca/BGCODE fixtures, a STEP fixture,
-and similarity candidates. Every source and archive digest is recorded. This is
-a synthetic scaling corpus, not a representative user library. Optional real
-inference assets, labeled similarity-quality evaluation, remote storage, and queue
-recovery are separate required workloads; this runner does not establish them.
+The deterministic corpus records every source and archive digest. Before timing
+is accepted, the harness checks source identity, metadata, geometry, preview
+state and the applicable bounded visual contract. Runs use fresh databases and
+storage roots, isolated Docker networking, fixed CPU/memory limits and no Docker
+socket inside a measured container.
 
-Each database runs sequentially under total budgets of 2 CPU/2 GiB and 4 CPU/4 GiB.
-PostgreSQL receives one quarter of that budget on a private internal Docker
-network, with no published ports. Application containers receive the remainder;
-SQLite containers receive the full budget. No container receives a Docker socket
-or host networking. Each import uses a fresh database and storage directory.
+A longer local protocol remains available for investigating a detected
+regression by omitting `--quick` and choosing `--database` and `--cpus`.
+It performs seven alternating pairs, extending to fourteen only when the results
+are noisy, and can preserve the measured release images. Do not run multiple
+profiles concurrently.
 
-For every case the runner checks output parity, performs a warm-up for each
-revision, then seven alternating before/after pairs. It extends to fourteen pairs
-when elapsed/API-p95 variation exceeds 5%, or CPU/memory variation exceeds 10%.
-Raw reports retain API p50/p95/max, upload/extraction/processing times, CPU,
-sampled RSS and cgroup memory peaks. PostgreSQL CPU includes the entire benchmark
-CLI lifecycle; its memory peak is cumulative for the service profile, not a
-per-import measurement. Neither is silently combined with application-only
-measurements. Sampled RSS can miss short peaks and double-count shared pages.
-
-`comparison.md` and `comparisons.json` expose paired changes, spread and threshold
-exceedances. A green measurement job establishes successful execution and output
-parity, not accepted performance. Repeatable regressions above the plan's 5%
-elapsed/API-p95 or 10% CPU/memory limits still block merging. Shared-runner timing
-noise must be resolved in review, not converted into flaky CI assertions.
+`comparison.md` and `comparisons.json` expose paired changes, spread and
+threshold exceedances. A completed measurement establishes successful execution
+and output parity, not automatic performance acceptance. Repeatable regressions
+above 5% for elapsed/API p95 or 10% for CPU/memory require review. Sampled RSS
+can miss short peaks and double-count shared pages, so container memory peaks
+remain the stronger bound.
 
 
 ## Durable queue baseline diagnostic

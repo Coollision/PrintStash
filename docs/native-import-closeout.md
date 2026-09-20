@@ -72,15 +72,13 @@ the expected native-path timing and outputs are identical to M14. The committed
 fingerprints and all verification classes before recording latency, CPU, RSS,
 and container memory against both the immediate parent and M00 baseline.
 
-The first controlled comparison from integration commit
-`2f7b58aaefe609b72b2b44c1b61915d3962ddc4e`, GitHub Actions run 35461199627,
-stopped during the original-baseline warm-up. Source identity, preview outcome,
-geometry, metadata and dimensions matched, while exact compressed preview bytes
-differed across the intentional renderer replacement. No timing from that run is
-accepted. The harness rerun uses the existing M10 32 x 24 RGB Lanczos probe and
-mean absolute error ceiling of 24 only against the original pre-Rust renderer;
-the immediate M14 comparison remains byte-exact. The controlled 2 CPU/2 GiB and
-4 CPU/4 GiB SQLite/PostgreSQL matrix remains a delivery gate.
+The attempted GitHub Actions comparisons, runs 35461199627 and
+35470984193, stopped at correctness gates and produced no accepted timing.
+Benchmarks now run only on an idle local host. The delivery gate is a bounded
+quick comparison of the original M00 baseline against committed HEAD: SQLite,
+4 CPU/4 GiB, large-mesh import, G-code parsing, archive extraction and geometric
+similarity, with one warm-up and three alternating pairs per workload. The
+functional test suite remains responsible for PostgreSQL compatibility.
 
 ## Verification and remaining delivery gates
 

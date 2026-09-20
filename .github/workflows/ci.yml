@@ -17,14 +17,6 @@ on:
     - cron: "27 4 * * *"
   workflow_dispatch:
     inputs:
-      benchmark_imports:
-        description: "Run the controlled import matrix and archive immutable release images"
-        type: boolean
-        default: false
-      benchmark_parent:
-        description: "Full immediate-parent commit for import comparisons"
-        type: string
-        default: "4b9afeb92d4e7e24298454af38c6c76aeddec437"
       native_clip:
         description: "Validate the pinned, preplaced real CLIP export on both native architectures"
         type: boolean
@@ -44,7 +36,6 @@ env:
 jobs:
   mesh-native:
     name: Rust mesh loading and rendering (${{ matrix.arch }})
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -86,7 +77,6 @@ jobs:
 
   native-coverage:
     name: Rust source coverage including Python bindings
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -120,7 +110,6 @@ jobs:
 
   similarity-native:
     name: Similarity native (${{ matrix.arch }})
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -167,7 +156,6 @@ jobs:
 
   critical-capabilities:
     name: Critical capabilities
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -213,7 +201,6 @@ jobs:
 
   printer-core:
     name: Printer core (${{ matrix.python }}, ${{ matrix.resolution }})
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -278,7 +265,6 @@ jobs:
 
   backend:
     name: Backend
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     # The coverage lane can exceed one hour on shared runners while still making progress.
     timeout-minutes: 90
@@ -356,7 +342,6 @@ jobs:
 
   backend-python313:
     name: Backend compatibility (Python 3.13, advisory)
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     continue-on-error: true
     # The complete suite reached 80% when the former 30-minute job budget ended.
@@ -391,9 +376,7 @@ jobs:
     # as "CI is flaky" and gets a re-run rather than a fix. Five shuffled,
     # parallel runs on a schedule turn that into a specific named failure with a
     # seed that reproduces it.
-    if: >-
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      inputs.benchmark_imports != true
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -454,7 +437,6 @@ jobs:
 
   sqlite-async:
     name: SQLite async extra
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -481,7 +463,6 @@ jobs:
 
   minio-migration:
     name: MinIO to SeaweedFS migration
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -516,7 +497,6 @@ jobs:
 
   frontend:
     name: Frontend
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -570,7 +550,6 @@ jobs:
 
   browser-extension:
     name: Browser extension
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -728,7 +707,6 @@ jobs:
 
   e2e-real:
     name: Real-backend E2E
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -795,7 +773,6 @@ jobs:
 
   docker-build:
     name: Docker build and Grype scan (${{ matrix.image }}, ${{ matrix.arch }})
-    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_imports != true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.image == 'printstash' && 45 || 40 }}
     permissions:
@@ -1050,47 +1027,4 @@ jobs:
           path: |
             backend/qualification/queue/target/qualification-coverage.lcov
             backend/qualification/queue/target/qualification-evidence/
-          if-no-files-found: error
-
-  import-benchmark:
-    name: Controlled import comparison (${{ matrix.database }}, ${{ matrix.cpus }} CPU)
-    if: github.event_name == 'workflow_dispatch' && inputs.benchmark_imports
-    runs-on: ubuntu-24.04
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        database: [sqlite, postgres]
-        cpus: [2, 4]
-    permissions:
-      contents: read
-    steps:
-      - name: Check out the committed benchmark revision
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Compare original and immediate-parent release images
-        env:
-          BENCHMARK_PARENT: ${{ inputs.benchmark_parent }}
-        run: >-
-          python3 backend/scripts/bench_matrix.py
-          --head "$GITHUB_SHA" --base "$BENCHMARK_PARENT"
-          --database "${{ matrix.database }}" --cpus "${{ matrix.cpus }}"
-          --output "$RUNNER_TEMP/import-benchmark"
-      - name: Upload sanitized measurements and corpus
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu
-          path: ${{ runner.temp }}/import-benchmark/evidence/
-          retention-days: 90
-          if-no-files-found: error
-      - name: Preserve the measured release images
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: import-benchmark-release-images-${{ matrix.database }}-${{ matrix.cpus }}cpu
-          path: ${{ runner.temp }}/import-benchmark/images/
-          retention-days: 90
           if-no-files-found: error

@@ -61,63 +61,19 @@ class TestRustToolchainPin:
 
 
 class TestControlledImportBenchmark:
-    def test_runs_without_concurrent_ci_jobs(self) -> None:
-        jobs = _ci_workflow()["jobs"]
-        ordinary_guard = (
-            "github.event_name != 'workflow_dispatch' || "
-            "inputs.benchmark_imports != true"
-        )
-        flaky_guard = (
-            "(github.event_name == 'schedule' || "
-            "github.event_name == 'workflow_dispatch') && "
-            "inputs.benchmark_imports != true"
-        )
+    def test_keeps_import_benchmarks_local(self) -> None:
+        workflow = _ci_workflow()
+        inputs = workflow[True]["workflow_dispatch"]["inputs"]
 
-        ordinary_jobs = set(jobs) - {
-            "import-benchmark",
-            "flaky-detection",
-            "queue-qualification",
-        }
-        assert ordinary_jobs
-        assert all(jobs[name]["if"] == ordinary_guard for name in ordinary_jobs)
-        assert jobs["flaky-detection"]["if"] == flaky_guard
+        assert "benchmark_imports" not in inputs
+        assert "benchmark_parent" not in inputs
+        assert "import-benchmark" not in workflow["jobs"]
 
-    def test_preserves_evidence_on_a_dedicated_opt_in_runner(self):
-        job = _ci_workflow()["jobs"]["import-benchmark"]
-        assert (
-            job["if"]
-            == "github.event_name == 'workflow_dispatch' && inputs.benchmark_imports"
-        )
-        assert job["permissions"] == {"contents": "read"}
-        commands = [step.get("run", "") for step in job["steps"]]
-        assert sum("scripts/bench_matrix.py" in command for command in commands) == 1
-        harness = (REPO_ROOT / "backend" / "scripts" / "bench_matrix.py").read_text()
-        assert '"bench_gcode.py"' in harness
-        assert '"name": "gcode-parse"' in harness
-        artifacts = [
-            step
-            for step in job["steps"]
-            if step.get("uses", "").startswith("actions/upload-artifact@")
-        ]
-        assert {step["with"]["name"] for step in artifacts} == {
-            "import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu",
-            "import-benchmark-release-images-${{ matrix.database }}-${{ matrix.cpus }}cpu",
-        }
-        assert all(step["with"]["if-no-files-found"] == "error" for step in artifacts)
-        evidence = next(
-            step
-            for step in artifacts
-            if step["with"]["name"]
-            == "import-benchmark-evidence-${{ matrix.database }}-${{ matrix.cpus }}cpu"
-        )
-        assert evidence["if"] == "always()"
-        assert all(step["if"] == "always()" for step in artifacts)
-        assert job["strategy"]["max-parallel"] == 1
-        assert job["strategy"]["fail-fast"] is False
-        assert job["strategy"]["matrix"] == {
-            "database": ["sqlite", "postgres"],
-            "cpus": [2, 4],
-        }
+    def test_has_no_benchmark_only_ci_guards(self) -> None:
+        source = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+        assert "inputs.benchmark_imports" not in source
+        assert "backend/scripts/bench_matrix.py" not in source
 
 
 class TestQueueQualification:
