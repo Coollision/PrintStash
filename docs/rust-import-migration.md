@@ -130,7 +130,8 @@ benchmark table/raw sanitized evidence, migration/rollback and limitations.
 
 ## M00 evidence
 
-In progress. The benchmark now selects `--database sqlite|postgres`. PostgreSQL
+Complete for the bounded local delivery gate. The benchmark selects
+`--database sqlite|postgres`. PostgreSQL
 uses the repository test-container owner and a fresh per-run database, never an
 existing vault URL. Both paths use the supported `app.db.migrate` bootstrap.
 Protocol `job-and-library-poll-250ms-v5` records DB backend/version and parsed
@@ -144,8 +145,7 @@ and application preview tests. Stable compiler reports provide line/region/funct
 coverage; they **do not establish branch coverage**. Any future nightly branch
 instrumentation must be pinned and recorded separately from production.
 
-No queue candidate is selected. No import stage has changed ownership. No
-controlled baseline performance comparison or complete migration is claimed.
+No queue candidate is selected. No import stage has changed ownership.
 
 The two attempted CI matrices, runs 35461199627 and 35470984193, were
 rejected during correctness warm-ups, so no timing from either run is accepted.
@@ -154,6 +154,14 @@ preset compares the original M00 commit with committed HEAD using one SQLite
 4 CPU/4 GiB profile, four representative first-wave workloads and three
 alternating pairs. Source identity, preview state, dimensions, metadata and
 geometry remain correctness gates before any timing is interpreted.
+
+The local quick run at `6d5dcbc8` passed every correctness gate. Its paired
+complete-time changes were large mesh +5.43% (14.70% CV, inconclusive), G-code
+-43.49%, archive extraction -8.24% (complete time noisy) and geometric
+similarity -64.13%. G-code process RSS rose 4.49 MiB (+15.19%), while the
+container peak rose 0.46 MiB (+1.18%) and both elapsed time and CPU fell about
+43%; this bounded tradeoff is accepted. Three pairs provide a basic local
+regression signal, not a publication-quality performance claim.
 
 ### M00 coverage matrix
 

@@ -450,11 +450,7 @@ The controlled matrix uses this mode; the independent default diagnostic and
 real process-kill E2Es retain all recovery assertions. A valid normal-operation
 timing does not turn the original baseline's failed crash case into a pass.
 
-The controlled matrix has four sequential CI profiles (SQLite/PostgreSQL, 2/4 CPU)
-with matching 2/4 GiB budgets. Every profile builds before measuring, performs one
-warm-up and seven alternating pairs, and expands noisy cases to fourteen pairs.
-Queue comparisons require the same steady-state protocol, database version and
-completion outcomes. Release images are archived before measurements, and their
-artifact is retained even when a later workload fails. Failed correctness checks
-block that workload's timing acceptance; rerunning a known baseline failure does
-not establish performance evidence.
+Queue diagnostics also run locally and separately from the bounded import preset.
+Comparable queue results require the same steady-state protocol, database version
+and completion outcomes. Failed correctness checks block timing acceptance;
+rerunning a known baseline failure does not establish performance evidence.

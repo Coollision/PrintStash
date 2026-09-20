@@ -80,6 +80,22 @@ quick comparison of the original M00 baseline against committed HEAD: SQLite,
 similarity, with one warm-up and three alternating pairs per workload. The
 functional test suite remains responsible for PostgreSQL compatibility.
 
+The local quick comparison completed at `6d5dcbc8` with all corpus identity,
+metadata, geometry and output-parity gates passing:
+
+| Workload | Complete before / after | Paired change | Review |
+| --- | ---: | ---: | --- |
+| Large mesh | 3.527 s / 4.528 s | +5.43% | Noisy (14.70% CV); basic signal is inconclusive |
+| G-code parsing | 1.566 s / 0.885 s | -43.49% | Parse p95 -30.84%; accepted |
+| Archive extraction | 7.912 s / 7.113 s | -8.24% | Archive p95 -17.74%; complete time is noisy |
+| Geometric similarity | 2.167 s / 0.777 s | -64.13% | Verification p95 -81.93%; accepted |
+
+The G-code process RSS median increased by 4.49 MiB (+15.19%), while its
+container peak increased by only 0.46 MiB (+1.18%) and elapsed time and CPU both
+fell by about 43%. That bounded tradeoff is accepted for this migration. The
+three-pair preset is deliberately a short local regression signal, so these
+numbers are not a publication-quality performance claim.
+
 ## Verification and remaining delivery gates
 
 - Core Pyright: clean.
@@ -96,4 +112,5 @@ architecture, and critical-capability gates passed for exact head `bcc01b75` in
 run 35458444754. Exact-diff security scan
 `dd6d4113-0344-4b69-bddb-ad78f32d5d1c` completed with five covered surfaces
 and zero findings. M15 merged into the integration branch as `2f7b58aa`; the
-corrected controlled performance comparison remains open.
+bounded local comparison completed at `6d5dcbc8` with every correctness gate
+passing.
