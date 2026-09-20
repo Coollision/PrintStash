@@ -130,7 +130,8 @@ benchmark table/raw sanitized evidence, migration/rollback and limitations.
 
 ## M00 evidence
 
-In progress. The benchmark now selects `--database sqlite|postgres`. PostgreSQL
+Complete for the bounded local delivery gate. The benchmark selects
+`--database sqlite|postgres`. PostgreSQL
 uses the repository test-container owner and a fresh per-run database, never an
 existing vault URL. Both paths use the supported `app.db.migrate` bootstrap.
 Protocol `job-and-library-poll-250ms-v5` records DB backend/version and parsed
@@ -144,16 +145,23 @@ and application preview tests. Stable compiler reports provide line/region/funct
 coverage; they **do not establish branch coverage**. Any future nightly branch
 instrumentation must be pinned and recorded separately from production.
 
-No queue candidate is selected. No import stage has changed ownership. No
-controlled baseline performance comparison or complete migration is claimed.
+No queue candidate is selected. No import stage has changed ownership.
 
-The first post-M15 controlled matrix, run 35461199627, was rejected during its
-original-baseline warm-up because the pre-Rust and Rust renderers do not produce
-byte-identical previews. No timing from that run is accepted. The rerun applies
-the already established M10 32 x 24 RGB Lanczos probe and mean absolute error
-ceiling of 24 only when crossing that renderer boundary. Comparisons against the
-immediate parent remain byte-exact, while source identity, preview state, full
-dimensions, metadata and geometry remain exact in both modes.
+The two attempted CI matrices, runs 35461199627 and 35470984193, were
+rejected during correctness warm-ups, so no timing from either run is accepted.
+Performance measurements now run only on an idle local host. The bounded quick
+preset compares the original M00 commit with committed HEAD using one SQLite
+4 CPU/4 GiB profile, four representative first-wave workloads and three
+alternating pairs. Source identity, preview state, dimensions, metadata and
+geometry remain correctness gates before any timing is interpreted.
+
+The local quick run at `6d5dcbc8` passed every correctness gate. Its paired
+complete-time changes were large mesh +5.43% (14.70% CV, inconclusive), G-code
+-43.49%, archive extraction -8.24% (complete time noisy) and geometric
+similarity -64.13%. G-code process RSS rose 4.49 MiB (+15.19%), while the
+container peak rose 0.46 MiB (+1.18%) and both elapsed time and CPU fell about
+43%; this bounded tradeoff is accepted. Three pairs provide a basic local
+regression signal, not a publication-quality performance claim.
 
 ### M00 coverage matrix
 
@@ -204,7 +212,7 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 40 | identifies noisy baseline measurements | Edge | Alternating high/low measurements | Marks additional samples necessary | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_requires_more_samples_when_baseline_is_noisy` |
 | 41 | refuses incomplete comparison pairs | Error | Empty or unpaired reports | Fails without reporting comparative evidence | Repo | ✅ `tests/repo/test_bench_matrix.py::TestPerformanceComparison::test_refuses_incomplete_pairs` |
 | 42 | refuses ambiguous benchmark revisions | Error | Branch, short hash or option-like input | Fails before running Git/build commands | Repo | ✅ `tests/repo/test_bench_matrix.py::TestBenchmarkRevision::test_refuses_ambiguous_or_option_like_revisions` |
-| 43 | requires retained performance evidence | Edge | Opt-in CI benchmark workflow | Dedicated job uses read-only token and required evidence/image artifacts | Repo | ✅ `tests/repo/test_ci_workflows.py::TestControlledImportBenchmark` |
+| 43 | keeps import benchmarks local | Edge | CI workflow and local quick preset | CI exposes no import benchmark job; local preset fixes one bounded profile | Repo | ✅ `tests/repo/test_ci_workflows.py::TestControlledImportBenchmark`, `tests/repo/test_bench_matrix.py::TestLocalQuickBenchmark` |
 | 44 | completes the intended Model lifecycle | Happy | Unique uploaded bytes; other models may exist in Trash | Correct Model restored and purged | Playwright | ✅ `frontend/tests/e2e-real/models.spec.ts` |
 | 45 | applies the selected tag before upload | Edge | Asynchronous tag creation | Selected chip visible before transfer; tag filter retains Model | Playwright | ✅ `frontend/tests/e2e-real/vault.spec.ts` |
 | 46 | cancels warmup after consent revocation | Edge | Concurrent real file-backed WAL reader/writer | Loader terminates; provider remains cold | Integration | ✅ `tests/integration/modules/search/test_model_warmup.py` |
@@ -255,7 +263,7 @@ against real file-backed SQLite and PostgreSQL. No database transactions are moc
 | 91 | keeps disposable worker coverage valid | Edge | Inference pool tests deliberately kill a child that imports no application code | Real worker lifecycle assertions run without creating unusable subprocess coverage shards | Integration | ✅ `tests/integration/modules/inference/test_worker_pool.py` |
 | 92 | bounds transient benchmark setup retries | Error | An isolated benchmark setup receives an unexpected 429 before measurement starts | One complete rate-limit window is observed; setup succeeds once or the second rejection fails the run | Repo | ✅ `tests/repo/test_bench_import.py::TestCompleteSetup` |
 | 93 | favorites target the uploaded Model card | Edge | Two real uploads with model links scoped below the library main region | The selected card's sibling favorite control is found with a relative locator; the favorites filter narrows and restores the grid | Playwright | ✅ `frontend/tests/e2e-real/saved-views.spec.ts::saved views::starring a model and filtering by favorites narrows the grid` |
-| 94 | isolates controlled measurements from CI work | Edge | Manual controlled benchmark dispatch | Only the four sequential benchmark cells run; test, build, browser and scan jobs remain skipped | Repo | ✅ `tests/repo/test_ci_workflows.py::TestControlledImportBenchmark::test_runs_without_concurrent_ci_jobs` |
+| 94 | excludes controlled measurements from CI | Edge | Pull request, push or manual CI dispatch | No workflow input, job or benchmark-only guard exists | Repo | ✅ `tests/repo/test_ci_workflows.py::TestControlledImportBenchmark::test_keeps_import_benchmarks_local` |
 
 ### Verification and remaining gates
 

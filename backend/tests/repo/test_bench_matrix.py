@@ -4,10 +4,13 @@ import pytest
 
 from scripts.bench_matrix import (
     Profile,
+    benchmark_cases,
+    benchmark_plan,
     compare_queue_contracts,
     comparison,
     container_measurement_script,
     container_resources,
+    measure_case,
     preview_comparison_mode,
     revision,
 )
@@ -208,6 +211,132 @@ class TestPerformanceComparison:
             "container_peak_bytes",
         }
         assert result["metrics"]["large_p95_ms"]["pairs_above_threshold"] == 7
+
+
+class TestLocalQuickBenchmark:
+    def test_uses_one_bounded_profile(self):
+        plan = benchmark_plan(
+            quick=True,
+            database=None,
+            cpus=None,
+            original="original",
+            base="parent",
+        )
+
+        assert plan.dialects == ("sqlite",)
+        assert plan.cpu_profiles == (4,)
+        assert plan.ancestors == ("original",)
+        assert plan.minimum_pairs == 3
+        assert plan.maximum_pairs == 3
+        assert plan.preserve_release_images is False
+
+    def test_selects_first_wave_cases(self):
+        corpus = {
+            "archives": [
+                {"name": "small.zip"},
+                {"name": "large-mesh.zip"},
+                {"name": "similarity.zip"},
+            ]
+        }
+
+        assert [case["name"] for case in benchmark_cases(corpus, quick=True)] == [
+            "large-mesh.zip",
+            "gcode-parse",
+            "archive-extract",
+            "geometric-similarity",
+        ]
+
+    def test_rejects_missing_quick_case(self):
+        with pytest.raises(ValueError, match="large-mesh.zip"):
+            benchmark_cases({"archives": []}, quick=True)
+
+    @pytest.mark.parametrize(
+        ("database", "cpus"),
+        [("sqlite", None), (None, 4)],
+    )
+    def test_rejects_quick_profile_overrides(self, database, cpus):
+        with pytest.raises(ValueError, match="fixes the database"):
+            benchmark_plan(
+                quick=True,
+                database=database,
+                cpus=cpus,
+                original="original",
+                base="parent",
+            )
+
+    def test_retains_full_protocol(self):
+        plan = benchmark_plan(
+            quick=False,
+            database=None,
+            cpus=None,
+            original="original",
+            base="parent",
+        )
+
+        assert plan.dialects == ("sqlite", "postgres")
+        assert plan.cpu_profiles == (2, 4)
+        assert plan.ancestors == ("original", "parent")
+        assert plan.minimum_pairs == 7
+        assert plan.maximum_pairs == 14
+        assert plan.preserve_release_images is True
+
+    def test_runs_three_alternating_pairs(self, tmp_path):
+        class FakeProfile:
+            dialect = "sqlite"
+            cpus = 4
+            evidence = tmp_path
+
+            def __init__(self):
+                self.names = []
+
+            def run(
+                self,
+                image,
+                name,
+                archive,
+                reference,
+                *,
+                preview_comparison,
+            ):
+                self.names.append(name)
+                return _report(1)
+
+        profile = FakeProfile()
+        result = measure_case(
+            profile,
+            {"name": "large-mesh.zip"},
+            "original",
+            "head",
+            {
+                "original": {"benchmark_id": "base-image"},
+                "head": {"benchmark_id": "head-image"},
+            },
+            minimum_pairs=3,
+            maximum_pairs=3,
+        )
+
+        assert result["pairs"] == 3
+        assert len(profile.names) == 8
+
+    def test_refuses_github_actions(self, monkeypatch, capsys):
+        from scripts import bench_matrix
+
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "bench_matrix.py",
+                "--head",
+                "a" * 40,
+                "--output",
+                "/tmp/unused-benchmark",
+            ],
+        )
+
+        with pytest.raises(SystemExit, match="2"):
+            bench_matrix.main()
+
+        assert "must run on a local host" in capsys.readouterr().err
 
 
 class TestProfilePreviewComparison:

@@ -1,4 +1,4 @@
-"""Compare committed release images on a dedicated four-CPU benchmark runner.
+"""Compare committed release images on a dedicated local four-CPU host.
 
 All builds precede measurements. Containers share no host network or Docker
 socket. PostgreSQL gets one quarter of each total CPU/memory profile. Timing
@@ -29,6 +29,83 @@ ORIGINAL = "4b9afeb92d4e7e24298454af38c6c76aeddec437"
 POSTGRES = (
     "postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
 )
+QUICK_CASE_NAMES = (
+    "large-mesh.zip",
+    "gcode-parse",
+    "archive-extract",
+    "geometric-similarity",
+)
+
+
+@dataclass(frozen=True)
+class BenchmarkPlan:
+    dialects: tuple[str, ...]
+    cpu_profiles: tuple[int, ...]
+    ancestors: tuple[str, ...]
+    minimum_pairs: int
+    maximum_pairs: int
+    preserve_release_images: bool
+
+
+def benchmark_plan(
+    *,
+    quick: bool,
+    database: str | None,
+    cpus: int | None,
+    original: str,
+    base: str,
+) -> BenchmarkPlan:
+    """Select one bounded local smoke profile or the explicit full protocol."""
+    if quick:
+        if database is not None or cpus is not None:
+            raise ValueError("--quick fixes the database and CPU profile")
+        return BenchmarkPlan(
+            dialects=("sqlite",),
+            cpu_profiles=(4,),
+            ancestors=(original,),
+            minimum_pairs=3,
+            maximum_pairs=3,
+            preserve_release_images=False,
+        )
+    return BenchmarkPlan(
+        dialects=(database,) if database else ("sqlite", "postgres"),
+        cpu_profiles=(cpus,) if cpus else (2, 4),
+        ancestors=tuple(dict.fromkeys((original, base))),
+        minimum_pairs=7,
+        maximum_pairs=14,
+        preserve_release_images=True,
+    )
+
+
+def benchmark_cases(corpus: dict, *, quick: bool) -> list[dict]:
+    stage_cases = [
+        {"name": "gcode-parse", "gcode": True, "similarity": False},
+        {
+            "name": "archive-extract",
+            "archive_benchmark": True,
+            "similarity": False,
+        },
+        {"name": "mesh-preview", "mesh_benchmark": True, "similarity": False},
+        {
+            "name": "geometric-similarity",
+            "similarity_benchmark": True,
+            "similarity": False,
+        },
+        {
+            "name": "url-acquisition",
+            "acquisition_benchmark": True,
+            "similarity": False,
+        },
+        {"name": "queue-steady", "queue": True, "similarity": False},
+    ]
+    cases = [*corpus["archives"], *stage_cases]
+    if not quick:
+        return cases
+    by_name = {case["name"]: case for case in cases}
+    missing = set(QUICK_CASE_NAMES) - by_name.keys()
+    if missing:
+        raise ValueError(f"Quick benchmark cases are missing: {sorted(missing)}")
+    return [by_name[name] for name in QUICK_CASE_NAMES]
 
 
 def preview_comparison_mode(ancestor: str, original: str = ORIGINAL) -> str:
@@ -590,7 +667,14 @@ def postgres_service(network: str, cpus: int, env_file: Path):
 
 
 def measure_case(
-    profile: Profile, archive: dict, ancestor: str, head: str, images: dict
+    profile: Profile,
+    archive: dict,
+    ancestor: str,
+    head: str,
+    images: dict,
+    *,
+    minimum_pairs: int = 7,
+    maximum_pairs: int = 14,
 ) -> dict:
     label = f"{profile.dialect}-{profile.cpus}cpu-{ancestor[:12]}-{Path(archive['name']).stem}"
     reference = None
@@ -613,9 +697,9 @@ def measure_case(
     mesh = bool(archive.get("mesh_benchmark"))
     similarity_benchmark = bool(archive.get("similarity_benchmark"))
     acquisition_benchmark = bool(archive.get("acquisition_benchmark"))
-    for pair in range(14):
+    for pair in range(maximum_pairs):
         if (
-            pair == 7
+            pair == minimum_pairs
             and not comparison(
                 reports["base"],
                 reports["head"],
@@ -710,7 +794,14 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--database", choices=("sqlite", "postgres"))
     parser.add_argument("--cpus", type=int, choices=(2, 4))
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Run one local SQLite 4 CPU/4 GiB smoke profile with three pairs",
+    )
     args = parser.parse_args()
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        parser.error("Import performance benchmarks must run on a local host")
     head, base, original = map(revision, (args.head, args.base, args.original))
     for ancestor in (base, original):
         command(["git", "merge-base", "--is-ancestor", ancestor, head])
@@ -718,6 +809,16 @@ def main() -> None:
         raise RuntimeError(
             "The comparison requires a dedicated runner with at least four CPUs"
         )
+    try:
+        plan = benchmark_plan(
+            quick=args.quick,
+            database=args.database,
+            cpus=args.cpus,
+            original=original,
+            base=base,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     evidence = output / "evidence"
@@ -730,18 +831,18 @@ def main() -> None:
         work = Path(temporary)
         try:
             images = prepare_images(
-                [original, base, head], head, prefix, work, evidence
+                [*plan.ancestors, head], head, prefix, work, evidence
             )
-            # Retain immutable image bytes even if a later correctness check
-            # rejects a workload; successful cases still need reproducible inputs.
-            preserve_images(images, output / "images")
+            # The full investigation protocol retains immutable image bytes.
+            # The quick local preset records IDs without duplicating image storage.
+            if plan.preserve_release_images:
+                preserve_images(images, output / "images")
             corpus = prepare_corpus(images[head]["release_id"], evidence, work / head)
+            cases = benchmark_cases(corpus, quick=args.quick)
             pg_env, bench_env = server_environment(work, password)
             with private_network(prefix) as network:
-                for dialect in (
-                    (args.database,) if args.database else ("sqlite", "postgres")
-                ):
-                    for cpus in (args.cpus,) if args.cpus else (2, 4):
+                for dialect in plan.dialects:
+                    for cpus in plan.cpu_profiles:
                         service = (
                             postgres_service(network, cpus, pg_env)
                             if dialect == "postgres"
@@ -751,43 +852,17 @@ def main() -> None:
                             profile = Profile(
                                 evidence, dialect, cpus, network, bench_env, container
                             )
-                            for ancestor in dict.fromkeys((original, base)):
-                                cases = corpus["archives"] + [
-                                    {
-                                        "name": "gcode-parse",
-                                        "gcode": True,
-                                        "similarity": False,
-                                    },
-                                    {
-                                        "name": "archive-extract",
-                                        "archive_benchmark": True,
-                                        "similarity": False,
-                                    },
-                                    {
-                                        "name": "mesh-preview",
-                                        "mesh_benchmark": True,
-                                        "similarity": False,
-                                    },
-                                    {
-                                        "name": "geometric-similarity",
-                                        "similarity_benchmark": True,
-                                        "similarity": False,
-                                    },
-                                    {
-                                        "name": "url-acquisition",
-                                        "acquisition_benchmark": True,
-                                        "similarity": False,
-                                    },
-                                    {
-                                        "name": "queue-steady",
-                                        "queue": True,
-                                        "similarity": False,
-                                    },
-                                ]
+                            for ancestor in plan.ancestors:
                                 for archive in cases:
                                     summaries.append(
                                         measure_case(
-                                            profile, archive, ancestor, head, images
+                                            profile,
+                                            archive,
+                                            ancestor,
+                                            head,
+                                            images,
+                                            minimum_pairs=plan.minimum_pairs,
+                                            maximum_pairs=plan.maximum_pairs,
                                         )
                                     )
                                     write_comparisons(summaries, evidence)
