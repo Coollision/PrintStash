@@ -53,6 +53,56 @@ def owner(db_session: Session) -> User:
 class TestJobRegistry:
     """Recording a background job's progress and outcome so a page can follow it."""
 
+    def test_coalesces_identical_immediate_progress(self, monkeypatch):
+        registry = JobRegistry()
+        job_id = registry.create()
+        registry.update(job_id, state="running", progress=20)
+        before = registry.get(job_id).updated_at
+        monkeypatch.setattr(
+            jobs_module, "utcnow", lambda: before + timedelta(milliseconds=100)
+        )
+
+        registry.update(job_id, progress=20)
+
+        assert registry.get(job_id).updated_at == before
+
+    def test_persists_an_unchanged_heartbeat_after_one_second(self, monkeypatch):
+        registry = JobRegistry()
+        job_id = registry.create()
+        registry.update(job_id, state="running", progress=20)
+        later = registry.get(job_id).updated_at + timedelta(seconds=2)
+        monkeypatch.setattr(jobs_module, "utcnow", lambda: later)
+
+        registry.update(job_id, progress=20)
+
+        assert registry.get(job_id).updated_at == later
+
+    def test_does_not_publish_a_rolled_back_job(self, db_session, owner):
+        registry = JobRegistry()
+        owner.username = "uncommitted-job-owner"
+        db_session.add(owner)
+        db_session.flush()
+        job_id = registry.create(owner.id, kind="ingest", session=db_session)
+
+        db_session.rollback()
+
+        assert registry.get(job_id) is None
+        assert db_session.get(BackgroundJob, job_id) is None
+        assert db_session.get(User, owner.id).username == "job-owner"
+
+    def test_rehydrates_a_committed_transactional_job(self, db_session, owner):
+        registry = JobRegistry()
+        job_id = registry.create(owner.id, kind="ingest", session=db_session)
+        db_session.commit()
+
+        recovered = JobRegistry().get(job_id)
+
+        assert (recovered.kind, recovered.owner_user_id, recovered.state) == (
+            "ingest",
+            owner.id,
+            "pending",
+        )
+
     def test_progress_hints_round_trip(self) -> None:
         registry = JobRegistry()
         job_id = registry.create()
@@ -291,3 +341,16 @@ class TestReconcileInterruptedJobs:
         assert restored is not None
         assert restored.state == "failed"
         assert restored.retryable is True
+
+
+class TestJobsContract:
+    def test_terminal_result_wins_over_another_workers_cached_status(self, db_session):
+        first = JobRegistry()
+        second = JobRegistry()
+        job_id = first.create()
+        first.update(job_id, state="running")
+        second.finish(job_id, state="failed", error="cancelled_elsewhere")
+
+        first.finish(job_id, state="completed", model_id=42)
+
+        assert JobRegistry().get(job_id).state == "failed"

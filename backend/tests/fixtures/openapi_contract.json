@@ -231,6 +231,82 @@
         "title": "ArchiveSelectRequest",
         "type": "object"
       },
+      "ArtifactEnrichmentRead": {
+        "properties": {
+          "metadata": {
+            "default": "unknown",
+            "enum": [
+              "unknown",
+              "pending",
+              "running",
+              "ready",
+              "failed",
+              "blocked",
+              "disabled",
+              "on_demand",
+              "not_applicable"
+            ],
+            "title": "Metadata",
+            "type": "string"
+          },
+          "metadata_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Error"
+          },
+          "thumbnail": {
+            "default": "unknown",
+            "enum": [
+              "unknown",
+              "pending",
+              "running",
+              "ready",
+              "failed",
+              "blocked",
+              "disabled",
+              "on_demand",
+              "not_applicable"
+            ],
+            "title": "Thumbnail",
+            "type": "string"
+          },
+          "thumbnail_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Error"
+          }
+        },
+        "title": "ArtifactEnrichmentRead",
+        "type": "object"
+      },
+      "ArtifactEnrichmentRequest": {
+        "properties": {
+          "metadata": {
+            "default": true,
+            "title": "Metadata",
+            "type": "boolean"
+          },
+          "thumbnail": {
+            "default": true,
+            "title": "Thumbnail",
+            "type": "boolean"
+          }
+        },
+        "title": "ArtifactEnrichmentRequest",
+        "type": "object"
+      },
       "ArtifactOutcomeRead": {
         "properties": {
           "average_duration_s": {
@@ -5485,6 +5561,9 @@
       },
       "FileRead": {
         "properties": {
+          "enrichment": {
+            "$ref": "#/components/schemas/ArtifactEnrichmentRead"
+          },
           "file_type": {
             "$ref": "#/components/schemas/FileType"
           },
@@ -6772,6 +6851,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "pending",
                   "generated",
                   "fallback_generated",
                   "skipped",
@@ -9284,6 +9364,11 @@
               }
             ]
           },
+          "enrichment_pending": {
+            "default": false,
+            "title": "Enrichment Pending",
+            "type": "boolean"
+          },
           "family": {
             "anyOf": [
               {
@@ -9880,6 +9965,11 @@
                 "type": "null"
               }
             ]
+          },
+          "enrichment_pending": {
+            "default": false,
+            "title": "Enrichment Pending",
+            "type": "boolean"
           },
           "family": {
             "anyOf": [
@@ -24904,6 +24994,64 @@
           }
         ],
         "summary": "Serve a Bambu 3MF's embedded G-code preview",
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/v1/files/{file_id}/enrichment": {
+      "post": {
+        "description": "Request optional outputs or retry a failed generation without rendering.",
+        "operationId": "request_artifact_enrichment_api_v1_files__file_id__enrichment_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactEnrichmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactEnrichmentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Request Artifact Enrichment",
         "tags": [
           "files"
         ]

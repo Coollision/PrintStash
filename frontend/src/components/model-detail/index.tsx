@@ -35,6 +35,7 @@ import {
   deleteModel,
   deleteTag,
   getAssetUrl,
+  getModel,
   getModelPrinterFiles,
   getModelPrintJobs,
   starModel,
@@ -146,6 +147,26 @@ export function ModelDetail({ model: initialModel }: { model: ModelRead }) {
   const auth = useRequireAuth();
   const { user } = useAuth();
   const [model, setModel] = useState(initialModel);
+  useEffect(() => {
+    if (!model.enrichment_pending) return;
+    let active = true;
+    let timer: number;
+    const refresh = async () => {
+      try {
+        const updated = await getModel(model.id, { fresh: true });
+        if (active) setModel(updated);
+      } catch {
+        // A transient read failure does not hide an already saved Artifact.
+      } finally {
+        if (active) timer = window.setTimeout(() => void refresh(), 2000);
+      }
+    };
+    timer = window.setTimeout(() => void refresh(), 2000);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [model.id, model.enrichment_pending]);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);

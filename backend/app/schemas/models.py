@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.db.models import CollectionRole, FileRevisionStatus, FileType, PrintJobState
+from app.schemas.enrichment import ArtifactEnrichmentRead
 from app.schemas.family_types import VariantRole
 from app.schemas.printers import (
     PrintJobIdentityRead,
@@ -46,6 +47,7 @@ class MetadataRead(BaseModel):
 
 
 class FileRead(BaseModel):
+    enrichment: ArtifactEnrichmentRead = Field(default_factory=ArtifactEnrichmentRead)
     id: int
     model_id: int
     original_filename: str
@@ -142,6 +144,7 @@ class ModelFamilyRead(BaseModel):
 
 
 class ModelRead(BaseModel):
+    enrichment_pending: bool = False
     family: ModelFamilyRead | None = None
     similarity: ModelSimilarityRead = Field(default_factory=ModelSimilarityRead)
     id: int
@@ -244,6 +247,7 @@ class PrintSummaryRead(BaseModel):
 
 
 class ModelListItem(BaseModel):
+    enrichment_pending: bool = False
     family: ModelFamilyRead | None = None
     similarity: ModelSimilarityRead = Field(default_factory=ModelSimilarityRead)
     id: int

@@ -136,3 +136,9 @@ Only the test certificate's trust check is relaxed; browser CORS remains enabled
 - `artifact-cache.spec.ts`: persist cache limits in Settings, explicitly clear idle cache files, then reset to environment defaults.
 
 - `migration/vault-migration.spec.ts` (isolated `playwright.migration.config.ts`): real backup, preflight, online delta ingestion, API restart, recovery/resume, explicit cutover, byte-exact Artifact downloads, Full audit and JSON report. Source cleanup remains disabled during grace. Included in `pnpm test:e2e:real`.
+
+Settings coverage also verifies fractional GB cache limits after reload and simplified
+storage / AI Search layouts at desktop and mobile widths. The advanced-controls
+return flow checks viewport visibility and keyboard navigation back to guided setup.
+
+- `lan-upload.spec.ts`: upload a 112 KiB STL without SubtleCrypto and verify persistence after reload.

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Performance
+
+- Rust processes mesh previews, G-code, archives, geometry similarity and URL downloads. Python coordinates work and retains database ownership. Both Docker variants include the native extension.
+
+### Added
+
+- Imports persist source files before durable background analysis and preview generation. Pending review selections and staged enrichment recover after restart, with readiness and retry controls.
+
 ### Added
 
 - Model Families preserve independent Models and Revisions while recording human

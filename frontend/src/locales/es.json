@@ -3601,5 +3601,10 @@
   "families.siblingsUnavailable": "No se pudieron cargar las otras variantes.",
   "families.millimeters": "mm",
   "families.unknownUnits": "(unidades desconocidas)",
-  "families.noFamilyMatches": "Ninguna Familia coincide con esta búsqueda."
+  "families.noFamilyMatches": "Ninguna Familia coincide con esta búsqueda.",
+  "Some details could not be prepared": "No se pudieron preparar algunos detalles",
+  "Preview available on request": "Vista previa disponible bajo petición",
+  "Retry enrichment": "Reintentar preparación",
+  "Generate preview": "Generar vista previa",
+  "Preparing previews and details": "Preparando vistas previas y detalles"
 }

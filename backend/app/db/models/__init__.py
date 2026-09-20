@@ -84,6 +84,9 @@ from .ingestion import (
     InboxItemResult as InboxItemResult,
 )
 from .ingestion import (
+    IngestionReview as IngestionReview,
+)
+from .ingestion import (
     StagingLease as StagingLease,
 )
 from .library import (
@@ -146,6 +149,9 @@ from .library import (
 )
 from .library import (
     Tag as Tag,
+)
+from .media import (
+    ArtifactAnalysisGeneration as ArtifactAnalysisGeneration,
 )
 from .media import (
     ThumbnailGeneration as ThumbnailGeneration,

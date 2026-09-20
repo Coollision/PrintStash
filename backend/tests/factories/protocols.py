@@ -39,6 +39,7 @@ from app.db.models import (
     InboxItemState,
     InboxSourceKind,
     IndexGeneration,
+    IngestionReview,
     Model,
     ModelFamily,
     ModelFamilyMember,
@@ -79,6 +80,7 @@ from app.db.models import (
     VaultMigrationObject,
     VaultMigrationRun,
 )
+from app.db.models.media import ArtifactAnalysisGeneration, ThumbnailGeneration
 
 
 class MakeUser(Protocol):
@@ -553,3 +555,22 @@ class MakePassageVector(Protocol):
         component_index: int = 0,
         **overrides: Any,
     ) -> PassageVector: ...
+
+
+class MakeArtifactAnalysis(Protocol):
+    def __call__(self, file: File, **overrides: Any) -> ArtifactAnalysisGeneration: ...
+
+
+class MakeThumbnailGeneration(Protocol):
+    def __call__(self, file: File, **overrides: Any) -> ThumbnailGeneration: ...
+
+
+class MakeIngestionReview(Protocol):
+    def __call__(
+        self,
+        *,
+        kind: str = "model_files",
+        owner: User | None = None,
+        expired: bool = False,
+        **overrides: Any,
+    ) -> IngestionReview: ...

@@ -198,7 +198,9 @@ class Settings(BaseSettings):
     # Fraction of detected available RAM that a single mesh load+render may peak
     # to. The effective triangle cap is derived from this (per format, using the
     # measured per-triangle peak cost), divided by ``max_render_jobs`` so the
-    # budget is shared across concurrent renders, and combined with the static
+    # budget is shared across ordinary concurrent renders. Adaptive ZIP workers
+    # instead reserve estimated bytes from the shared budget before admission.
+    # The RAM-derived cap is combined with the static
     # ceiling above via a min(), so a small 4 GB container automatically skips
     # meshes a 32 GB host would happily render — no per-host tuning needed to keep
     # a scan from being OOM-killed (#29). Container-aware: honours the cgroup
@@ -215,21 +217,27 @@ class Settings(BaseSettings):
     # semaphore caps how many renders run simultaneously, and the RAM-aware
     # triangle cap divides its budget by this count so each concurrent job stays
     # within its share. 1 (serialised) is the safe default; raise it on hosts with
-    # RAM headroom. Zero is the supported sentinel for serial execution.
+    # RAM headroom. Zero is the supported sentinel for serial execution here.
+    # ZIP computation uses import_workers and the shared memory admission below.
     max_render_jobs: int = Field(default=1, ge=0)
+
+    # ZIP compute workers: 0 chooses from effective CPU and RAM; 1 is serial.
+    # Publishing remains ordered. All workers share mesh memory admission.
+    import_workers: int = Field(default=0, ge=0, le=32)
 
     # Number of faces processed per chunk in the software rasteriser. The renderer
     # builds its per-face geometry/shading arrays (each O(faces)) one chunk at a
     # time and frees them before the next, so peak render memory is O(chunk_size)
     # rather than O(total_faces) — a million-triangle mesh no longer materialises
     # ~70 MB float32 arrays all at once (#29). Lower it to shrink peak RSS further
-    # on tiny containers; raise it for marginally less Python-loop overhead.
+    # on tiny containers; raise it to reduce batch overhead.
     mesh_render_face_chunk_size: int = Field(default=64_000, gt=0)
 
     # Width of generated Model preview images. Height keeps the renderer's 4:3
     # aspect ratio. The Settings UI offers bounded presets so higher fidelity is
     # an explicit CPU/RAM/storage tradeoff on self-hosted machines.
     model_thumbnail_width: int = Field(default=640, ge=320, le=1280)
+    thumbnail_processing: Literal["background", "on_demand", "disabled"] = "background"
 
     # Similar Models remains opt-in. Its geometry budget is bounded by the
     # renderer's adaptive budget and the descriptor implementation's own cap.

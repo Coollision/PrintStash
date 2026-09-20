@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from printstash_core.inference import EmbeddingInput
 from printstash_core.mesh.similarity import GeometryError
 from printstash_core.mesh.similarity.budgets import MAX_ANALYSIS_FACES
 from printstash_core.mesh.similarity.components import ExpandedScene
@@ -13,7 +14,9 @@ from app.modules.media import mesh_processing, stl_fallback
 from app.modules.media.mesh_resources import PreparedMesh, load_3mf, prepare_loaded_mesh
 
 
-def _load(path: Path, file_type: str, *, triangle_cap: int) -> PreparedMesh:
+def _load(
+    path: Path, file_type: str, *, triangle_cap: int, include_brep: bool = True
+) -> PreparedMesh:
     import numpy as np
     import trimesh
 
@@ -49,7 +52,7 @@ def _load(path: Path, file_type: str, *, triangle_cap: int) -> PreparedMesh:
         prepared = load_3mf(path)
     else:
         mesh = (
-            mesh_processing._load_step_mesh_isolated(path, include_brep=True)
+            mesh_processing._load_step_mesh_isolated(path, include_brep=include_brep)
             if file_type == "step"
             else mesh_processing._load_mesh(path, file_type=file_type)
         )
@@ -109,13 +112,7 @@ def embedding_views(
     triangle_cap: int,
 ):
     """Six opaque RGB views, sharing the mesh loader and interactive render cap."""
-    import io
-
-    import numpy as np
     import trimesh
-    from PIL import Image
-    from printstash_core.inference import EmbeddingInput
-    from printstash_core.mesh.rasterizer import render_mesh_thumbnail
 
     if not 32 <= image_size <= 512:
         raise GeometryError("invalid_view_budget")
@@ -125,32 +122,29 @@ def embedding_views(
             raise GeometryError("embedding_requires_complete_geometry")
         vertices, faces = _component(prepared, component_index)
         mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
-        views = []
-        frames = (
-            ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
-            ((-1, 0, 0), (0, 1, 0), (0, 0, -1)),
-            ((0, 0, -1), (0, 1, 0), (1, 0, 0)),
-            ((0, 0, 1), (0, 1, 0), (-1, 0, 0)),
-            ((1, 0, 0), (0, 0, -1), (0, 1, 0)),
-            ((1, 0, 0), (0, 0, 1), (0, -1, 0)),
-        )
-        for frame in frames:
-            rendered = render_mesh_thumbnail(
-                mesh,
-                "",
-                width=image_size,
-                height=image_size,
-                view_rotation=np.asarray(frame, dtype=np.float64),
-                matte=True,
-            )
-            if rendered is None:
-                raise GeometryError("embedding_view_failed")
-            with Image.open(io.BytesIO(rendered)) as image:
-                rgba = image.convert("RGBA")
-                background = Image.new("RGBA", rgba.size, "white")
-                background.alpha_composite(rgba)
-                rgb = background.convert("RGB").tobytes()
-            views.append(
-                EmbeddingInput("image", rgb=rgb, width=image_size, height=image_size)
-            )
-        return tuple(views)
+        return _render_views(mesh, image_size, canonical_frames())
+
+
+def canonical_frames():
+    return (
+        ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+        ((-1, 0, 0), (0, 1, 0), (0, 0, -1)),
+        ((0, 0, -1), (0, 1, 0), (1, 0, 0)),
+        ((0, 0, 1), (0, 1, 0), (-1, 0, 0)),
+        ((1, 0, 0), (0, 0, -1), (0, 1, 0)),
+        ((1, 0, 0), (0, 0, 1), (0, -1, 0)),
+    )
+
+
+def _render_views(mesh, image_size, frames):
+    from printstash_core.mesh.native_rasterizer import render_views
+
+    try:
+        images = render_views(mesh, image_size, image_size, frames)
+    except (ValueError, RuntimeError) as exc:
+        raise GeometryError("embedding_view_failed") from exc
+    return tuple(
+        EmbeddingInput("image", rgb=rgb, width=image_size, height=image_size)
+        for rgb in images
+    )
+

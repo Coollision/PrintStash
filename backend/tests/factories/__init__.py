@@ -106,6 +106,10 @@ from tests.factories.manufacturing import (
     build_multipart_build_part,
     build_multipart_part,
 )
+from tests.factories.media import build_artifact_analysis as build_artifact_analysis
+from tests.factories.media import (
+    build_thumbnail_generation as build_thumbnail_generation,
+)
 from tests.factories.ops import (
     build_artifact_upload,
     build_artifact_upload_part,
@@ -124,6 +128,7 @@ from tests.factories.ops import (
     build_external_library,
     build_failure_domain_declaration,
     build_filament_profile,
+    build_ingestion_review,
     build_library_observation,
     build_notification_channel,
     build_restore_marker,
@@ -202,6 +207,7 @@ __all__ = [
     "build_audit_finding",
     "build_audit_run",
     "build_background_job",
+    "build_ingestion_review",
     "build_capture",
     "build_capture_slot",
     "build_collection",
@@ -286,3 +292,5 @@ __all__ += [
     "build_similarity_observation",
     "build_similarity_run",
 ]
+
+__all__ += ["build_artifact_analysis", "build_thumbnail_generation"]

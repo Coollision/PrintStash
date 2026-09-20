@@ -812,3 +812,20 @@ class TestSimilarityFactories:
         )
 
         assert unit_component(vector.unit_key) == component
+
+
+class TestFactoriesContract:
+    def test_review_builder_preserves_the_private_owner(self, db_session):
+        from app.modules.ingestion.review_manifests import get
+
+        owner = factories.build_user(db_session)
+        review = factories.build_ingestion_review(db_session, owner=owner)
+        restored = get(review.kind, review.id)
+        assert restored["owner_user_id"] == owner.id
+
+
+    def test_expired_review_builder_is_ineligible_for_acceptance(self, db_session):
+        from app.modules.ingestion.review_manifests import get
+
+        review = factories.build_ingestion_review(db_session, expired=True)
+        assert get(review.kind, review.id) is None

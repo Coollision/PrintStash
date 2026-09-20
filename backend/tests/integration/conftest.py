@@ -31,6 +31,7 @@ from tests.factories.protocols import (
     APrinterWithAQueue,
     GrantRole,
     HeadersFor,
+    MakeArtifactAnalysis,
     MakeArtifactLink,
     MakeCapture,
     MakeCaptureSlot,
@@ -46,6 +47,7 @@ from tests.factories.protocols import (
     MakeGeometryFingerprint,
     MakeInboxItem,
     MakeIndexGeneration,
+    MakeIngestionReview,
     MakeModel,
     MakeMultipartBuild,
     MakeMultipartBuildAttempt,
@@ -67,6 +69,7 @@ from tests.factories.protocols import (
     MakeSimilarityRun,
     MakeStorageConnection,
     MakeSystemConfig,
+    MakeThumbnailGeneration,
     MakeUser,
     MakeVaultGeneration,
     MakeVaultMigration,
@@ -623,3 +626,18 @@ __all__ += [
     "make_index_generation",
     "make_passage_vector",
 ]
+
+
+@pytest.fixture
+def make_artifact_analysis(db_session: Session) -> MakeArtifactAnalysis:
+    return _bound(factories.build_artifact_analysis, db_session)
+
+
+@pytest.fixture
+def make_thumbnail_generation(db_session: Session) -> MakeThumbnailGeneration:
+    return _bound(factories.build_thumbnail_generation, db_session)
+
+
+@pytest.fixture
+def make_ingestion_review(db_session: Session) -> MakeIngestionReview:
+    return _bound(factories.build_ingestion_review, db_session)

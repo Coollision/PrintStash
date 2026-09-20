@@ -3601,5 +3601,10 @@
   "families.siblingsUnavailable": "Could not load the other variations.",
   "families.millimeters": "mm",
   "families.unknownUnits": "(units unknown)",
-  "families.noFamilyMatches": "No Families match this search."
+  "families.noFamilyMatches": "No Families match this search.",
+  "Some details could not be prepared": "Some details could not be prepared",
+  "Preview available on request": "Preview available on request",
+  "Retry enrichment": "Retry enrichment",
+  "Generate preview": "Generate preview",
+  "Preparing previews and details": "Preparing previews and details"
 }
