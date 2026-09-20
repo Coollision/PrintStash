@@ -110,39 +110,10 @@ class TestQueueQualification:
             == "github.event_name == 'workflow_dispatch' && inputs.qualify_queue"
         )
 
-    def test_benchmark_preserves_serial_profiles(self):
-        workflow = _workflow("queue-qualification-benchmark.yml")
-        job = workflow["jobs"]["compare"]
-
-        triggers = workflow[True]
-        assert set(triggers) == {"pull_request", "workflow_dispatch"}
-        assert triggers["pull_request"]["paths"] == [
-            "backend/qualification/queue/**",
-            "backend/scripts/bench_queue.py",
-            "backend/scripts/bench_queue_qualification.py",
-            "backend/scripts/bench_queue_qualification_matrix.py",
-        ]
-        assert workflow["permissions"] == {"contents": "read"}
-
-        assert job["strategy"]["max-parallel"] == 1
-        assert job["strategy"]["fail-fast"] is False
-        assert job["strategy"]["matrix"] == {
-            "database": ["sqlite", "postgres"],
-            "cpus": [2, 4],
-        }
-        command = next(
-            step["run"]
-            for step in job["steps"]
-            if step.get("name") == "Compare current queue with pinned Rust candidates"
-        )
-        assert "bench_queue_qualification_matrix.py" in command
-        artifact = next(
-            step
-            for step in job["steps"]
-            if step.get("uses", "").startswith("actions/upload-artifact@")
-        )
-        assert artifact["if"] == "always()"
-        assert artifact["with"]["if-no-files-found"] == "error"
+    def test_keeps_queue_benchmarks_local(self):
+        assert not (
+            REPO_ROOT / ".github/workflows/queue-qualification-benchmark.yml"
+        ).exists()
 
 
 class TestFlakyDetectionJob:
