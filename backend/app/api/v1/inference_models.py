@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.errors import ErrorKind, OperationError
-from app.core.security import get_current_user, require_superuser
+from app.core.security import get_current_user, require_auth, require_superuser
 from app.db.models import User
 from app.db.session import get_session, get_session_factory
 from app.modules.inference import model_cache, model_registry
@@ -94,7 +94,12 @@ def list_models(session: Session = Depends(get_session)):
     return result
 
 
-@router.post("/{key}/download", response_model=DownloadRead, status_code=202)
+@router.post(
+    "/{key}/download",
+    response_model=DownloadRead,
+    status_code=202,
+    dependencies=[Depends(require_auth)],
+)
 def download_model(
     key: str,
     session: Session = Depends(get_session),
@@ -106,13 +111,19 @@ def download_model(
         raise OperationError(exc.code, kind=ErrorKind.INVALID) from None
 
 
-@router.post("/downloads/{job_id}/cancel", status_code=204)
+@router.post(
+    "/downloads/{job_id}/cancel", status_code=204, dependencies=[Depends(require_auth)]
+)
 def cancel_download(job_id: str):
     model_acquisition.cancel(job_id)
     return Response(status_code=204)
 
 
-@router.post("/{identity}/validate", response_model=ModelValidationRead)
+@router.post(
+    "/{identity}/validate",
+    response_model=ModelValidationRead,
+    dependencies=[Depends(require_auth)],
+)
 def validate_model(identity: str):
     try:
         model = model_cache.resolve(identity)
@@ -131,7 +142,7 @@ def validate_model(identity: str):
         raise OperationError(exc.code, kind=ErrorKind.INVALID) from None
 
 
-@router.delete("/{identity}", status_code=204)
+@router.delete("/{identity}", status_code=204, dependencies=[Depends(require_auth)])
 def delete_model(identity: str, session: Session = Depends(get_session)):
     try:
         model_cache.remove(session, identity)

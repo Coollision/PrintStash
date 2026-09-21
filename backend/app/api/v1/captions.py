@@ -5,6 +5,7 @@ from printstash_core.search.passages import SearchSubject, SubjectType
 from sqlmodel import Session
 
 from app.api.v1.search import require_search_user
+from app.core.security import require_auth
 from app.db.models import User
 from app.db.session import get_session
 from app.modules.search import captions
@@ -23,7 +24,11 @@ def read_caption(
     return captions.read(session, user, SearchSubject(subject_type, subject_id))
 
 
-@router.patch("/{subject_type}/{subject_id}/caption", response_model=CaptionRead)
+@router.patch(
+    "/{subject_type}/{subject_id}/caption",
+    response_model=CaptionRead,
+    dependencies=[Depends(require_auth)],
+)
 def patch_caption(
     subject_type: SubjectType,
     body: CaptionPatch,

@@ -45,6 +45,9 @@
 
 ### Fixed
 
+- AI Search mutations enforce token write scope, including caption edits, settings,
+  generation management, local model operations and personal preferences.
+
 - Library search keeps typing and Enter in the current library view. A labeled
   “Search with AI” action opens AI results; result cards no longer show retrieval
   explanations.

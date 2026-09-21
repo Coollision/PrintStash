@@ -599,7 +599,7 @@ test.describe("settings", () => {
     const staged = await seedExpiredStaging();
     try {
       await page.goto("/settings?section=storage");
-      await expect(page.getByRole("heading", { name: "Library storage" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Storage insights" })).toBeVisible();
       const [measurement] = await Promise.all([
         page.waitForResponse(
           (response) =>

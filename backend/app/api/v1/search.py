@@ -14,7 +14,7 @@ from sqlmodel import Session
 
 from app.api.image_body import read_image
 from app.core.errors import ErrorKind, OperationError
-from app.core.security import get_current_user, oauth2_scheme
+from app.core.security import get_current_user, oauth2_scheme, require_auth
 from app.db.models import User
 from app.db.session import get_session, get_session_factory
 from app.modules.search.retrieval import search
@@ -210,7 +210,11 @@ def read_preferences(
     return read(session, user)
 
 
-@router.patch("/preferences", response_model=SearchPreferencesRead)
+@router.patch(
+    "/preferences",
+    response_model=SearchPreferencesRead,
+    dependencies=[Depends(require_auth)],
+)
 def patch_preferences(
     value: SearchPreferencesPatch,
     response: Response,

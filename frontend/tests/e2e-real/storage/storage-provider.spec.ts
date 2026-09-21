@@ -127,7 +127,7 @@ test.describe("storage provider setup", () => {
 
     await page.goto("/settings?section=storage");
     await expect(
-      page.getByRole("heading", { name: "Storage location", exact: true }),
+      page.getByRole("heading", { name: "Storage configuration", exact: true }),
     ).toBeVisible();
     await expect(page.getByText("Active: Guarded")).toBeVisible();
     await expect(page.getByPlaceholder("Stored — leave blank to keep")).toBeVisible();

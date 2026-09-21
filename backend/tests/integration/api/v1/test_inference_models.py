@@ -4,6 +4,7 @@ import pytest
 
 from app.core.config import _overlay
 from app.modules.inference import model_cache
+from tests.factories import bearer
 from tests.factories.embeddings import text_embedding_assets
 
 
@@ -214,3 +215,40 @@ class TestInferenceModels:
         assert response.status_code == 200
         assert response.json()["settings"]["sparse_expansion_enabled"] is False
         assert response.json()["settings"]["sparse_model_id"] is None
+
+
+class TestTokenScope:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/bge-small-en-v1.5/download",
+            "/downloads/missing/cancel",
+            "/" + "f" * 64 + "/validate",
+        ],
+        ids=["download", "cancel", "validate"],
+    )
+    def test_rejects_read_scope_model_operations(self, client, make_user, path):
+        response = client.post(
+            "/api/v1/inference/models" + path,
+            headers=bearer(make_user(superuser=True), scope="read"),
+        )
+
+        assert response.status_code == 401, response.text
+        assert response.json()["detail"] == "insufficient_scope"
+
+    def test_preserves_local_model_after_denied_deletion(
+        self, client, make_user, tmp_path, monkeypatch
+    ):
+        directory = text_embedding_assets(tmp_path / "cache" / "preplaced")
+        monkeypatch.setitem(_overlay, "embedding_cache_dir", directory.parent)
+        monkeypatch.setitem(_overlay, "embedding_local_model_dir", "")
+        identity = model_cache.inspect(directory).id
+
+        response = client.delete(
+            f"/api/v1/inference/models/{identity}",
+            headers=bearer(make_user(superuser=True), scope="read"),
+        )
+
+        assert response.status_code == 401, response.text
+        assert directory.exists()
+        assert model_cache.inspect(directory).id == identity

@@ -7,7 +7,7 @@ from printstash_core.inference import EmbeddingError
 from sqlmodel import Session
 
 from app.core.errors import ErrorKind, OperationError
-from app.core.security import get_current_user, require_superuser
+from app.core.security import get_current_user, require_auth, require_superuser
 from app.db.models import IndexGeneration, User
 from app.db.session import get_session
 from app.modules.inference.configuration import create
@@ -41,7 +41,7 @@ def read_settings(session: Session = Depends(get_session)):
     return configuration.read(session)
 
 
-@router.put("", response_model=SearchSettingsRead)
+@router.put("", response_model=SearchSettingsRead, dependencies=[Depends(require_auth)])
 def update_settings(
     body: SearchSettings,
     session: Session = Depends(get_session),
@@ -50,7 +50,9 @@ def update_settings(
     return configuration.update(session, body, actor_id=user.id)
 
 
-@search_router.patch("/settings", response_model=SearchSettingsRead)
+@search_router.patch(
+    "/settings", response_model=SearchSettingsRead, dependencies=[Depends(require_auth)]
+)
 def patch_settings(
     body: SearchSettings,
     session: Session = Depends(get_session),
@@ -64,13 +66,21 @@ def patch_settings(
     )
 
 
-@router.post("/endpoints", response_model=EndpointRead, status_code=201)
+@router.post(
+    "/endpoints",
+    response_model=EndpointRead,
+    status_code=201,
+    dependencies=[Depends(require_auth)],
+)
 def create_endpoint(body: EndpointProposal, session: Session = Depends(get_session)):
     return create(session, body)
 
 
 @router.post(
-    "/endpoints/from-environment/{kind}", response_model=EndpointRead, status_code=201
+    "/endpoints/from-environment/{kind}",
+    response_model=EndpointRead,
+    status_code=201,
+    dependencies=[Depends(require_auth)],
 )
 def import_environment_endpoint(
     kind: Literal["embedding", "chat"], session: Session = Depends(get_session)
@@ -97,8 +107,18 @@ def estimate_generation(
         raise OperationError(exc.code, kind=ErrorKind.INVALID) from None
 
 
-@router.post("/generations", response_model=GenerationRead, status_code=202)
-@search_router.post("/generations", response_model=GenerationRead, status_code=202)
+@router.post(
+    "/generations",
+    response_model=GenerationRead,
+    status_code=202,
+    dependencies=[Depends(require_auth)],
+)
+@search_router.post(
+    "/generations",
+    response_model=GenerationRead,
+    status_code=202,
+    dependencies=[Depends(require_auth)],
+)
 def propose_generation(
     body: GenerationProposal,
     session: Session = Depends(get_session),
@@ -119,9 +139,15 @@ def read_generation(generation_id: int, session: Session = Depends(get_session))
     return generations.read(session, generation)
 
 
-@router.post("/generations/{generation_id}/activate", response_model=GenerationRead)
+@router.post(
+    "/generations/{generation_id}/activate",
+    response_model=GenerationRead,
+    dependencies=[Depends(require_auth)],
+)
 @search_router.post(
-    "/generations/{generation_id}/activate", response_model=GenerationRead
+    "/generations/{generation_id}/activate",
+    response_model=GenerationRead,
+    dependencies=[Depends(require_auth)],
 )
 def activate_generation(
     generation_id: int, body: GenerationAction, session: Session = Depends(get_session)
@@ -129,9 +155,15 @@ def activate_generation(
     return generations.activate(session, generation_id, body.version_token)
 
 
-@router.post("/generations/{generation_id}/cancel", response_model=GenerationRead)
+@router.post(
+    "/generations/{generation_id}/cancel",
+    response_model=GenerationRead,
+    dependencies=[Depends(require_auth)],
+)
 @search_router.post(
-    "/generations/{generation_id}/cancel", response_model=GenerationRead
+    "/generations/{generation_id}/cancel",
+    response_model=GenerationRead,
+    dependencies=[Depends(require_auth)],
 )
 def cancel_generation(
     generation_id: int, body: GenerationAction, session: Session = Depends(get_session)
@@ -139,8 +171,16 @@ def cancel_generation(
     return generations.cancel(session, generation_id, body.version_token)
 
 
-@router.post("/generations/{generation_id}/retry", response_model=GenerationRead)
-@search_router.post("/generations/{generation_id}/retry", response_model=GenerationRead)
+@router.post(
+    "/generations/{generation_id}/retry",
+    response_model=GenerationRead,
+    dependencies=[Depends(require_auth)],
+)
+@search_router.post(
+    "/generations/{generation_id}/retry",
+    response_model=GenerationRead,
+    dependencies=[Depends(require_auth)],
+)
 def retry_generation(
     generation_id: int, body: GenerationAction, session: Session = Depends(get_session)
 ):

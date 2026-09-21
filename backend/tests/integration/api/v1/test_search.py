@@ -452,6 +452,22 @@ class TestStructuredSearch:
 
 
 class TestSearchPreferences:
+    def test_preserves_preferences_after_denied_update(self, client, make_user):
+        headers = bearer(make_user(), scope="read")
+        before = client.get("/api/v1/search/preferences", headers=headers).json()
+
+        response = client.patch(
+            "/api/v1/search/preferences",
+            headers=headers,
+            json={"nl_filters_enabled": True},
+        )
+
+        assert response.status_code == 401, response.text
+        assert response.json()["detail"] == "insufficient_scope"
+        assert (
+            client.get("/api/v1/search/preferences", headers=headers).json() == before
+        )
+
     def test_persists_only_the_signed_in_users_preferences(self, client, make_user):
         first, second = make_user(), make_user()
         response = client.patch(

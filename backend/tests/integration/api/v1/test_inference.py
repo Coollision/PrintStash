@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from app.db.models import AuditLog, IndexGeneration, InferenceEndpoint
 from app.modules.inference.configuration import load
+from tests.factories import bearer
 
 PROPOSAL = {
     "base_url": "http://inference.local:11434/v1",
@@ -638,3 +639,120 @@ class TestCancelGeneration:
         )
 
         assert response.status_code == 403, response.text
+
+
+class TestTokenScope:
+    @pytest.mark.parametrize(
+        "method, path, payload",
+        [
+            pytest.param(
+                "put", "/config/ai-search", {"enabled": True}, id="settings-put"
+            ),
+            pytest.param(
+                "patch", "/search/settings", {"enabled": True}, id="settings-patch"
+            ),
+            pytest.param(
+                "post", "/config/ai-search/endpoints", PROPOSAL, id="endpoint"
+            ),
+            pytest.param(
+                "post",
+                "/config/ai-search/endpoints/from-environment/embedding",
+                None,
+                id="environment",
+            ),
+            pytest.param(
+                "post",
+                "/config/ai-search/generations",
+                {"endpoint_id": 1},
+                id="generation-config",
+            ),
+            pytest.param(
+                "post",
+                "/search/generations",
+                {"endpoint_id": 1},
+                id="generation-search",
+            ),
+            pytest.param(
+                "post",
+                "/config/ai-search/generations/1/activate",
+                {"version_token": "a" * 32},
+                id="activate-config",
+            ),
+            pytest.param(
+                "post",
+                "/search/generations/1/activate",
+                {"version_token": "a" * 32},
+                id="activate-search",
+            ),
+            pytest.param(
+                "post",
+                "/config/ai-search/generations/1/cancel",
+                {"version_token": "a" * 32},
+                id="cancel-config",
+            ),
+            pytest.param(
+                "post",
+                "/search/generations/1/cancel",
+                {"version_token": "a" * 32},
+                id="cancel-search",
+            ),
+            pytest.param(
+                "post",
+                "/config/ai-search/generations/1/retry",
+                {"version_token": "a" * 32},
+                id="retry-config",
+            ),
+            pytest.param(
+                "post",
+                "/search/generations/1/retry",
+                {"version_token": "a" * 32},
+                id="retry-search",
+            ),
+        ],
+    )
+    def test_rejects_read_scope_administrative_mutations(
+        self, client, make_user, embedding_endpoint, method, path, payload
+    ):
+        user = make_user(superuser=True)
+
+        response = client.request(
+            method, "/api/v1" + path, headers=bearer(user, scope="read"), json=payload
+        )
+
+        assert response.status_code == 401, response.text
+        assert response.json()["detail"] == "insufficient_scope"
+
+    def test_preserves_settings_after_denied_update(self, client, make_user):
+        headers = bearer(make_user(superuser=True), scope="read")
+        before = client.get("/api/v1/config/ai-search", headers=headers).json()
+
+        response = client.put(
+            "/api/v1/config/ai-search", headers=headers, json={"enabled": True}
+        )
+
+        assert response.status_code == 401, response.text
+        assert client.get("/api/v1/config/ai-search", headers=headers).json() == before
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/config/ai-search",
+            "/search/settings",
+            "/config/ai-search/generations",
+            "/search/generations",
+            "/inference/models",
+        ],
+        ids=[
+            "config",
+            "settings",
+            "generations-config",
+            "generations-search",
+            "models",
+        ],
+    )
+    def test_permits_read_scope_administrative_reads(self, client, make_user, path):
+        response = client.get(
+            "/api/v1" + path, headers=bearer(make_user(superuser=True), scope="read")
+        )
+
+        assert response.status_code == 200, response.text

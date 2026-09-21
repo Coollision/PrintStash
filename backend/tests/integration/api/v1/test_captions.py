@@ -111,3 +111,37 @@ class TestCaptionAPI:
         url = f"/api/v1/subjects/model/{model.id}/caption"
         assert client.get(url).status_code == 401
         assert client.patch(url, json={"action": "dismiss"}).status_code == 401
+
+    def test_rejects_read_scope_caption_edits(
+        self, client, db_session, make_user, make_model, make_collection, grant_role
+    ):
+        collection = make_collection()
+        model = make_model(collection=collection)
+        editor = make_user()
+        grant_role(editor, collection, CollectionRole.EDIT)
+
+        response = client.patch(
+            f"/api/v1/subjects/model/{model.id}/caption",
+            headers=bearer(editor, scope="read"),
+            json={"action": "edit", "text": "Forbidden edit"},
+        )
+
+        assert response.status_code == 401, response.text
+        assert response.json()["detail"] == "insufficient_scope"
+        assert db_session.exec(select(SubjectCaption)).all() == []
+
+    def test_permits_read_scope_caption_reads(
+        self, client, make_user, make_model, make_collection, grant_role
+    ):
+        collection = make_collection()
+        model = make_model(collection=collection)
+        viewer = make_user()
+        grant_role(viewer, collection, CollectionRole.VIEW)
+
+        response = client.get(
+            f"/api/v1/subjects/model/{model.id}/caption",
+            headers=bearer(viewer, scope="read"),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["can_edit"] is False
