@@ -27,6 +27,8 @@
 
 - Printables capture and selected-file downloads use supported GraphQL fields, retaining creator and license metadata.
 
+- Preserve the original HTTPS scheme when the frontend proxy sits behind a TLS-terminating reverse proxy.
+
 - Mounted Library sources retain preview and download access when their indexed
   Artifacts have a source key, without treating them as remote storage connections.
 
