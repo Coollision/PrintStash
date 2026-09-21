@@ -18,6 +18,14 @@ COPY . .
 
 # Client SPA build → static dist/. The API is reached same-origin via the
 # nginx /api/v1 proxy, so no API URL needs to be baked in at build time.
+# Vite inlines env vars at build time, so an external web slicer must be
+# configured here rather than at runtime.
+ARG VITE_EXTERNAL_SLICER_NAME
+ARG VITE_EXTERNAL_SLICER_URL
+ARG VITE_EXTERNAL_SLICER_TYPES
+ENV VITE_EXTERNAL_SLICER_NAME=${VITE_EXTERNAL_SLICER_NAME} \
+    VITE_EXTERNAL_SLICER_URL=${VITE_EXTERNAL_SLICER_URL} \
+    VITE_EXTERNAL_SLICER_TYPES=${VITE_EXTERNAL_SLICER_TYPES}
 RUN pnpm run build
 
 FROM nginxinc/nginx-unprivileged:alpine AS runner

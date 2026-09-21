@@ -15,6 +15,9 @@ type Slicer = {
   scheme: string;
   // File extensions this slicer can actually open from a URL.
   types: ReadonlySet<string>;
+  // When set, open this http(s) template instead of a desktop URL scheme.
+  // `{file}` is replaced with the URL-encoded file URL.
+  urlTemplate?: string;
 };
 
 // Which file types each slicer opens from a URL. Bambu Studio only loads 3MF
@@ -22,11 +25,38 @@ type Slicer = {
 // PrusaSlicer doesn't reliably open arbitrary self-hosted URLs yet
 // (prusa3d/PrusaSlicer#13752) but is kept listed as best-effort.
 const ORCA_TYPES = new Set(["stl", "3mf", "obj", "step", "gcode"]);
-const SLICERS: Slicer[] = [
+const DESKTOP_SLICERS: Slicer[] = [
   { name: "OrcaSlicer", scheme: "orcaslicer", types: ORCA_TYPES },
   { name: "Bambu Studio", scheme: "bambustudio", types: new Set(["3mf"]) },
   { name: "PrusaSlicer", scheme: "prusaslicer", types: ORCA_TYPES },
 ];
+
+// An optional web-based slicer, configured at build time. Desktop slicers
+// cannot be driven from the browser, so a self-hosted page is the only way to
+// choose slicing options (material, colours, tool mapping) without leaving it.
+const externalName = import.meta.env.VITE_EXTERNAL_SLICER_NAME as string | undefined;
+const externalUrl = import.meta.env.VITE_EXTERNAL_SLICER_URL as string | undefined;
+const externalTypes = import.meta.env.VITE_EXTERNAL_SLICER_TYPES as string | undefined;
+
+const SLICERS: Slicer[] =
+  externalName && externalUrl
+    ? [
+        ...DESKTOP_SLICERS,
+        {
+          name: externalName,
+          scheme: "external",
+          types: externalTypes
+            ? new Set(
+                externalTypes
+                  .split(",")
+                  .map((t: string) => t.trim().toLowerCase())
+                  .filter(Boolean),
+              )
+            : ORCA_TYPES,
+          urlTemplate: externalUrl,
+        },
+      ]
+    : DESKTOP_SLICERS;
 
 function isMacOS() {
   if (!("navigator" in globalThis)) return false;
@@ -36,14 +66,17 @@ function isMacOS() {
   return /Mac/i.test(platform) || /Mac OS X/i.test(navigator.userAgent ?? "");
 }
 
-function slicerHref(scheme: string, fileUrl: string) {
+function slicerHref(slicer: Slicer, fileUrl: string) {
+  if (slicer.urlTemplate) {
+    return slicer.urlTemplate.replace("{file}", encodeURIComponent(fileUrl));
+  }
   // Bambu Studio uses a different URL scheme on macOS: the file URL is
   // appended directly to the `bambustudioopen://` host instead of being passed
   // as an `open?file=` query parameter (issue #27).
-  if (scheme === "bambustudio" && isMacOS()) {
+  if (slicer.scheme === "bambustudio" && isMacOS()) {
     return `bambustudioopen://${encodeURIComponent(fileUrl)}`;
   }
-  return `${scheme}://open?file=${encodeURIComponent(fileUrl)}`;
+  return `${slicer.scheme}://open?file=${encodeURIComponent(fileUrl)}`;
 }
 
 export function SlicerOpenButton({
@@ -64,7 +97,7 @@ export function SlicerOpenButton({
   const slicers = SLICERS.filter((s) => s.types.has(fileType));
   if (slicers.length === 0) return null;
 
-  async function openInSlicer(scheme: string) {
+  async function openInSlicer(slicer: Slicer) {
     setOpen(false);
     try {
       // The slicer is a separate process with no login session, so it can't
@@ -75,7 +108,7 @@ export function SlicerOpenButton({
         fresh: true,
       });
       const fileUrl = `${window.location.origin}${url}`;
-      window.location.assign(slicerHref(scheme, fileUrl));
+      window.location.assign(slicerHref(slicer, fileUrl));
     } catch {
       toast.error(uiText("Couldn't open in slicer"));
     }
@@ -105,15 +138,15 @@ export function SlicerOpenButton({
       <p className="px-3 py-1.5 font-mono text-3xs uppercase tracking-wider text-on-surface-variant border-b border-outline-variant">
         {uiText("Open in slicer")}
       </p>
-      {slicers.map(({ name, scheme }) => (
+      {slicers.map((slicer) => (
         <button
-          key={scheme}
+          key={slicer.scheme}
           type="button"
           role="menuitem"
-          onClick={() => openInSlicer(scheme)}
+          onClick={() => openInSlicer(slicer)}
           className="block w-full px-3 py-2 text-left font-mono text-xs text-on-surface hover:bg-surface-container-low focus-visible:bg-surface-container-low outline-none transition-colors last:rounded-b"
         >
-          {name}
+          {slicer.name}
         </button>
       ))}
     </DropdownMenu>
