@@ -45,6 +45,8 @@
 
 ### Fixed
 
+- The MinIO migration helper pulls its pinned compatibility image from the official Quay registry so migrations remain available when Docker Hub rejects the old image reference.
+
 - AI Search guides setup and preserves keyboard focus between basic and advanced controls. Clearing a query cancels stale navigation; result views support a grid, list and on-demand match details.
 - Deferred search projection commits bounded source notifications with content edits and hides stale evidence until refreshed. Sparse ranking preserves independent SQL identities without excessive nesting.
 
