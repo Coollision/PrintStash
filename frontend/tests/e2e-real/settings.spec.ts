@@ -609,12 +609,11 @@ test.describe("settings", () => {
         page.getByRole("button", { name: "Refresh measurement" }).click(),
       ]);
       expect(measurement.status()).toBe(200);
-      await page.getByText("Storage breakdown and diagnostics", { exact: true }).click();
       await expect(
         page.getByText(/Provider measurement:.*Capacity evidence is known/),
       ).toBeVisible();
       expect(existsSync(staged.path)).toBe(true);
-      await page.getByRole("button", { name: "Clean up temporary files", exact: true }).click();
+      await page.getByRole("button", { name: "Clean up expired staging", exact: true }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toContainText("Uncertain files are retained");
       // Opening the confirmation must not remove bytes.
