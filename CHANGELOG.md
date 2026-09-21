@@ -60,6 +60,8 @@
   inventory, upload, start and deletion no longer surface a false authentication
   failure.
 
+- Pending Imports remain readable when an older or damaged capture manifest is incomplete, without overwriting the stored capture data.
+
 ### Changed
 
 - The getting-started reminder can be dismissed with Don't show again. The choice

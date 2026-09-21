@@ -19,6 +19,25 @@ from tests.factories import build_file, build_model
 
 
 class TestListItems:
+    def test_corrupt_manifest_list_remains_readable(
+        self, client, make_user, make_inbox_item, headers_for
+    ) -> None:
+        owner = make_user()
+        item = make_inbox_item(
+            owner, manifest={"schema_version": 2, "kind": "model_files"}
+        )
+
+        response = client.get("/api/v1/inbox", headers=headers_for(owner))
+
+        assert response.status_code == 200, response.text
+        assert response.json()[0]["id"] == item.id
+        assert response.json()[0]["manifest"] == {
+            "kind": "model_files",
+            "files": [],
+            "selected_ids": [],
+            "schema_version": 1,
+        }
+
     def test_lists_the_callers_own_items(
         self, client: TestClient, make_user, headers_for, make_item
     ) -> None:
@@ -68,6 +87,24 @@ class TestListItems:
 
 
 class TestGetItem:
+    def test_corrupt_manifest_detail_remains_readable(
+        self, client, make_user, make_inbox_item, headers_for
+    ) -> None:
+        owner = make_user()
+        item = make_inbox_item(
+            owner, manifest={"schema_version": 2, "kind": "model_files"}
+        )
+
+        response = client.get(f"/api/v1/inbox/{item.id}", headers=headers_for(owner))
+
+        assert response.status_code == 200, response.text
+        assert response.json()["manifest"] == {
+            "kind": "model_files",
+            "files": [],
+            "selected_ids": [],
+            "schema_version": 1,
+        }
+
     def test_returns_the_callers_own_item(
         self, client: TestClient, make_user, headers_for, make_item
     ) -> None:
