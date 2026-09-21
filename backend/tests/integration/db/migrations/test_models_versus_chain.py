@@ -48,12 +48,13 @@ from pathlib import Path
 import pytest
 from alembic.autogenerate import produce_migrations
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, create_mock_engine, inspect
 from sqlmodel import SQLModel
 
 import app.db.models  # noqa: F401 - registers every table on SQLModel.metadata
 from alembic import command
 from app.db import migrate as migrate_mod
+from tests.conftest import restore_inline_foreign_key_rendering
 
 # Foreign keys the models declare and the migration chain never creates, as
 # (table, column). Two-sided: a new entry means fresh and upgraded installs drifted
@@ -96,6 +97,9 @@ def fresh_install_keys(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> set[tuple[str, str]]:
     """The foreign keys `create_all` builds — what a new installation gets."""
+    # Module fixtures run before the function-scoped metadata cleanup.
+    # A previous module finalizer may have compiled PostgreSQL ALTER DDL.
+    restore_inline_foreign_key_rendering()
     path: Path = tmp_path_factory.mktemp("fresh") / "fresh.sqlite"
     url = f"sqlite:///{path}"
     engine = create_engine(url)
@@ -118,6 +122,24 @@ def upgraded_install_keys(
 
 
 class TestForeignKeyParity:
+    def test_fresh_fixture_keeps_foreign_keys_after_postgres_ddl(
+        self, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        engine = create_mock_engine(
+            "postgresql+psycopg://", lambda *_args, **_kwargs: None
+        )
+        SQLModel.metadata.create_all(engine)
+        expected = {
+            (table.name, column.name)
+            for table in SQLModel.metadata.tables.values()
+            for constraint in table.foreign_key_constraints
+            for column in constraint.columns
+        }
+
+        actual = fresh_install_keys.__wrapped__(tmp_path_factory)
+
+        assert actual == expected
+
     def test_the_chain_is_missing_exactly_the_known_set(
         self,
         fresh_install_keys: set[tuple[str, str]],

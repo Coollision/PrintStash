@@ -70,6 +70,15 @@
 - Caption text and unsaved edits now clear when the signed-in account changes,
   including account changes received from another browser tab.
 
+- Browser Pending Imports accept signed-in session cookies while preserving bearer-token precedence and browser-device scope restrictions.
+
+- Printables capture and selected-file downloads use supported GraphQL fields, retaining creator and license metadata.
+
+- Preserve the original HTTPS scheme when the frontend proxy sits behind a TLS-terminating reverse proxy.
+
+- Mounted Library sources retain preview and download access when their indexed
+  Artifacts have a source key, without treating them as remote storage connections.
+
 - Idle similarity polling no longer transiently blocks backup restoration with a storage-retention conflict.
 
 - Ordinary dense meshes such as the repository Benchy now receive complete
@@ -97,6 +106,8 @@
   on Buddy/Core One firmware while retaining `/local` compatibility, so file
   inventory, upload, start and deletion no longer surface a false authentication
   failure.
+
+- Pending Imports remain readable when an older or damaged capture manifest is incomplete, without overwriting the stored capture data.
 
 ### Changed
 

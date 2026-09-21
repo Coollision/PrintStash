@@ -18,6 +18,7 @@ from printstash_core.imports import resolvers as core_resolvers
 from app.modules.ingestion import import_resolvers as r
 from app.modules.ingestion.capture_provider_transport import ProviderTransportError
 from app.modules.ingestion.importer import ImportError_
+from tests.fakes.printables import PrintablesTransport
 
 
 class TestFacadeSurface:
@@ -442,6 +443,23 @@ class TestResolveCaptureManifest:
     async def test_resolve_capture_manifest_ignores_non_printables(self) -> None:
         assert await r.resolve_capture_manifest("https://example.com/model.stl") is None
 
+    @pytest.mark.asyncio
+    async def test_capture_uses_supported_printables_fields(self) -> None:
+        with patch.object(r, "ProviderTransport", return_value=PrintablesTransport()):
+            manifest = await r.resolve_capture_manifest(
+                "https://www.printables.com/model/3161-x"
+            )
+
+        assert manifest is not None
+        assert manifest.source.fields["title"].value == "Widget"
+        assert manifest.source.fields["creator_name"].value == "designer"
+        assert manifest.source.fields["creator_id"].value == "100"
+        assert manifest.source.fields["license_code"].value == "CC BY"
+        assert manifest.to_dict()["files"] == [
+            {"id": "file-1", "name": "part.stl", "file_type": "stl", "size": 100},
+        ]
+        assert manifest.selected_ids == ("file-1",)
+
 
 class TestListPrintablesFiles:
     @pytest.mark.asyncio
@@ -473,6 +491,23 @@ class TestPrintablesDownloadLinks:
             )
             == []
         )
+
+    @pytest.mark.asyncio
+    async def test_printables_download_links_resolves_files(self) -> None:
+        files = [
+            r.ModelFile(file_id="file-1", name="1.stl", file_type="stl", size=100),
+            r.ModelFile(file_id="file-2", name="2.stl", file_type="stl", size=200),
+        ]
+
+        with patch.object(r, "ProviderTransport", return_value=PrintablesTransport()):
+            links = await r._printables_download_links(
+                "https://www.printables.com/model/3161-x", files
+            )
+
+        assert links == [
+            "https://files.printables.test/file-1.stl",
+            "https://files.printables.test/file-2.stl",
+        ]
 
 
 class TestResolvePrintablesCollection:
