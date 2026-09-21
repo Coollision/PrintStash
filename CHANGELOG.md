@@ -45,6 +45,25 @@
 
 ### Fixed
 
+- Library search keeps typing and Enter in the current library view. A labeled
+  “Search with AI” action opens AI results; result cards no longer show retrieval
+  explanations.
+- Model detail tabs fit their panel without horizontal scrolling. Similar Models
+  keep readable names and reachable comparison actions in narrow panels.
+- The library groups organization actions under “Library tools” and Family filters
+  with the other advanced filters,
+  keeping the initial toolbar focused on uploading and browsing. Active Family
+  filters remain discoverable when opening a saved or shared view.
+
+- AI search recovers bounded name misspellings, finds functional holder metadata,
+  and rejects weak short-query matches before combining retrieval signals.
+- Caption edits and dismissal reserve the SQLite writer before reading, avoiding
+  failed updates when background indexing commits concurrently.
+- Sparse search avoids temporary SQL query-name collisions on Python 3.13 while
+  preserving keyword scores and candidate filtering.
+- The legacy MinIO migration helper pulls its unchanged, digest-pinned release
+  from the official Quay registry.
+
 - AI Search guides setup and preserves keyboard focus between basic and advanced controls. Clearing a query cancels stale navigation; result views support a grid, list and on-demand match details.
 - Deferred search projection commits bounded source notifications with content edits and hides stale evidence until refreshed. Sparse ranking preserves independent SQL identities without excessive nesting.
 

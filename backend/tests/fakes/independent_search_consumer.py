@@ -48,18 +48,19 @@ def exercise_search(client):
     assert job["state"] == "completed", job
     from tests.search_projection import drain_search
 
-    with get_session_factory().scoped_session() as session:
-        drain_search(session)
-    # The live app can already own a projection when drain_search sees no
-    # claimable requests. Wait for its public result, not just an idle claim.
     deadline = time.monotonic() + 30
     while True:
+        with get_session_factory().scoped_session() as session:
+            drain_search(session)
         response = client.get("/api/v1/search", params={"q": "red", "mode": "lexical"})
         assert response.status_code == 200, response.text
-        if {row["subject_type"] for row in response.json()["items"]} == expected:
+        found = {row["subject_type"] for row in response.json()["items"]}
+        if found == expected or time.monotonic() >= deadline:
             break
-        assert time.monotonic() < deadline, response.text
+        # The real runtime may already hold a projection lease. An idle local
+        # drain does not imply that the other worker has published its result.
         time.sleep(0.05)
+    assert found == expected, response.text
     assert all(
         row.get("model", {}).get("family") is None
         for row in response.json()["items"]

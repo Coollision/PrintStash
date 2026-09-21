@@ -84,12 +84,25 @@ export function LibrarySearch() {
       publishTimer.current = undefined;
     };
   }, [pathname, params, q, router, value, visible]);
-  function submit() {
+  function openResults() {
     if (!value.trim()) return;
     if (publishTimer.current !== undefined) window.clearTimeout(publishTimer.current);
     publishTimer.current = undefined;
     setOpen(false);
     router.push(`/search?${new URLSearchParams({ q: value.trim(), parse: "1" })}`);
+  }
+  function submit() {
+    setOpen(false);
+    if (pathname === "/search") {
+      openResults();
+      return;
+    }
+    const next = value.trim();
+    const updated = new URLSearchParams(params);
+    if (next) updated.set("q", next);
+    else updated.delete("q");
+    setPublished(next);
+    router.replace(updated.size ? `/?${updated}` : "/", { scroll: false });
   }
   function changeValue(next: string) {
     setValue(next);
@@ -111,10 +124,11 @@ export function LibrarySearch() {
     (leg) => leg === "thumbnail" || leg === "multiview" || leg === "point_cloud",
   );
   return (
-    <div ref={wrapper} className="mx-3 min-w-0 max-w-2xl flex-1 sm:mx-8">
+    <div ref={wrapper} className="mx-3 flex min-w-0 max-w-2xl flex-1 items-center gap-2 sm:mx-8">
       <DropdownMenu
         open={open && !!value.trim()}
         onOpenChange={setOpen}
+        className="min-w-0 flex-1"
         role="dialog"
         align="start"
         contentClassName="w-full rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
@@ -127,23 +141,10 @@ export function LibrarySearch() {
               submit();
             }}
           >
-            {status.data?.semantic_ready ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                type="submit"
-                className="absolute left-1 top-1/2 h-8 w-8 -translate-y-1/2"
-                aria-label={t("aiSearch.submitAi")}
-                title={t("aiSearch.submitAi")}
-              >
-                <Sparkles className="h-4 w-4 text-primary" />
-              </Button>
-            ) : (
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-            )}
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
             <input
               ref={input}
               data-model-search
@@ -234,6 +235,12 @@ export function LibrarySearch() {
                 </li>
               ))}
             </ul>
+          )}
+          {status.data?.semantic_ready && (
+            <Button variant="ghost" className="mt-1 w-full justify-start" onClick={openResults}>
+              <Sparkles className="h-4 w-4 text-primary" aria-hidden />
+              {t("aiSearch.submitAi")}
+            </Button>
           )}
           <Button variant="ghost" className="mt-1 w-full justify-start" onClick={submit}>
             {t("aiSearch.allResults")}

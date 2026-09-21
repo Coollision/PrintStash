@@ -42,7 +42,10 @@ def with_expansion(session: Session, query: str, allowed_ids, original):
     terms = query_terms(query)
     if recipe is None or not terms:
         return original
-    lexical = original.cte()
+    # prefix_with() replaces the CTE object. An anonymous name can retain its
+    # released object's identity and collide with a later CTE on Python 3.13.
+    # Nest the explicit name so independently composed readers stay isolated.
+    lexical = original.cte("search_original_scores", nesting=True)
     if session.get_bind().dialect.name == "sqlite":
         # Preserve SQLAlchemy's clone ancestry before prefix_with() copies the
         # node: its anonymous name must not outlive the identity that owns it.

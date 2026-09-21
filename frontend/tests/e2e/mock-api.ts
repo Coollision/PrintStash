@@ -1,3 +1,5 @@
+import { aCaption } from "../../src/test-support/captions";
+import { searchPreferences, searchStatus } from "../../src/test-support/search";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { SubjectCaption } from "../../src/types/captions";
 import type { SearchStatus } from "../../src/types/search";
@@ -1721,6 +1723,30 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
       published_at: "2026-07-14T10:00:00Z",
       checked_at: "2026-07-14T11:00:00Z",
     });
+    return;
+  }
+  if (url.pathname === "/api/v1/search/status" && req.method === "GET") {
+    sendJson(res, searchStatus());
+    return;
+  }
+  if (url.pathname === "/api/v1/search/preferences" && req.method === "GET") {
+    sendJson(res, searchPreferences());
+    return;
+  }
+  if (
+    /^\/api\/v1\/subjects\/(model|multipart_model)\/\d+\/caption$/.test(url.pathname) &&
+    req.method === "GET"
+  ) {
+    sendJson(
+      res,
+      aCaption({
+        state: null,
+        phase: null,
+        text: "",
+        can_generate: false,
+        unavailable_reason: "caption_disabled",
+      }),
+    );
     return;
   }
   if (url.pathname === "/api/v1/libraries") {
