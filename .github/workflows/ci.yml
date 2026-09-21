@@ -250,7 +250,9 @@ jobs:
     name: Backend compatibility (Python 3.13, advisory)
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 30
+    # The full lane runs container-backed contracts after the parallel tests.
+    # The parallel pass alone takes about 20 minutes on hosted runners.
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: backend
