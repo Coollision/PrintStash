@@ -19,7 +19,7 @@ from printstash_core.imports import (
     canonicalize_provider_url,
 )
 from printstash_core.imports.contracts import MAX_MANIFEST_BYTES
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import update as sql_update
 from sqlmodel import Session, col, select
 
@@ -199,6 +199,21 @@ def read(
             .order_by(InboxItemResult.id)  # type: ignore[attr-defined]
         ).all()
     result_reads = [InboxItemResultRead.model_validate(item) for item in results or []]
+    empty_manifest = {
+        "kind": "model_files",
+        "files": [],
+        "selected_ids": [],
+        "schema_version": 1,
+    }
+    manifest_dict = _json_dict(row.manifest_json)
+    if not manifest_dict.get("kind"):
+        manifest_dict = empty_manifest
+    try:
+        manifest = _inbox_manifest_adapter.validate_python(manifest_dict)
+    except ValidationError:
+        # Keep damaged persisted capture data available for recovery while
+        # returning a shape the Pending Imports client can safely render.
+        manifest = _inbox_manifest_adapter.validate_python(empty_manifest)
     return InboxItemRead(
         id=row.id,
         owner_user_id=row.owner_user_id,
@@ -207,7 +222,7 @@ def read(
         display_title=row.display_title,
         source_hostname=row.source_hostname,
         state=row.state,
-        manifest=_inbox_manifest_adapter.validate_python(_json_dict(row.manifest_json)),
+        manifest=manifest,
         target_collection_id=row.target_collection_id,
         requested_tags=requested_tags(row.requested_tags_json),
         background_job_id=row.background_job_id,

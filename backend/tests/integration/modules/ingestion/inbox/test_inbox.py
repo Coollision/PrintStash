@@ -1682,3 +1682,68 @@ class TestRequestedTags:
         assert inbox.requested_tags("not json") == []
         assert inbox.requested_tags("{}") == []  # valid JSON but not a list
         assert inbox.requested_tags(json.dumps(["a", "b"])) == ["a", "b"]
+
+
+class TestInboxRead:
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "{}",
+            "not json",
+            "null",
+            '{"schema_version": 2}',
+            '{"schema_version": 2, "kind": "model_files", "files": [], "selected_ids": []}',
+        ],
+        ids=["empty", "malformed", "null", "missing-kind", "v2-missing-source"],
+    )
+    def test_corrupt_manifest_has_readable_fallback(
+        self, make_user, make_inbox_item, raw
+    ) -> None:
+        item = make_inbox_item(make_user(), manifest_json=raw)
+
+        result = inbox.read(item)
+
+        assert result.manifest.model_dump() == {
+            "kind": "model_files",
+            "files": [],
+            "selected_ids": [],
+            "schema_version": 1,
+        }
+
+    def test_read_preserves_corrupt_persisted_manifest(
+        self, db_session: Session, make_user, make_inbox_item
+    ) -> None:
+        raw = '{"schema_version": 2, "kind": "model_files", "files": [{"id": "recoverable"}]}'
+        item = make_inbox_item(make_user(), manifest_json=raw)
+
+        inbox.read(item, db_session)
+        db_session.commit()
+        db_session.refresh(item)
+
+        assert item.manifest_json == raw
+
+    def test_valid_v2_manifest_is_preserved(self, make_user, make_inbox_item) -> None:
+        from tests.factories.capture import capture_source
+
+        manifest = {
+            "schema_version": 2,
+            "kind": "model_files",
+            "source": capture_source(),
+            "files": [
+                {"id": "file-1", "name": "part.stl", "file_type": "stl", "size": 100}
+            ],
+            "selected_ids": ["file-1"],
+        }
+        item = make_inbox_item(make_user(), manifest=manifest)
+
+        result = inbox.read(item)
+
+        assert result.manifest.model_dump() == manifest
+
+    def test_legacy_manifest_is_preserved(self, make_user, make_inbox_item) -> None:
+        manifest = {"kind": "direct", "url": "https://example.com/part.stl"}
+        item = make_inbox_item(make_user(), manifest=manifest)
+
+        result = inbox.read(item)
+
+        assert result.manifest.model_dump() == manifest
