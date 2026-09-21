@@ -23,6 +23,8 @@
 
 ### Fixed
 
+- Pending Imports remain readable when an older or damaged capture manifest is incomplete, without overwriting the stored capture data.
+
 - Mounted Library sources retain preview and download access when their indexed
   Artifacts have a source key, without treating them as remote storage connections.
 
