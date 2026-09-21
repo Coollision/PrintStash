@@ -25,6 +25,8 @@
 
 - Browser Pending Imports accept signed-in session cookies while preserving bearer-token precedence and browser-device scope restrictions.
 
+- Printables capture and selected-file downloads use supported GraphQL fields, retaining creator and license metadata.
+
 - Mounted Library sources retain preview and download access when their indexed
   Artifacts have a source key, without treating them as remote storage connections.
 
