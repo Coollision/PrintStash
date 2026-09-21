@@ -19,6 +19,7 @@ from app.db.url import normalize_database_url
 from app.modules.search.projection import LibraryProjection
 from tests.containers import postgres_url
 from tests.e2e._backup_helpers import setup_and_login
+from tests.search_projection import drain_search
 
 
 @pytest.fixture
@@ -78,6 +79,8 @@ class TestPostgresBackup:
         assert result.status_code == 200, result.text
         assert result.json()["name"] == "Bracket instructions"
         assert result.json()["body"] == "Mount the shelf"
+        # ASGITransport does not start the background projection worker.
+        drain_search(postgres_e2e_db)
         found = await api.get("/api/v1/search", params={"q": "Bracket"}, headers=headers)
         assert found.status_code == 200, found.text
         assert [(item["subject_type"], item["subject_id"]) for item in found.json()["items"]] == [("document", document_id)]

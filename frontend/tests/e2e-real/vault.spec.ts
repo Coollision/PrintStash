@@ -15,7 +15,7 @@ test.describe("vault", () => {
     await uploadGcodeModel(page, name);
 
     // Search narrows the grid to the matching model and reflects in the URL.
-    await page.getByRole("textbox", { name: "Search models" }).fill(name);
+    await page.getByRole("searchbox", { name: "Search library" }).fill(name);
     await expect(page).toHaveURL(/[?&]q=/);
     await expect(modelCard(page, name)).toBeVisible();
 
@@ -91,7 +91,9 @@ test.describe("vault", () => {
 
   test("a meshless search term yields the empty state", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("textbox", { name: "Search models" }).fill(`no-such-model-${Date.now()}`);
+    await page
+      .getByRole("searchbox", { name: "Search library" })
+      .fill(`no-such-model-${Date.now()}`);
     await expect(page).toHaveURL(/[?&]q=/);
     await expect(page.locator('a[href^="/models/"]')).toHaveCount(0);
   });
