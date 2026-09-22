@@ -1,3 +1,5 @@
+> **This is a fork** of [xiao-villamor/PrintStash](https://github.com/xiao-villamor/PrintStash) (AGPL-3.0), on branch `feat/external-web-slicer`. The only functional change from upstream: the "open in slicer" menu gains an entry for [PrintFlow](https://github.com/Coollision/printflow), a self-hosted external web slicer — see `.github/workflows/fork-image.yaml` for the build-time wiring and `frontend/src/components/slicer-open-button.tsx` for the change itself. This repo is public, satisfying AGPL's source-availability requirement for the modified version running at the deployed instance.
+
 <div align="center">
 
 <picture>
