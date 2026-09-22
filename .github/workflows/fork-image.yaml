@@ -30,6 +30,6 @@ jobs:
           push: true
           set: |
             frontend.args.VITE_EXTERNAL_SLICER_NAME=PrintFlow
-            frontend.args.VITE_EXTERNAL_SLICER_URL=https://printflow.declerck.dev/slice?file={file}
+            frontend.args.VITE_EXTERNAL_SLICER_URL=https://printflow.declerck.dev/slice?file={file}&model={model}
             frontend.args.VITE_EXTERNAL_SLICER_TYPES=stl,3mf,obj,step
             unified.tags=ghcr.io/coollision/printstash-unified:latest

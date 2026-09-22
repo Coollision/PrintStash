@@ -66,9 +66,11 @@ function isMacOS() {
   return /Mac/i.test(platform) || /Mac OS X/i.test(navigator.userAgent ?? "");
 }
 
-function slicerHref(slicer: Slicer, fileUrl: string) {
+function slicerHref(slicer: Slicer, fileUrl: string, modelId?: number) {
   if (slicer.urlTemplate) {
-    return slicer.urlTemplate.replace("{file}", encodeURIComponent(fileUrl));
+    return slicer.urlTemplate
+      .replace("{file}", encodeURIComponent(fileUrl))
+      .replace("{model}", modelId != null ? String(modelId) : "");
   }
   // Bambu Studio uses a different URL scheme on macOS: the file URL is
   // appended directly to the `bambustudioopen://` host instead of being passed
@@ -82,10 +84,14 @@ function slicerHref(slicer: Slicer, fileUrl: string) {
 export function SlicerOpenButton({
   fileId,
   fileType,
+  modelId,
   size = "md",
 }: {
   fileId: number;
   fileType: string;
+  // Lets the external slicer link back to this model once it pushes a
+  // result, rather than only to the slicer app's own home page.
+  modelId?: number;
   size?: "sm" | "md";
 }) {
   useUiLocale();
@@ -108,7 +114,7 @@ export function SlicerOpenButton({
         fresh: true,
       });
       const fileUrl = `${window.location.origin}${url}`;
-      window.location.assign(slicerHref(slicer, fileUrl));
+      window.location.assign(slicerHref(slicer, fileUrl, modelId));
     } catch {
       toast.error(uiText("Couldn't open in slicer"));
     }

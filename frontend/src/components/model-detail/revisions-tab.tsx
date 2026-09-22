@@ -367,6 +367,7 @@ export function RevisionsTab({
                       </button>
                       <SlicerOpenButton
                         fileId={f.id}
+                        modelId={modelId}
                         // Binary G-code shares the "gcode" file_type but no slicer
                         // opens a .bgcode URL, so key off the extension to hide it.
                         fileType={
